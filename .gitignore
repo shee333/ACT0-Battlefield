@@ -1,0 +1,27 @@
+# Gradle / build
+.gradle/
+build/
+out/
+bin/
+
+# Forge dev runs
+run/
+run-data/
+runs/
+
+# IDE
+.idea/
+*.iml
+.eclipse/
+.settings/
+.classpath
+.project
+.vscode/
+
+# OS
+*.log
+Thumbs.db
+.DS_Store
+
+# Local helper scripts environment (keep the .ps1 scripts themselves)
+*.local.ps1
