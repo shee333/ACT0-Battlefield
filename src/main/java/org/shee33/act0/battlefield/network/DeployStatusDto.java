@@ -11,7 +11,8 @@ import java.util.List;
 public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint, boolean canBase,
                               String selectedKind, String selectedTarget, int readyInTicks,
                               double baseX, double baseZ, double squadX, double squadZ,
-                              List<DeployPointDto> points) {
+                              List<DeployPointDto> points,
+                              List<DeploySquadMateDto> squadMates) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(active);
@@ -28,6 +29,10 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         buf.writeVarInt(points.size());
         for (DeployPointDto point : points) {
             point.encode(buf);
+        }
+        buf.writeVarInt(squadMates.size());
+        for (DeploySquadMateDto mate : squadMates) {
+            mate.encode(buf);
         }
     }
 
@@ -48,12 +53,17 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         for (int i = 0; i < n; i++) {
             points.add(DeployPointDto.decode(buf));
         }
+        int sn = buf.readVarInt();
+        List<DeploySquadMateDto> squadMates = new ArrayList<>(sn);
+        for (int i = 0; i < sn; i++) {
+            squadMates.add(DeploySquadMateDto.decode(buf));
+        }
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
-                baseX, baseZ, squadX, squadZ, points);
+                baseX, baseZ, squadX, squadZ, points, squadMates);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
-                0, 0, 0, 0, List.of());
+            0, 0, 0, 0, List.of(), List.of());
     }
 }

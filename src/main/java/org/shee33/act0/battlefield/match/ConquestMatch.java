@@ -19,8 +19,9 @@ import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BattleTabDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
-import org.shee33.act0.battlefield.network.DeployStatusDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
+import org.shee33.act0.battlefield.network.DeployStatusDto;
+import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 import org.shee33.act0.battlefield.network.TabEntryDto;
 
@@ -48,6 +49,7 @@ public final class ConquestMatch {
     private static final int SQUAD_SIZE = 5;
     private static final int REDEPLOY_DELAY_TICKS = 5 * 20;
     private static final int SPAWN_PROTECTION_TICKS = 3 * 20;
+    private static final double SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS = 12.0;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -343,10 +345,11 @@ public final class ConquestMatch {
         if (faction == null || !redeployReadyTick.containsKey(id)) {
             return DeployStatusDto.inactive();
         }
-        BattlefieldData.BaseSpawn squad = livingSquadmateSpawn(id);
+        BattlefieldData.BaseSpawn squad = bestSquadSpawn(id, faction);
         BattlefieldData.BaseSpawn base = data.base(faction);
         List<DeployPointDto> pointDtos = deployPointDtos(faction);
-        boolean canSquad = squad != null;
+        List<DeploySquadMateDto> squadDtos = deploySquadMateDtos(id, faction);
+        boolean canSquad = squadDtos.stream().anyMatch(DeploySquadMateDto::deployable);
         boolean canPoint = pointDtos.stream().anyMatch(DeployPointDto::deployable);
         boolean canBase = base != null;
         long readyTick = redeployReadyTick.getOrDefault(id, (long) server.getTickCount());
@@ -362,7 +365,32 @@ public final class ConquestMatch {
         return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
                 base != null ? base.x() : 0, base != null ? base.z() : 0,
                 squad != null ? squad.x() : 0, squad != null ? squad.z() : 0,
-                pointDtos);
+                pointDtos, squadDtos);
+    }
+
+    private List<DeploySquadMateDto> deploySquadMateDtos(UUID self, Faction faction) {
+        List<DeploySquadMateDto> list = new ArrayList<>();
+        Integer squadId = squadOf.get(self);
+        if (squadId == null) {
+            return list;
+        }
+        LinkedHashSet<UUID> members = squads.get(squadId);
+        if (members == null) {
+            return list;
+        }
+        for (UUID mateId : members) {
+            if (mateId.equals(self)) {
+                continue;
+            }
+            ServerPlayer mate = player(mateId);
+            if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
+                continue;
+            }
+            boolean deployable = !enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS);
+            list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(),
+                    deployable, mate.getX(), mate.getZ()));
+        }
+        return list;
     }
 
     private List<DeployPointDto> deployPointDtos(Faction faction) {
@@ -392,12 +420,16 @@ public final class ConquestMatch {
             String point = firstDeployablePointId(faction);
             return point != null ? point : "";
         }
+        if ("squad".equals(kind)) {
+            DeploySquadMateDto mate = firstDeployableSquadMate(id, faction);
+            return mate != null ? mate.id() : "";
+        }
         return "";
     }
 
     private boolean canDeployTo(UUID id, Faction faction, String kind, String targetId) {
         return switch (kind) {
-            case "squad" -> livingSquadmateSpawn(id) != null;
+            case "squad" -> squadMateSpawn(id, faction, targetId) != null;
             case "point" -> pointSpawn(faction, targetId) != null;
             case "base" -> data.base(faction) != null;
             default -> false;
@@ -418,6 +450,67 @@ public final class ConquestMatch {
             }
         }
         return null;
+    }
+
+    @Nullable
+    private DeploySquadMateDto firstDeployableSquadMate(UUID self, Faction faction) {
+        for (DeploySquadMateDto mate : deploySquadMateDtos(self, faction)) {
+            if (mate.deployable()) {
+                return mate;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private BattlefieldData.BaseSpawn bestSquadSpawn(UUID self, Faction faction) {
+        DeploySquadMateDto first = firstDeployableSquadMate(self, faction);
+        return first != null ? squadMateSpawn(self, faction, first.id()) : null;
+    }
+
+    @Nullable
+    private BattlefieldData.BaseSpawn squadMateSpawn(UUID self, Faction faction, String targetId) {
+        if (targetId == null || targetId.isBlank()) {
+            return bestSquadSpawn(self, faction);
+        }
+        UUID mateUuid;
+        try {
+            mateUuid = UUID.fromString(targetId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        Integer squadId = squadOf.get(self);
+        LinkedHashSet<UUID> members = squadId == null ? null : squads.get(squadId);
+        if (members == null || !members.contains(mateUuid)) {
+            return null;
+        }
+        ServerPlayer mate = player(mateUuid);
+        if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
+            return null;
+        }
+        if (enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS)) {
+            return null;
+        }
+        return new BattlefieldData.BaseSpawn(mate.getX(), mate.getY(), mate.getZ(), mate.getYRot(), mate.getXRot());
+    }
+
+    private boolean enemyNear(ServerPlayer origin, Faction faction, double radius) {
+        double r2 = radius * radius;
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            if (e.getValue() == faction) {
+                continue;
+            }
+            ServerPlayer enemy = player(e.getKey());
+            if (enemy == null || enemy.level() != level || !enemy.isAlive() || enemy.isSpectator()) {
+                continue;
+            }
+            double dx = enemy.getX() - origin.getX();
+            double dz = enemy.getZ() - origin.getZ();
+            if (dx * dx + dz * dz <= r2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Nullable
@@ -444,7 +537,7 @@ public final class ConquestMatch {
     private void deploy(ServerPlayer p, Faction f, String kind, String targetId) {
         UUID id = p.getUUID();
         BattlefieldData.BaseSpawn spawn = switch (kind) {
-            case "squad" -> livingSquadmateSpawn(id);
+            case "squad" -> squadMateSpawn(id, f, targetId);
             case "point" -> pointSpawn(f, targetId);
             default -> data.base(f);
         };

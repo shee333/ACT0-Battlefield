@@ -7,6 +7,7 @@ import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployPointDto;
+import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 
 import java.util.ArrayList;
@@ -100,6 +101,12 @@ public final class BattlefieldDeployScreen extends Screen {
             minX = Math.min(minX, st.squadX()); maxX = Math.max(maxX, st.squadX());
             minZ = Math.min(minZ, st.squadZ()); maxZ = Math.max(maxZ, st.squadZ());
         }
+        for (DeploySquadMateDto mate : st.squadMates()) {
+            minX = Math.min(minX, mate.x());
+            maxX = Math.max(maxX, mate.x());
+            minZ = Math.min(minZ, mate.z());
+            maxZ = Math.max(maxZ, mate.z());
+        }
         for (DeployPointDto p : st.points()) {
             minX = Math.min(minX, p.x());
             maxX = Math.max(maxX, p.x());
@@ -137,6 +144,17 @@ public final class BattlefieldDeployScreen extends Screen {
             targets.add(new ClickTarget(qx - 12, qy - 12, 24, 24, DeployActionPacket.DeployKind.SQUAD, ""));
         }
 
+        for (DeploySquadMateDto mate : st.squadMates()) {
+            int sx = mapX + 14 + (int) Math.round(((mate.x() - minX) / spanX) * (MAP_W - 28));
+            int sy = mapY + 24 + (int) Math.round(((mate.z() - minZ) / spanZ) * (MAP_H - 42));
+            boolean selected = "squad".equals(st.selectedKind()) && mate.id().equals(st.selectedTarget());
+            boolean hovered = mate.deployable() && distanceSq(mouseX, mouseY, sx, sy) <= 100;
+            renderSquadMateIcon(gg, sx, sy, mate.deployable(), selected || hovered, mate.name());
+            if (mate.deployable()) {
+                targets.add(new ClickTarget(sx - 10, sy - 10, 20, 20, DeployActionPacket.DeployKind.SQUAD, mate.id()));
+            }
+        }
+
         for (DeployPointDto p : st.points()) {
             int sx = mapX + 14 + (int) Math.round(((p.x() - minX) / spanX) * (MAP_W - 28));
             int sy = mapY + 24 + (int) Math.round(((p.z() - minZ) / spanZ) * (MAP_H - 42));
@@ -169,6 +187,29 @@ public final class BattlefieldDeployScreen extends Screen {
         gg.fill(cx - 1, cy - 8, cx + 2, cy + 9, color);
         gg.fill(cx - 8, cy - 1, cx + 9, cy + 2, color);
         gg.drawString(font, "S", cx - font.width("S") / 2, cy - 4, 0xFFFFFFFF, true);
+    }
+
+    private void renderSquadMateIcon(GuiGraphics gg, int cx, int cy, boolean deployable, boolean selected, String name) {
+        int color = !deployable ? 0x999EA7AA : (selected ? 0xFF9DFF9D : 0xFF57C7FF);
+        gg.fill(cx - 5, cy - 5, cx + 6, cy + 6, 0xAA000000);
+        gg.fill(cx - 3, cy - 3, cx + 4, cy + 4, color);
+        String mark = "◆";
+        gg.drawString(font, mark, cx - font.width(mark) / 2, cy - 4, 0xFFFFFFFF, true);
+        if (selected && name != null && !name.isBlank()) {
+            String label = trim(name, 52);
+            gg.drawString(font, label, cx - font.width(label) / 2, cy + 8, 0xFFFFFFFF, true);
+        }
+    }
+
+    private String trim(String text, int maxW) {
+        if (font.width(text) <= maxW) {
+            return text;
+        }
+        String out = text;
+        while (out.length() > 1 && font.width(out + "…") > maxW) {
+            out = out.substring(0, out.length() - 1);
+        }
+        return out + "…";
     }
 
     private void renderPointIcon(GuiGraphics gg, int cx, int cy, int color, boolean selected, String label) {
