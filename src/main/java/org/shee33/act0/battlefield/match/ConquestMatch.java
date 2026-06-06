@@ -294,6 +294,7 @@ public final class ConquestMatch {
         player.setGameMode(GameType.SPECTATOR);
         player.setInvulnerable(true);
         player.setDeltaMovement(0.0, 0.0, 0.0);
+        teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
         player.sendSystemMessage(Component.literal("Redeploy: choose a spawn point on the tactical map."));
     }
@@ -307,7 +308,9 @@ public final class ConquestMatch {
         }
         for (UUID id : new ArrayList<>(redeployReadyTick.keySet())) {
             ServerPlayer p = player(id);
-            if (p != null) {
+            Faction faction = factionOf.get(id);
+            if (p != null && faction != null) {
+                teleportToDeployOverview(p, faction);
                 BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
             }
         }
@@ -528,6 +531,51 @@ public final class ConquestMatch {
                     def.pos().getZ() + 0.5, 0f, 0f);
         }
         return null;
+    }
+
+    private void teleportToDeployOverview(ServerPlayer player, Faction faction) {
+        BattlefieldData.BaseSpawn view = deployOverviewSpawn(faction);
+        player.connection.teleport(view.x(), view.y(), view.z(), view.yaw(), view.pitch());
+        player.setDeltaMovement(0.0, 0.0, 0.0);
+    }
+
+    private BattlefieldData.BaseSpawn deployOverviewSpawn(Faction faction) {
+        double minX = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxZ = -Double.MAX_VALUE;
+        double maxY = level.getMinBuildHeight() + 64;
+        for (ControlPointDef def : defs) {
+            minX = Math.min(minX, def.pos().getX());
+            maxX = Math.max(maxX, def.pos().getX());
+            minZ = Math.min(minZ, def.pos().getZ());
+            maxZ = Math.max(maxZ, def.pos().getZ());
+            maxY = Math.max(maxY, def.pos().getY());
+        }
+        BattlefieldData.BaseSpawn a = data.base(Faction.ALPHA);
+        BattlefieldData.BaseSpawn b = data.base(Faction.BRAVO);
+        for (BattlefieldData.BaseSpawn spawn : new BattlefieldData.BaseSpawn[]{a, b}) {
+            if (spawn == null) {
+                continue;
+            }
+            minX = Math.min(minX, spawn.x());
+            maxX = Math.max(maxX, spawn.x());
+            minZ = Math.min(minZ, spawn.z());
+            maxZ = Math.max(maxZ, spawn.z());
+            maxY = Math.max(maxY, spawn.y());
+        }
+        if (minX == Double.MAX_VALUE) {
+            BattlefieldData.BaseSpawn fallback = data.base(faction);
+            if (fallback != null) {
+                return new BattlefieldData.BaseSpawn(fallback.x(), fallback.y() + 64.0, fallback.z(), 0f, 90f);
+            }
+            return new BattlefieldData.BaseSpawn(0.5, maxY + 64.0, 0.5, 0f, 90f);
+        }
+        double cx = (minX + maxX) * 0.5;
+        double cz = (minZ + maxZ) * 0.5;
+        double span = Math.max(maxX - minX, maxZ - minZ);
+        double height = Math.max(48.0, Math.min(140.0, span * 0.65 + 32.0));
+        return new BattlefieldData.BaseSpawn(cx + 0.5, maxY + height, cz + 0.5, 0f, 90f);
     }
 
     private void deploy(ServerPlayer p, Faction f) {
