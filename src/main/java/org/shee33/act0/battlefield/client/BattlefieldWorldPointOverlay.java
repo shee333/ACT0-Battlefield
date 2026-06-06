@@ -137,10 +137,7 @@ public final class BattlefieldWorldPointOverlay {
         if (faction == 0) {
             return GREY;
         }
-        if (mine != 0) {
-            return faction == mine ? BLUE : RED;
-        }
-        return faction == 1 ? BLUE : RED;
+        return faction == 1 ? RED : BLUE;
     }
 
     private static ResourceLocation pointTexture(ControlPointHudDto point, int mine) {

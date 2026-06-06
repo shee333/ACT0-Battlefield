@@ -18,8 +18,7 @@ import java.util.List;
 /**
  * BF 风格大战场 HUD：顶部票数条 + 据点图标/进度条 + 左下小队队友信息。
  *
- * <p>不使用原版计分板侧边栏，因此不会出现右侧红色数字。颜色按“自己阵营=蓝、敌方=红、中立=灰”渲染，
- * 更贴近战地系列：玩家无论在红队还是蓝队，友军都显示为蓝色、敌军显示为红色。
+ * <p>不使用原版计分板侧边栏，因此不会出现右侧红色数字。颜色固定按阵营渲染：红队=红色，蓝队=蓝色。
  */
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldHudOverlay {
@@ -249,10 +248,7 @@ public final class BattlefieldHudOverlay {
         if (faction == 0) {
             return GREY;
         }
-        if (mine != 0) {
-            return faction == mine ? BLUE : RED;
-        }
-        return faction == 1 ? BLUE : RED;
+        return faction == 1 ? RED : BLUE;
     }
 
     private static int alphaDim(int mine, int faction) {

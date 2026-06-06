@@ -187,10 +187,9 @@ public final class BattlefieldDeployScreen extends Screen {
             int sx = mapX + 14 + (int) Math.round(((p.x() - minX) / spanX) * (MAP_W - 28));
             int sy = mapY + 24 + (int) Math.round(((p.z() - minZ) / spanZ) * (MAP_H - 42));
             boolean deployable = p.deployable();
-            boolean friendly = deployable;
             boolean selected = "point".equals(st.selectedKind()) && p.id().equals(st.selectedTarget());
             boolean hovered = deployable && distanceSq(mouseX, mouseY, sx, sy) <= 100;
-            int color = p.owner() == 0 ? 0xFF9EA7AA : (friendly ? 0xFF57C7FF : 0xFFE7654E);
+            int color = p.owner() == 0 ? 0xFF9EA7AA : (p.owner() == 1 ? 0xFFE7654E : 0xFF57C7FF);
             if (!deployable) {
                 color = (color & 0x00FFFFFF) | 0x99000000;
             }
