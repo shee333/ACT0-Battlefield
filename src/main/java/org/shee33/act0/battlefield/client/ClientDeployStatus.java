@@ -18,6 +18,9 @@ public final class ClientDeployStatus {
     public static void accept(boolean open, DeployStatusDto dto) {
         status = dto;
         Minecraft mc = Minecraft.getInstance();
+        if (!dto.active()) {
+            ClientSquadSpectate.clear();
+        }
         if (mc.screen instanceof BattlefieldDeployScreen screen) {
             screen.onDeployUpdated();
         } else if (open && dto.active()) {

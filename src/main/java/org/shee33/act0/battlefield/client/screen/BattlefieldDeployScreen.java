@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
+import org.shee33.act0.battlefield.client.ClientSquadSpectate;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployPointDto;
@@ -74,9 +75,36 @@ public final class BattlefieldDeployScreen extends Screen {
 
         renderMap(gg, mouseX, mouseY, st);
         renderSideCards(gg, mouseX, mouseY, st);
+        updateSquadSpectate(st);
 
         String hint = ready > 0 ? "§8选择部署点，倒计时结束后部署" : "§7点击地图或右侧部署点重返战场";
         gg.drawString(font, hint, left + (PANEL_W - font.width(hint)) / 2, top + PANEL_H - 22, 0xFFFFFFFF, false);
+
+        renderSpectateFade(gg);
+    }
+
+    /** 根据当前选中的具体小队成员，切换到越肩观战相机。 */
+    private void updateSquadSpectate(DeployStatusDto st) {
+        if (st == null || !"squad".equals(st.selectedKind()) || st.selectedTarget().isBlank()) {
+            ClientSquadSpectate.clear();
+            return;
+        }
+        for (DeploySquadMateDto mate : st.squadMates()) {
+            if (mate.deployable() && mate.id().equals(st.selectedTarget())) {
+                ClientSquadSpectate.focus(mate.entityId());
+                return;
+            }
+        }
+        ClientSquadSpectate.clear();
+    }
+
+    /** 渲染小队成员切换时的淡出淡入黑幕。 */
+    private void renderSpectateFade(GuiGraphics gg) {
+        int alpha = ClientSquadSpectate.fadeAlpha();
+        if (alpha <= 0) {
+            return;
+        }
+        gg.fill(0, 0, width, height, (alpha << 24));
     }
 
     private void renderMap(GuiGraphics gg, int mouseX, int mouseY, DeployStatusDto st) {
@@ -256,6 +284,17 @@ public final class BattlefieldDeployScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public void removed() {
+        ClientSquadSpectate.clear();
+        super.removed();
+    }
+
+    @Override
+    public boolean shouldCloseOnEsc() {
+        return false;
     }
 
     private static void send(DeployActionPacket.DeployKind kind, String targetId) {

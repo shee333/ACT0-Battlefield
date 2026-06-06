@@ -387,7 +387,7 @@ public final class ConquestMatch {
                 continue;
             }
             boolean deployable = !enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS);
-            list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(),
+                list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(), mate.getId(),
                     deployable, mate.getX(), mate.getZ()));
         }
         return list;
