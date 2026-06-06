@@ -29,6 +29,7 @@ public final class ClientSquadSpectate {
         }
         Entity target = mc.level.getEntity(entityId);
         if (target == null) {
+            clear();
             return;
         }
         if (currentEntityId == entityId && mc.getCameraEntity() == target) {

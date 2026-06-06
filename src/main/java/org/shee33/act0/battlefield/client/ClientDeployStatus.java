@@ -20,13 +20,15 @@ public final class ClientDeployStatus {
         Minecraft mc = Minecraft.getInstance();
         if (!dto.active()) {
             ClientSquadSpectate.clear();
+            if (mc.screen instanceof BattlefieldDeployScreen) {
+                mc.setScreen(null);
+            }
+            return;
         }
         if (mc.screen instanceof BattlefieldDeployScreen screen) {
             screen.onDeployUpdated();
-        } else if (open && dto.active()) {
+        } else if (open) {
             mc.setScreen(new BattlefieldDeployScreen());
-        } else if (!dto.active() && mc.screen instanceof BattlefieldDeployScreen) {
-            mc.setScreen(null);
         }
     }
 

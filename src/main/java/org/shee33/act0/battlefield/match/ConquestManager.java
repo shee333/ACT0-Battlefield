@@ -77,7 +77,7 @@ public final class ConquestManager {
             return "§c已有进行中的大战场对局。";
         }
         if (lobby.isEmpty()) {
-            return "§c没有玩家加入（用 /battlefield join 选择阵营）。";
+            return "§c还没有玩家选择阵营。";
         }
         BattlefieldData data = BattlefieldData.get(level);
         List<ControlPointDef> defs = data.points();
@@ -257,6 +257,12 @@ public final class ConquestManager {
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();
         lobby.remove(id);
+    }
+    @SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (active != null && event.getEntity() instanceof ServerPlayer player) {
+            active.onPlayerLogin(player);
+        }
     }
 
     @SubscribeEvent

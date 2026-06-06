@@ -42,7 +42,7 @@ public final class BattleResultScreen extends Screen {
         String title = winnerTitle();
         gg.drawString(font, title, left + (PANEL_W - font.width(title)) / 2, top + 12, 0xFFFFFFFF, false);
 
-        String ticketLine = "§b甲方 " + result.alphaTickets() + " §7- §c" + result.bravoTickets() + " 乙方";
+        String ticketLine = "§c甲方 " + result.alphaTickets() + " §7- §9" + result.bravoTickets() + " 乙方";
         gg.drawString(font, ticketLine, left + (PANEL_W - font.width(ticketLine)) / 2, top + 30, 0xFFFFFFFF, false);
 
         String mine = "§f你的战绩  §a" + result.myKills() + "§7 / §c" + result.myDeaths();
@@ -58,7 +58,7 @@ public final class BattleResultScreen extends Screen {
         int y = top + 102;
         for (int i = 0; i < rows; i++) {
             TabEntryDto e = entries.get(i);
-            int color = e.faction() == 1 ? 0xFF57C7FF : 0xFFE7654E;
+            int color = e.faction() == 1 ? 0xFFE7654E : 0xFF57C7FF;
             String rank = (i + 1) + ".";
             gg.drawString(font, rank, left + 18, y, PixelTheme.TEXT_DIM, false);
             String name = trim(e.name(), 170);

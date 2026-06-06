@@ -64,6 +64,7 @@ public final class ConquestMatch {
     private final Map<UUID, Long> redeployReadyTick = new LinkedHashMap<>();
     private final Map<UUID, String> deploySelection = new LinkedHashMap<>();
     private final Map<UUID, String> deployTarget = new LinkedHashMap<>();
+    private final Map<UUID, GameType> redeployOriginalMode = new LinkedHashMap<>();
     private final Map<UUID, Integer> kills = new LinkedHashMap<>();
     private final Map<UUID, Integer> deaths = new LinkedHashMap<>();
     private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
@@ -283,6 +284,25 @@ public final class ConquestMatch {
         }
         return false;
     }
+    public void onPlayerLogin(ServerPlayer player) {
+        UUID id = player.getUUID();
+        Faction faction = factionOf.get(id);
+        if (faction == null) {
+            return;
+        }
+        if (redeployReadyTick.containsKey(id)) {
+            redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
+            player.setGameMode(GameType.SPECTATOR);
+            player.setInvulnerable(true);
+            player.setDeltaMovement(0.0, 0.0, 0.0);
+            teleportToDeployOverview(player, faction);
+            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
+        } else {
+            player.setInvulnerable(false);
+            BattlefieldNetwork.sendBattleHud(player, buildHudFor(player));
+            BattlefieldNetwork.sendBattleTab(player, buildTabFor(player));
+        }
+    }
 
     private void beginRedeploy(ServerPlayer player, Faction faction) {
         UUID id = player.getUUID();
@@ -291,12 +311,13 @@ public final class ConquestMatch {
         String kind = bestDeployKind(id, faction);
         deploySelection.put(id, kind);
         deployTarget.put(id, bestDeployTarget(id, faction, kind));
+        redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
         player.setGameMode(GameType.SPECTATOR);
         player.setInvulnerable(true);
         player.setDeltaMovement(0.0, 0.0, 0.0);
         teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        player.sendSystemMessage(Component.literal("Redeploy: choose a spawn point on the tactical map."));
+        player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
     }
 
     private void processRedeployTick() {
@@ -320,6 +341,16 @@ public final class ConquestMatch {
         UUID id = player.getUUID();
         Faction faction = factionOf.get(id);
         handleDeployAction(player, kind, faction != null ? bestDeployTarget(id, faction, normalizeDeployKind(kind)) : "");
+    }
+
+    public void refreshDeployStatus(ServerPlayer player) {
+        UUID id = player.getUUID();
+        Faction faction = factionOf.get(id);
+        if (faction != null && redeployReadyTick.containsKey(id)) {
+            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
+        } else {
+            BattlefieldNetwork.sendDeploy(player, false, DeployStatusDto.inactive());
+        }
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
@@ -410,7 +441,7 @@ public final class ConquestMatch {
     }
 
     private String bestDeployKind(UUID id, Faction faction) {
-        if (livingSquadmateSpawn(id) != null) {
+        if (firstDeployableSquadMate(id, faction) != null) {
             return "squad";
         }
         if (firstDeployablePointId(faction) != null) {
@@ -596,17 +627,28 @@ public final class ConquestMatch {
         if (spawn != null) {
             p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
         }
-        redeployReadyTick.remove(id);
-        deploySelection.remove(id);
-        deployTarget.remove(id);
-        p.setGameMode(GameType.ADVENTURE);
-        p.setInvulnerable(false);
+        clearRedeployState(p, false);
         ArcadeLoadoutBridge.apply(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
         protectedUntil.put(id, (long) server.getTickCount() + SPAWN_PROTECTION_TICKS);
-        p.sendSystemMessage(Component.literal("Deployed. Temporary protection active."));
+        p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
+    }
+
+    private void clearRedeployState(ServerPlayer player, boolean restoreOriginalMode) {
+        UUID id = player.getUUID();
+        redeployReadyTick.remove(id);
+        deploySelection.remove(id);
+        deployTarget.remove(id);
+        GameType original = redeployOriginalMode.remove(id);
+        GameType targetMode = restoreOriginalMode && original != null ? original : GameType.ADVENTURE;
+        if (targetMode == GameType.SPECTATOR) {
+            targetMode = GameType.ADVENTURE;
+        }
+        player.setGameMode(targetMode);
+        player.setInvulnerable(false);
+        player.setDeltaMovement(0.0, 0.0, 0.0);
     }
 
     /** Squad respawn point: living squadmate if available. */
@@ -673,6 +715,11 @@ public final class ConquestMatch {
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
+                if (redeployReadyTick.containsKey(e.getKey())) {
+                    clearRedeployState(p, true);
+                } else {
+                    p.setInvulnerable(false);
+                }
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
                 BattlefieldData.BaseSpawn base = data.base(e.getValue());
                 if (base != null) {
@@ -684,6 +731,7 @@ public final class ConquestMatch {
         redeployReadyTick.clear();
         deploySelection.clear();
         deployTarget.clear();
+        redeployOriginalMode.clear();
         protectedUntil.clear();
     }
 
@@ -716,12 +764,18 @@ public final class ConquestMatch {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p != null) {
+                if (redeployReadyTick.containsKey(id)) {
+                    clearRedeployState(p, true);
+                } else {
+                    p.setInvulnerable(false);
+                }
                 BattlefieldNetwork.clearHud(p);
             }
         }
         redeployReadyTick.clear();
         deploySelection.clear();
         deployTarget.clear();
+        redeployOriginalMode.clear();
         protectedUntil.clear();
     }
 

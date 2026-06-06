@@ -52,7 +52,11 @@ public final class DeployActionPacket {
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
             if (player != null && Act0Battlefield.manager().active() != null) {
-                Act0Battlefield.manager().active().handleDeployAction(player, msg.kind.id(), msg.targetId);
+                if (msg.kind == DeployKind.REFRESH) {
+                    Act0Battlefield.manager().active().refreshDeployStatus(player);
+                } else {
+                    Act0Battlefield.manager().active().handleDeployAction(player, msg.kind.id(), msg.targetId);
+                }
             }
         });
         context.setPacketHandled(true);
