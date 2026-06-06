@@ -42,7 +42,7 @@ public final class BattleResultScreen extends Screen {
         String title = winnerTitle();
         gg.drawString(font, title, left + (PANEL_W - font.width(title)) / 2, top + 12, 0xFFFFFFFF, false);
 
-        String ticketLine = "§c红队 " + result.alphaTickets() + " §7- §9" + result.bravoTickets() + " 蓝队";
+        String ticketLine = "§9北大西洋公约 " + result.alphaTickets() + " §7- §c" + result.bravoTickets() + " 无邦军团";
         gg.drawString(font, ticketLine, left + (PANEL_W - font.width(ticketLine)) / 2, top + 30, 0xFFFFFFFF, false);
 
         String mine = "§f你的战绩  §a" + result.myKills() + "§7 / §c" + result.myDeaths();

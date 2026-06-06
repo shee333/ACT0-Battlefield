@@ -97,7 +97,7 @@ public final class ConquestMatch {
         buildSquads();
     }
 
-    /** 按阵营自动分队：每个小队最多 5 人，红队/蓝队各自独立连续编号。 */
+    /** 按阵营自动分队：每个小队最多 5 人，北大西洋公约/无邦军团各自独立连续编号。 */
     private void buildSquads() {
         int alphaSquad = 1;
         int bravoSquad = 101;

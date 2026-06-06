@@ -9,7 +9,7 @@ import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BattlefieldStatusDto;
 
 /**
- * 大战场加入界面：像素风双阵营面板（红队 / 蓝队），点击选边；展示双方人数与（开局后）票数、
+ * 大战场加入界面：像素风双阵营面板（北大西洋公约 / 无邦军团），点击选边；展示双方人数与（开局后）票数、
  * 据点控制数。底部为开局/停止（管理员）/关闭按钮。
  *
  * <p>玩家向界面，遵循极简原则：只显示中文核心信息（阵营名、人数、票数、据点 x/总数），不出现指令提示。
@@ -78,7 +78,7 @@ public final class BattlefieldJoinScreen extends Screen {
         boolean hovered = inRect(mouseX, mouseY, x, factionY, factionW, factionH);
         PixelTheme.factionPanel(gg, x, factionY, factionW, factionH, accent, selected, hovered);
 
-        String name = alpha ? "§c红队" : "§9蓝队";
+        String name = alpha ? "§9北大西洋公约" : "§c无邦军团";
         int cx = x + factionW / 2;
         gg.drawString(this.font, name, cx - this.font.width(name) / 2, factionY + 10, 0xFFFFFFFF, false);
 

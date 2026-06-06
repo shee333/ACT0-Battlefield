@@ -9,13 +9,13 @@ import net.minecraft.network.FriendlyByteBuf;
  *
  * @param active       是否有进行中的对局
  * @param canManage    接收者是否可管理（OP，可开局/停止）
- * @param myFaction    接收者所属阵营：0=未加入，1=红队，2=蓝队
- * @param alphaCount   红队人数（候选名单或对局参战）
- * @param bravoCount   蓝队人数
- * @param alphaTickets 红队票数（仅 active 时有意义）
- * @param bravoTickets 蓝队票数
- * @param alphaPoints  红队控制据点数
- * @param bravoPoints  蓝队控制据点数
+ * @param myFaction    接收者所属阵营：0=未加入，1=北大西洋公约，2=无邦军团
+ * @param alphaCount   北大西洋公约人数（候选名单或对局参战）
+ * @param bravoCount   无邦军团人数
+ * @param alphaTickets 北大西洋公约票数（仅 active 时有意义）
+ * @param bravoTickets 无邦军团票数
+ * @param alphaPoints  北大西洋公约控制据点数
+ * @param bravoPoints  无邦军团控制据点数
  * @param totalPoints  据点总数
  */
 public record BattlefieldStatusDto(
