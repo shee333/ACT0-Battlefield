@@ -162,13 +162,12 @@ public final class ConquestManager {
     }
 
     private void openArcadeLoadout(ServerPlayer player) {
-        if (active != null && active.factionOf(player.getUUID()) != null && !active.canChangeLoadout(player.getUUID())) {
-            player.displayClientMessage(Component.literal("§c战斗中无法更换配装"), true);
+        if (active == null || active.factionOf(player.getUUID()) == null) {
             return;
         }
         try {
             Class<?> network = Class.forName("org.shee33.act0.arcade.network.ArcadeNetwork");
-            network.getMethod("openLoadout", ServerPlayer.class).invoke(null, player);
+            network.getMethod("openLoadoutSelector", ServerPlayer.class).invoke(null, player);
         } catch (ReflectiveOperationException e) {
             player.displayClientMessage(Component.literal("§c未安装 ACT0-Arcade，无法打开配装"), true);
         }
