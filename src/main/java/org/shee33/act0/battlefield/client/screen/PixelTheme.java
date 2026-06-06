@@ -5,7 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 /**
  * 大战场像素风主题：军事配色 + 程序化九宫格面板，<b>不依赖任何贴图</b>，避免缺图渲染失败。
  *
- * <p>沿用街机界面同款斜角面板风格，但偏冷峻军绿/钢灰；两阵营各有专属强调色（甲方红 / 乙方蓝）。
+ * <p>沿用街机界面同款斜角面板风格，但偏冷峻军绿/钢灰；两阵营各有专属强调色（红队 / 蓝队）。
  */
 public final class PixelTheme {
 
@@ -22,9 +22,9 @@ public final class PixelTheme {
     /** 次文本。 */
     public static final int TEXT_DIM = 0xFF8A8F88;
 
-    /** 甲方强调色（红）。 */
+    /** 红队强调色。 */
     public static final int ALPHA_COLOR = 0xFFC0504D;
-    /** 乙方强调色（蓝）。 */
+    /** 蓝队强调色。 */
     public static final int BRAVO_COLOR = 0xFF4A7AB5;
 
     private PixelTheme() {

@@ -61,8 +61,8 @@ public final class CapturePoint {
     /**
      * 推进一次争夺并返回本次状态。
      *
-     * @param alphaInZone 甲方在区域内人数
-     * @param bravoInZone 乙方在区域内人数
+    * @param alphaInZone 红队在区域内人数
+    * @param bravoInZone 蓝队在区域内人数
      * @param rules       规则（占点速度）
      * @param deltaSeconds 距上次推进的秒数
      */

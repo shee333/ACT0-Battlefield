@@ -28,8 +28,8 @@ public final class TicketPool {
     /**
      * 按当前据点控制数流失票数。
      *
-     * @param alphaPoints  甲方控制的据点数
-     * @param bravoPoints  乙方控制的据点数
+    * @param alphaPoints  红队控制的据点数
+    * @param bravoPoints  蓝队控制的据点数
      * @param rules        规则（流失速率）
      * @param deltaSeconds 经过的秒数
      */
@@ -68,7 +68,7 @@ public final class TicketPool {
     }
 
     /**
-     * 当前胜者：某方票数归零则对方胜；若同刻双方都归零，按剩余票数（都为 0 则甲方，极端边界）判，
+    * 当前胜者：某方票数归零则对方胜；若同刻双方都归零，按剩余票数（都为 0 则红队，极端边界）判，
      * 一般不会发生。返回 {@code null} 表示尚未分出胜负。
      */
     public Faction winner() {

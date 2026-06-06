@@ -7,10 +7,10 @@ package org.shee33.act0.battlefield.core;
  */
 public enum Faction {
 
-    /** 甲方（进攻/红队）。 */
-    ALPHA("甲方", "§c"),
-    /** 乙方（防守/蓝队）。 */
-    BRAVO("乙方", "§9");
+    /** 红队。 */
+    ALPHA("红队", "§c"),
+    /** 蓝队。 */
+    BRAVO("蓝队", "§9");
 
     private final String displayName;
     private final String colorCode;
@@ -29,7 +29,7 @@ public enum Faction {
         return colorCode;
     }
 
-    /** 着色后的显示名，如 {@code §c甲方}。 */
+    /** 着色后的显示名，如 {@code §c红队}。 */
     public String coloredName() {
         return colorCode + displayName;
     }

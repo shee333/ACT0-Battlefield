@@ -62,8 +62,8 @@ public final class BattlefieldTabOverlay {
         String tickets = "§b" + tab.alphaTickets() + " §7- §c" + tab.bravoTickets();
         gg.drawString(font, tickets, x + w / 2 - font.width(tickets) / 2, y + 12, WHITE, false);
 
-        renderTeam(gg, font, x, y + 30, colW, "甲方", BLUE, tab.alpha(), tab.myFaction() == 1);
-        renderTeam(gg, font, x + colW + colGap, y + 30, colW, "乙方", RED, tab.bravo(), tab.myFaction() == 2);
+        renderTeam(gg, font, x, y + 30, colW, "红队", BLUE, tab.alpha(), tab.myFaction() == 1);
+        renderTeam(gg, font, x + colW + colGap, y + 30, colW, "蓝队", RED, tab.bravo(), tab.myFaction() == 2);
     }
 
     private static void renderTeam(GuiGraphics gg, Font font, int x, int y, int w, String name, int color,
