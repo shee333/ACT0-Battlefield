@@ -145,6 +145,10 @@ public final class ConquestManager {
                 openFor(player);
                 return;
             }
+            case OPEN_LOADOUT -> {
+                openArcadeLoadout(player);
+                return;
+            }
             case REFRESH -> {
             }
         }
@@ -155,6 +159,19 @@ public final class ConquestManager {
     /** 主动为玩家打开加入界面。 */
     public void openFor(ServerPlayer player) {
         BattlefieldNetwork.sendStatus(player, true, snapshotFor(player));
+    }
+
+    private void openArcadeLoadout(ServerPlayer player) {
+        if (active != null && active.factionOf(player.getUUID()) != null && !active.canChangeLoadout(player.getUUID())) {
+            player.displayClientMessage(Component.literal("§c战斗中无法更换配装"), true);
+            return;
+        }
+        try {
+            Class<?> network = Class.forName("org.shee33.act0.arcade.network.ArcadeNetwork");
+            network.getMethod("openLoadout", ServerPlayer.class).invoke(null, player);
+        } catch (ReflectiveOperationException e) {
+            player.displayClientMessage(Component.literal("§c未安装 ACT0-Arcade，无法打开配装"), true);
+        }
     }
 
     /** 为某玩家构建一份状态快照。 */

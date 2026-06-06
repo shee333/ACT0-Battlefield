@@ -11,12 +11,13 @@ import java.util.function.Supplier;
 /**
  * C→S：加入界面的玩家操作。{@link Action#JOIN_ALPHA}/{@link Action#JOIN_BRAVO} 选边、
  * {@link Action#LEAVE} 退出候选名单、{@link Action#START}/{@link Action#STOP} 开局/停止（仅 OP）、
- * {@link Action#OPEN} 请求服务端打开 GUI、{@link Action#REFRESH} 请求刷新。处理后回推最新状态。
+ * {@link Action#OPEN} 请求服务端打开 GUI、{@link Action#OPEN_LOADOUT} 请求打开 Arcade 配装、
+ * {@link Action#REFRESH} 请求刷新。处理后回推最新状态。
  */
 public final class ActionPacket {
 
     public enum Action {
-        JOIN_ALPHA, JOIN_BRAVO, LEAVE, START, STOP, OPEN, REFRESH
+        JOIN_ALPHA, JOIN_BRAVO, LEAVE, START, STOP, OPEN, OPEN_LOADOUT, REFRESH
     }
 
     private final Action action;

@@ -984,6 +984,10 @@ public final class ConquestMatch {
         return factionOf.get(id);
     }
 
+    public boolean canChangeLoadout(UUID id) {
+        return factionOf.containsKey(id) && redeployReadyTick.containsKey(id);
+    }
+
     @Nullable
     public Faction winner() {
         return winner;

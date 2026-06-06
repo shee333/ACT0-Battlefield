@@ -28,7 +28,7 @@ public final class BattlefieldClientInput {
             return;
         }
         while (BattlefieldKeyMappings.OPEN_MENU.consumeClick()) {
-            BattlefieldNetwork.CHANNEL.sendToServer(new ActionPacket(ActionPacket.Action.OPEN));
+            BattlefieldNetwork.CHANNEL.sendToServer(new ActionPacket(ActionPacket.Action.OPEN_LOADOUT));
         }
     }
 }
