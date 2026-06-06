@@ -16,6 +16,7 @@ import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
 import org.shee33.act0.battlefield.network.BattleHudDto;
+import org.shee33.act0.battlefield.network.BattleResultDto;
 import org.shee33.act0.battlefield.network.BattleTabDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
@@ -624,6 +625,7 @@ public final class ConquestMatch {
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
+                BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
                 BattlefieldData.BaseSpawn base = data.base(e.getValue());
                 if (base != null) {
                     p.teleportTo(level, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
@@ -635,6 +637,26 @@ public final class ConquestMatch {
         deploySelection.clear();
         deployTarget.clear();
         protectedUntil.clear();
+    }
+
+    private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
+        List<TabEntryDto> entries = new ArrayList<>();
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            UUID id = e.getKey();
+            ServerPlayer p = player(id);
+            String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
+            int ping = p != null ? p.latency : -1;
+            entries.add(new TabEntryDto(name, factionCode(e.getValue()),
+                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, p == null ? 2 : 0));
+        }
+        entries.sort(Comparator
+                .comparingInt(TabEntryDto::kills).reversed()
+                .thenComparingInt(TabEntryDto::deaths)
+                .thenComparing(TabEntryDto::name));
+        UUID viewerId = viewer.getUUID();
+        return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
+                tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
+                kills.getOrDefault(viewerId, 0), deaths.getOrDefault(viewerId, 0), entries);
     }
 
     /** 强制中止（服务器关闭/管理员停止）。 */

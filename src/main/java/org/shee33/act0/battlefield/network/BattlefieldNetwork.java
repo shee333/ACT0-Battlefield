@@ -47,6 +47,8 @@ public final class BattlefieldNetwork {
             KillFeedPacket::encode, KillFeedPacket::decode, KillFeedPacket::handle);
         CHANNEL.registerMessage(id++, SyncBattleTabPacket.class,
             SyncBattleTabPacket::encode, SyncBattleTabPacket::decode, SyncBattleTabPacket::handle);
+        CHANNEL.registerMessage(id++, SyncBattleResultPacket.class,
+            SyncBattleResultPacket::encode, SyncBattleResultPacket::decode, SyncBattleResultPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -82,6 +84,11 @@ public final class BattlefieldNetwork {
     /** 向玩家推送自定义 TAB 战绩面板。 */
     public static void sendBattleTab(ServerPlayer player, BattleTabDto tab) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleTabPacket(true, tab));
+    }
+
+    /** 向玩家推送战报界面。 */
+    public static void sendBattleResult(ServerPlayer player, BattleResultDto result) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleResultPacket(result));
     }
 
     /**
