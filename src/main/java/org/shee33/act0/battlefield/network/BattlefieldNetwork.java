@@ -60,7 +60,7 @@ public final class BattlefieldNetwork {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleHudPacket(false, null));
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleTabPacket(false, null));
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                new SyncDeployPacket(false, new DeployStatusDto(false, false, false, false, "", 0)));
+                new SyncDeployPacket(false, DeployStatusDto.inactive()));
     }
 
     /** 向玩家推送 BF 风格 HUD 快照（顶部票数/据点进度/小队）。 */

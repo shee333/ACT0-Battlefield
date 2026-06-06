@@ -3,12 +3,10 @@ package org.shee33.act0.battlefield.client.screen;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import org.shee33.act0.battlefield.client.ClientBattleHud;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
-import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
-import org.shee33.act0.battlefield.network.ControlPointHudDto;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
+import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 
 import java.util.ArrayList;
@@ -63,7 +61,6 @@ public final class BattlefieldDeployScreen extends Screen {
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         renderBackground(gg);
         DeployStatusDto st = ClientDeployStatus.status();
-        BattleHudDto hud = ClientBattleHud.hud();
         targets.clear();
 
         PixelTheme.panel(gg, left, top, PANEL_W, PANEL_H);
@@ -74,20 +71,20 @@ public final class BattlefieldDeployScreen extends Screen {
         String timer = ready > 0 ? "§7可部署倒计时 §f" + ((ready + 19) / 20) + " 秒" : "§a可以部署";
         gg.drawString(font, timer, left + (PANEL_W - font.width(timer)) / 2, top + 24, 0xFFFFFFFF, false);
 
-        renderMap(gg, mouseX, mouseY, st, hud);
+        renderMap(gg, mouseX, mouseY, st);
         renderSideCards(gg, mouseX, mouseY, st);
 
         String hint = ready > 0 ? "§8选择部署点，倒计时结束后部署" : "§7点击地图或右侧部署点重返战场";
         gg.drawString(font, hint, left + (PANEL_W - font.width(hint)) / 2, top + PANEL_H - 22, 0xFFFFFFFF, false);
     }
 
-    private void renderMap(GuiGraphics gg, int mouseX, int mouseY, DeployStatusDto st, BattleHudDto hud) {
+    private void renderMap(GuiGraphics gg, int mouseX, int mouseY, DeployStatusDto st) {
         gg.fill(mapX, mapY, mapX + MAP_W, mapY + MAP_H, 0xAA05080A);
         gg.fill(mapX, mapY, mapX + MAP_W, mapY + 1, PixelTheme.BEVEL_LIGHT);
         gg.fill(mapX, mapY + MAP_H - 1, mapX + MAP_W, mapY + MAP_H, PixelTheme.BEVEL_SHADOW);
         gg.drawString(font, "战术部署图", mapX + 8, mapY + 7, PixelTheme.TEXT_DIM, false);
 
-        if (hud == null || hud.points().isEmpty()) {
+        if (st == null || st.points().isEmpty()) {
             String empty = "等待据点数据";
             gg.drawString(font, empty, mapX + MAP_W / 2 - font.width(empty) / 2, mapY + MAP_H / 2, PixelTheme.TEXT_DIM, false);
             return;
@@ -95,11 +92,22 @@ public final class BattlefieldDeployScreen extends Screen {
 
         double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE;
         double minZ = Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
-        for (ControlPointHudDto p : hud.points()) {
+        if (st.canBase()) {
+            minX = Math.min(minX, st.baseX()); maxX = Math.max(maxX, st.baseX());
+            minZ = Math.min(minZ, st.baseZ()); maxZ = Math.max(maxZ, st.baseZ());
+        }
+        if (st.canSquad()) {
+            minX = Math.min(minX, st.squadX()); maxX = Math.max(maxX, st.squadX());
+            minZ = Math.min(minZ, st.squadZ()); maxZ = Math.max(maxZ, st.squadZ());
+        }
+        for (DeployPointDto p : st.points()) {
             minX = Math.min(minX, p.x());
             maxX = Math.max(maxX, p.x());
             minZ = Math.min(minZ, p.z());
             maxZ = Math.max(maxZ, p.z());
+        }
+        if (minX == Double.MAX_VALUE) {
+            minX = -1; maxX = 1; minZ = -1; maxZ = 1;
         }
         double pad = 24;
         minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
@@ -114,12 +122,27 @@ public final class BattlefieldDeployScreen extends Screen {
             gg.fill(mapX + 8, gy, mapX + MAP_W - 8, gy + 1, 0x223A4A54);
         }
 
-        for (ControlPointHudDto p : hud.points()) {
+        if (st.canBase()) {
+            int bx = mapX + 14 + (int) Math.round(((st.baseX() - minX) / spanX) * (MAP_W - 28));
+            int by = mapY + 24 + (int) Math.round(((st.baseZ() - minZ) / spanZ) * (MAP_H - 42));
+            boolean selected = "base".equals(st.selectedKind());
+            renderBaseIcon(gg, bx, by, selected);
+            targets.add(new ClickTarget(bx - 12, by - 12, 24, 24, DeployActionPacket.DeployKind.BASE, ""));
+        }
+        if (st.canSquad()) {
+            int qx = mapX + 14 + (int) Math.round(((st.squadX() - minX) / spanX) * (MAP_W - 28));
+            int qy = mapY + 24 + (int) Math.round(((st.squadZ() - minZ) / spanZ) * (MAP_H - 42));
+            boolean selected = "squad".equals(st.selectedKind());
+            renderSquadIcon(gg, qx, qy, selected);
+            targets.add(new ClickTarget(qx - 12, qy - 12, 24, 24, DeployActionPacket.DeployKind.SQUAD, ""));
+        }
+
+        for (DeployPointDto p : st.points()) {
             int sx = mapX + 14 + (int) Math.round(((p.x() - minX) / spanX) * (MAP_W - 28));
             int sy = mapY + 24 + (int) Math.round(((p.z() - minZ) / spanZ) * (MAP_H - 42));
-            boolean friendly = p.owner() == hud.myFaction();
-            boolean deployable = st != null && st.canPoint() && friendly;
-            boolean selected = st != null && "point".equals(st.selectedKind());
+            boolean deployable = p.deployable();
+            boolean friendly = deployable;
+            boolean selected = "point".equals(st.selectedKind()) && p.id().equals(st.selectedTarget());
             boolean hovered = deployable && distanceSq(mouseX, mouseY, sx, sy) <= 100;
             int color = p.owner() == 0 ? 0xFF9EA7AA : (friendly ? 0xFF57C7FF : 0xFFE7654E);
             if (!deployable) {
@@ -127,9 +150,25 @@ public final class BattlefieldDeployScreen extends Screen {
             }
             renderPointIcon(gg, sx, sy, color, hovered || (selected && deployable), p.name());
             if (deployable) {
-                targets.add(new ClickTarget(sx - 10, sy - 10, 20, 20, DeployActionPacket.DeployKind.POINT));
+                targets.add(new ClickTarget(sx - 10, sy - 10, 20, 20, DeployActionPacket.DeployKind.POINT, p.id()));
             }
         }
+    }
+
+    private void renderBaseIcon(GuiGraphics gg, int cx, int cy, boolean selected) {
+        int color = selected ? 0xFF9DFF9D : 0xFF57C7FF;
+        gg.fill(cx - 8, cy - 8, cx + 9, cy + 9, 0xAA000000);
+        gg.fill(cx - 6, cy - 6, cx + 7, cy + 7, color);
+        gg.fill(cx - 3, cy - 3, cx + 4, cy + 4, 0xAA000000);
+        gg.drawString(font, "H", cx - font.width("H") / 2, cy - 4, 0xFFFFFFFF, true);
+    }
+
+    private void renderSquadIcon(GuiGraphics gg, int cx, int cy, boolean selected) {
+        int color = selected ? 0xFF9DFF9D : 0xFF57C7FF;
+        gg.fill(cx - 7, cy - 7, cx + 8, cy + 8, 0xAA000000);
+        gg.fill(cx - 1, cy - 8, cx + 2, cy + 9, color);
+        gg.fill(cx - 8, cy - 1, cx + 9, cy + 2, color);
+        gg.drawString(font, "S", cx - font.width("S") / 2, cy - 4, 0xFFFFFFFF, true);
     }
 
     private void renderPointIcon(GuiGraphics gg, int cx, int cy, int color, boolean selected, String label) {
@@ -161,7 +200,7 @@ public final class BattlefieldDeployScreen extends Screen {
         gg.drawString(font, t, x + (w - font.width(t)) / 2, y + 17, 0xFFFFFFFF, false);
         gg.drawString(font, s, x + (w - font.width(s)) / 2, y + 31, 0xFFFFFFFF, false);
         if (enabled) {
-            targets.add(new ClickTarget(x, y, w, h, kind));
+            targets.add(new ClickTarget(x, y, w, h, kind, ""));
         }
     }
 
@@ -170,7 +209,7 @@ public final class BattlefieldDeployScreen extends Screen {
         if (button == 0) {
             for (ClickTarget t : targets) {
                 if (inRect((int) mouseX, (int) mouseY, t.x(), t.y(), t.w(), t.h())) {
-                    send(t.kind());
+                    send(t.kind(), t.targetId());
                     return true;
                 }
             }
@@ -178,8 +217,8 @@ public final class BattlefieldDeployScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    private static void send(DeployActionPacket.DeployKind kind) {
-        BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(kind));
+    private static void send(DeployActionPacket.DeployKind kind, String targetId) {
+        BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(kind, targetId));
     }
 
     private static boolean inRect(int mx, int my, int x, int y, int w, int h) {
@@ -192,7 +231,7 @@ public final class BattlefieldDeployScreen extends Screen {
         return dx * dx + dy * dy;
     }
 
-    private record ClickTarget(int x, int y, int w, int h, DeployActionPacket.DeployKind kind) {
+    private record ClickTarget(int x, int y, int w, int h, DeployActionPacket.DeployKind kind, String targetId) {
     }
 
     @Override
