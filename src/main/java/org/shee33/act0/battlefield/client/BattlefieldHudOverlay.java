@@ -79,25 +79,33 @@ public final class BattlefieldHudOverlay {
 
         // 左票数 + 左进度条（BlockFront 扁平条资产）
         String alphaText = "[ " + hud.alphaTickets() + " ]";
-        int leftTextX = center - 154;
-        gg.drawString(font, alphaText, leftTextX, top + 2, alphaColor, false);
-        drawTexturedScoreBar(gg, center - 92, top + 4, hud.alphaTickets(), max, true,
+        int leftTextX = center - 184;
+        drawScaledText(gg, font, alphaText, leftTextX, top + 1, alphaColor, 1.2f);
+        drawTexturedScoreBar(gg, center - 118, top + 4, hud.alphaTickets(), max, true,
             scoreTexture(1, hud.myFaction()));
 
         // 右票数 + 右进度条（BlockFront 扁平条资产）
-        drawTexturedScoreBar(gg, center + 34, top + 4, hud.bravoTickets(), max, false,
+        drawTexturedScoreBar(gg, center + 44, top + 4, hud.bravoTickets(), max, false,
             scoreTexture(2, hud.myFaction()));
         String bravoText = "[ " + hud.bravoTickets() + " ]";
-        gg.drawString(font, bravoText, center + 104, top + 2, bravoColor, false);
+        drawScaledText(gg, font, bravoText, center + 128, top + 1, bravoColor, 1.2f);
 
         // 中央据点图标（A/B/C...）
-        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 23);
+        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28);
+    }
+
+    private static void drawScaledText(GuiGraphics gg, Font font, String text, int x, int y, int color, float scale) {
+        gg.pose().pushPose();
+        gg.pose().translate(x, y, 0);
+        gg.pose().scale(scale, scale, 1.0f);
+        gg.drawString(font, text, 0, 0, color, false);
+        gg.pose().popPose();
     }
 
     private static void drawTexturedScoreBar(GuiGraphics gg, int x, int y, int value, int max,
                                              boolean fromRight, ResourceLocation fillTex) {
-        int w = 58;
-        int h = 9;
+        int w = 74;
+        int h = 12;
         gg.blit(SCORE_BG, x, y, 0, 0, w, h, w, h);
         int fill = Math.max(0, Math.min(w, Math.round(w * (value / (float) max))));
         if (fill <= 0) {

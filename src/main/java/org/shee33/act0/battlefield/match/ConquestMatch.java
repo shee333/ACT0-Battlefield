@@ -75,6 +75,7 @@ public final class ConquestMatch {
     private Faction winner;
     private int captureAccum;
     private int hudAccum;
+    private long startedTick;
 
     public ConquestMatch(ServerLevel level, ConquestRules rules,
                          List<ControlPointDef> defs, Map<UUID, Faction> roster,
@@ -99,6 +100,8 @@ public final class ConquestMatch {
 
     /** 按阵营自动分队：每个小队最多 5 人，北大西洋公约/无邦军团各自独立连续编号。 */
     private void buildSquads() {
+        squadOf.clear();
+        squads.clear();
         int alphaSquad = 1;
         int bravoSquad = 101;
         int alphaCount = 0;
@@ -125,6 +128,7 @@ public final class ConquestMatch {
 
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {
+        startedTick = server.getTickCount();
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
@@ -134,6 +138,21 @@ public final class ConquestMatch {
             }
         }
         broadcastHud();
+    }
+
+    public boolean addLatecomer(ServerPlayer player, Faction faction) {
+        UUID id = player.getUUID();
+        if (ended || faction == null || factionOf.containsKey(id)) {
+            return false;
+        }
+        factionOf.put(id, faction);
+        kills.put(id, 0);
+        deaths.put(id, 0);
+        buildSquads();
+        beginRedeploy(player, faction);
+        broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
+        broadcastHud();
+        return true;
     }
 
     // ---- 每刻 ----
@@ -566,7 +585,7 @@ public final class ConquestMatch {
 
     private void teleportToDeployOverview(ServerPlayer player, Faction faction) {
         BattlefieldData.BaseSpawn view = deployOverviewSpawn(faction);
-        player.connection.teleport(view.x(), view.y(), view.z(), view.yaw(), view.pitch());
+        player.teleportTo(level, view.x(), view.y(), view.z(), view.yaw(), view.pitch());
         player.setDeltaMovement(0.0, 0.0, 0.0);
     }
 
@@ -979,6 +998,27 @@ public final class ConquestMatch {
 
     public boolean contains(UUID id) {
         return factionOf.containsKey(id);
+    }
+
+    public int totalMembers() {
+        return factionOf.size();
+    }
+
+    public int capacityHint() {
+        return 64;
+    }
+
+    public int elapsedSeconds() {
+        return (int) Math.max(0L, (server.getTickCount() - startedTick) / 20L);
+    }
+
+    public String participantNames() {
+        List<String> names = new ArrayList<>();
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            names.add(p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8));
+        }
+        return String.join(", ", names);
     }
 
     /** 某玩家所属阵营；不在对局内返回 {@code null}。 */

@@ -4,6 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.match.ConquestMatch;
 
 import java.util.function.Supplier;
 
@@ -51,11 +52,12 @@ public final class DeployActionPacket {
         NetworkEvent.Context context = ctx.get();
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
-            if (player != null && Act0Battlefield.manager().active() != null) {
+            ConquestMatch match = player != null ? Act0Battlefield.manager().activeContaining(player.getUUID()) : null;
+            if (player != null && match != null) {
                 if (msg.kind == DeployKind.REFRESH) {
-                    Act0Battlefield.manager().active().refreshDeployStatus(player);
+                    match.refreshDeployStatus(player);
                 } else {
-                    Act0Battlefield.manager().active().handleDeployAction(player, msg.kind.id(), msg.targetId);
+                    match.handleDeployAction(player, msg.kind.id(), msg.targetId);
                 }
             }
         });

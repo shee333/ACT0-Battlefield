@@ -38,6 +38,9 @@ public final class BattlefieldCommand {
                 .then(Commands.literal("join")
                         .then(Commands.literal("alpha").executes(c -> join(c, Faction.ALPHA)))
                         .then(Commands.literal("bravo").executes(c -> join(c, Faction.BRAVO))))
+                .then(Commands.literal("quickjoin")
+                    .then(Commands.argument("battle", StringArgumentType.string())
+                        .executes(BattlefieldCommand::quickJoin)))
                 .then(Commands.literal("leave").executes(BattlefieldCommand::leave))
                 .then(Commands.literal("squad").executes(BattlefieldCommand::squadInfo))
                 .then(Commands.literal("status").executes(BattlefieldCommand::status))
@@ -104,9 +107,15 @@ public final class BattlefieldCommand {
         return 1;
     }
 
+    private static int quickJoin(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        Act0Battlefield.manager().quickJoin(player, StringArgumentType.getString(c, "battle"));
+        return 1;
+    }
+
     private static int squadInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         ServerPlayer player = c.getSource().getPlayerOrException();
-        ConquestMatch match = Act0Battlefield.manager().active();
+        ConquestMatch match = Act0Battlefield.manager().activeContaining(player.getUUID());
         if (match == null || !match.contains(player.getUUID())) {
             feedback(c, "§7当前未加入进行中的小队。");
             return 1;
@@ -248,7 +257,12 @@ public final class BattlefieldCommand {
     }
 
     private static int stop(CommandContext<CommandSourceStack> c) {
-        boolean stopped = Act0Battlefield.manager().stop();
+        boolean stopped;
+        try {
+            stopped = Act0Battlefield.manager().stop(c.getSource().getPlayerOrException().serverLevel());
+        } catch (CommandSyntaxException e) {
+            stopped = false;
+        }
         feedback(c, stopped ? "§7已停止当前大战场对局。" : "§7当前没有进行中的对局。");
         return 1;
     }
@@ -257,10 +271,18 @@ public final class BattlefieldCommand {
 
     private static int status(CommandContext<CommandSourceStack> c) {
         ConquestManager mgr = Act0Battlefield.manager();
-        if (mgr.hasActive()) {
+        try {
+            if (mgr.activeFor(c.getSource().getPlayerOrException().serverLevel()) != null) {
+                feedback(c, "§a当前世界大战场进行中。");
+            } else {
+                feedback(c, "§7当前世界空闲中。候选名单：" + mgr.lobby().size() + " 人。 ");
+            }
+        } catch (CommandSyntaxException e) {
+            if (mgr.hasActive()) {
             feedback(c, "§a大战场进行中。");
-        } else {
+            } else {
             feedback(c, "§7空闲中。候选名单：" + mgr.lobby().size() + " 人。");
+            }
         }
         return 1;
     }

@@ -3,8 +3,10 @@ package org.shee33.act0.battlefield.match;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -22,48 +24,128 @@ import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BattlefieldStatusDto;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 征服对局管理器：维护一个候选名单（lobby）与至多一场进行中的 {@link ConquestMatch}，
+ * 征服对局管理器：按世界维护候选名单（lobby）与进行中的 {@link ConquestMatch}，
  * 把 Forge 事件（服务器刻、死亡、注册命令、玩家登出、服务器关闭）路由到对局。
  *
- * <p>注册到 Forge 事件总线（{@code MinecraftForge.EVENT_BUS.register(manager)}）。MVP 阶段同一时间
- * 只支持一场对局。
+ * <p>注册到 Forge 事件总线（{@code MinecraftForge.EVENT_BUS.register(manager)}）。同一时间可在不同世界开多场。
  */
 public final class ConquestManager {
 
-    /** 候选名单：玩家 → 阵营，开局时转入对局。 */
-    private final Map<UUID, Faction> lobby = new LinkedHashMap<>();
+    /** 每个世界的候选名单：玩家 → 阵营，开局时转入该世界对局。 */
+    private final Map<ResourceKey<Level>, Map<UUID, Faction>> lobbies = new LinkedHashMap<>();
 
-    @Nullable
-    private ConquestMatch active;
+    /** 每个世界最多一场进行中的对局。 */
+    private final Map<ResourceKey<Level>, ConquestMatch> activeByWorld = new LinkedHashMap<>();
 
     // ---- 候选名单 ----
 
     public void join(ServerPlayer player, Faction faction) {
-        lobby.put(player.getUUID(), faction);
+        lobbyFor(player.serverLevel()).put(player.getUUID(), faction);
         broadcastStatus(player.getServer());
     }
 
     public void leaveLobby(UUID id) {
-        lobby.remove(id);
+        for (Map<UUID, Faction> lobby : lobbies.values()) {
+            lobby.remove(id);
+        }
     }
 
     public Map<UUID, Faction> lobby() {
-        return lobby;
+        Map<UUID, Faction> all = new LinkedHashMap<>();
+        for (Map<UUID, Faction> lobby : lobbies.values()) {
+            all.putAll(lobby);
+        }
+        return all;
     }
 
     public boolean hasActive() {
-        return active != null && !active.isEnded();
+        return activeByWorld.values().stream().anyMatch(m -> !m.isEnded());
     }
 
     @Nullable
     public ConquestMatch active() {
-        return active;
+        return activeByWorld.values().stream().filter(m -> !m.isEnded()).findFirst().orElse(null);
+    }
+
+    @Nullable
+    public ConquestMatch activeFor(ServerLevel level) {
+        ConquestMatch match = activeByWorld.get(level.dimension());
+        return match != null && !match.isEnded() ? match : null;
+    }
+
+    @Nullable
+    public ConquestMatch activeContaining(UUID playerId) {
+        for (ConquestMatch match : activeByWorld.values()) {
+            if (!match.isEnded() && match.contains(playerId)) {
+                return match;
+            }
+        }
+        return null;
+    }
+
+    /** 供 ACT0-Arcade 游戏浏览器反射读取的大战场对局行。 */
+    public List<String[]> browserRows(ServerPlayer viewer) {
+        List<String[]> rows = new ArrayList<>();
+        for (Map.Entry<ResourceKey<Level>, ConquestMatch> e : activeByWorld.entrySet()) {
+            ConquestMatch match = e.getValue();
+            if (match.isEnded()) {
+                continue;
+            }
+            rows.add(new String[]{
+                    "bf@" + e.getKey().location(),
+                    "大战场 · 征服",
+                    e.getKey().location().toString(),
+                    "-",
+                    Integer.toString(match.totalMembers()),
+                    Integer.toString(match.capacityHint()),
+                    "进行中",
+                    Boolean.toString(match.contains(viewer.getUUID())),
+                    "true",
+                    match.participantNames(),
+                    Integer.toString(match.elapsedSeconds())
+            });
+        }
+        return rows;
+    }
+
+    public void quickJoin(ServerPlayer player, String key) {
+        ResourceKey<Level> levelKey = null;
+        if (key != null && key.startsWith("bf@")) {
+            String raw = key.substring(3);
+            for (ResourceKey<Level> candidate : activeByWorld.keySet()) {
+                if (candidate.location().toString().equals(raw)) {
+                    levelKey = candidate;
+                    break;
+                }
+            }
+        }
+        ConquestMatch match = levelKey != null ? activeByWorld.get(levelKey) : activeFor(player.serverLevel());
+        if (match == null || match.isEnded()) {
+            player.displayClientMessage(Component.literal("§c该大战场已结束"), true);
+            return;
+        }
+        if (match.contains(player.getUUID())) {
+            player.displayClientMessage(Component.literal("§e你已在该大战场中"), true);
+            return;
+        }
+        Faction faction = match.memberCount(Faction.ALPHA) <= match.memberCount(Faction.BRAVO)
+                ? Faction.ALPHA : Faction.BRAVO;
+        if (match.addLatecomer(player, faction)) {
+            player.displayClientMessage(Component.literal("§a已加入 " + faction.coloredName()), true);
+        } else {
+            player.displayClientMessage(Component.literal("§c无法加入该大战场"), true);
+        }
+    }
+
+    private Map<UUID, Faction> lobbyFor(ServerLevel level) {
+        return lobbies.computeIfAbsent(level.dimension(), ignored -> new LinkedHashMap<>());
     }
 
     /**
@@ -73,9 +155,10 @@ public final class ConquestManager {
      */
     @Nullable
     public String start(ServerLevel level, ConquestRules rules) {
-        if (hasActive()) {
-            return "§c已有进行中的大战场对局。";
+        if (activeFor(level) != null) {
+            return "§c该世界已有进行中的大战场对局。";
         }
+        Map<UUID, Faction> lobby = lobbyFor(level);
         if (lobby.isEmpty()) {
             return "§c还没有玩家选择阵营。";
         }
@@ -87,20 +170,21 @@ public final class ConquestManager {
         if (data.base(Faction.ALPHA) == null || data.base(Faction.BRAVO) == null) {
             return "§c两个阵营的基地出生点都需先设置。";
         }
-        active = new ConquestMatch(level, rules, defs, new LinkedHashMap<>(lobby), data);
+        ConquestMatch active = new ConquestMatch(level, rules, defs, new LinkedHashMap<>(lobby), data);
+        activeByWorld.put(level.dimension(), active);
         lobby.clear();
         active.begin();
         return null;
     }
 
     /** 中止当前对局。 */
-    public boolean stop() {
-        if (active != null && !active.isEnded()) {
+    public boolean stop(ServerLevel level) {
+        ConquestMatch active = activeFor(level);
+        if (active != null) {
             active.abort();
-            active = null;
+            activeByWorld.remove(level.dimension());
             return true;
         }
-        active = null;
         return false;
     }
 
@@ -110,15 +194,20 @@ public final class ConquestManager {
     public void handleAction(ServerPlayer player, ActionPacket.Action action) {
         switch (action) {
             case JOIN_ALPHA, JOIN_BRAVO -> {
-                if (hasActive()) {
-                    player.sendSystemMessage(Component.literal("§c对局进行中，无法在此加入。"));
+                ConquestMatch active = activeFor(player.serverLevel());
+                if (active != null) {
+                    Faction faction = ActionPacket.factionOf(action);
+                    if (active.addLatecomer(player, faction)) {
+                        return;
+                    }
+                    player.sendSystemMessage(Component.literal("§c该世界对局进行中，无法加入。"));
                 } else {
-                    lobby.put(player.getUUID(), ActionPacket.factionOf(action));
+                    lobbyFor(player.serverLevel()).put(player.getUUID(), ActionPacket.factionOf(action));
                     broadcastStatus(player.getServer());
                     return;
                 }
             }
-            case LEAVE -> lobby.remove(player.getUUID());
+            case LEAVE -> leaveLobby(player.getUUID());
             case START -> {
                 if (!player.hasPermissions(2)) {
                     player.sendSystemMessage(Component.literal("§c只有管理员可以开局。"));
@@ -136,7 +225,7 @@ public final class ConquestManager {
                 if (!player.hasPermissions(2)) {
                     player.sendSystemMessage(Component.literal("§c只有管理员可以停止。"));
                 } else {
-                    stop();
+                    stop(player.serverLevel());
                     broadcastStatus(player.getServer());
                     return;
                 }
@@ -162,6 +251,7 @@ public final class ConquestManager {
     }
 
     private void openArcadeLoadout(ServerPlayer player) {
+        ConquestMatch active = activeContaining(player.getUUID());
         if (active == null || active.factionOf(player.getUUID()) == null) {
             return;
         }
@@ -177,7 +267,8 @@ public final class ConquestManager {
     public BattlefieldStatusDto snapshotFor(ServerPlayer player) {
         boolean canManage = player.hasPermissions(2);
         UUID id = player.getUUID();
-        if (hasActive() && active != null) {
+        ConquestMatch active = activeFor(player.serverLevel());
+        if (active != null) {
             int my = factionToCode(active.factionOf(id));
             return new BattlefieldStatusDto(true, canManage, my,
                     active.memberCount(Faction.ALPHA), active.memberCount(Faction.BRAVO),
@@ -185,6 +276,7 @@ public final class ConquestManager {
                     active.ownedPoints(Faction.ALPHA), active.ownedPoints(Faction.BRAVO),
                     active.totalPoints());
         }
+        Map<UUID, Faction> lobby = lobbyFor(player.serverLevel());
         Faction mine = lobby.get(id);
         int alpha = 0;
         int bravo = 0;
@@ -228,19 +320,31 @@ public final class ConquestManager {
 
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || active == null) {
+        if (event.phase != TickEvent.Phase.END || activeByWorld.isEmpty()) {
             return;
         }
-        active.tick();
-        if (active.isEnded()) {
-            active = null;
+        List<ResourceKey<Level>> ended = new ArrayList<>();
+        for (Map.Entry<ResourceKey<Level>, ConquestMatch> e : activeByWorld.entrySet()) {
+            e.getValue().tick();
+            if (e.getValue().isEnded()) {
+                ended.add(e.getKey());
+            }
+        }
+        if (!ended.isEmpty()) {
+            for (ResourceKey<Level> key : ended) {
+                activeByWorld.remove(key);
+            }
             broadcastStatus(event.getServer());
         }
     }
 
     @SubscribeEvent
     public void onLivingDeath(LivingDeathEvent event) {
-        if (active == null || !(event.getEntity() instanceof ServerPlayer victim)) {
+        if (!(event.getEntity() instanceof ServerPlayer victim)) {
+            return;
+        }
+        ConquestMatch active = activeContaining(victim.getUUID());
+        if (active == null) {
             return;
         }
         if (active.onDeath(victim.getUUID(), resolveKiller(event.getSource().getEntity(), event.getSource().getDirectEntity()))) {
@@ -250,7 +354,11 @@ public final class ConquestManager {
 
     @SubscribeEvent
     public void onLivingHurt(LivingHurtEvent event) {
-        if (active == null || !(event.getEntity() instanceof ServerPlayer victim)) {
+        if (!(event.getEntity() instanceof ServerPlayer victim)) {
+            return;
+        }
+        ConquestMatch active = activeContaining(victim.getUUID());
+        if (active == null) {
             return;
         }
         UUID attacker = resolveKiller(event.getSource().getEntity(), event.getSource().getDirectEntity());
@@ -272,21 +380,25 @@ public final class ConquestManager {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();
-        lobby.remove(id);
+        leaveLobby(id);
     }
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
-        if (active != null && event.getEntity() instanceof ServerPlayer player) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            ConquestMatch active = activeContaining(player.getUUID());
+            if (active == null) {
+                return;
+            }
             active.onPlayerLogin(player);
         }
     }
 
     @SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
-        if (active != null) {
-            active.abort();
-            active = null;
+        for (ConquestMatch match : activeByWorld.values()) {
+            match.abort();
         }
-        lobby.clear();
+        activeByWorld.clear();
+        lobbies.clear();
     }
 }
