@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.match;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -9,8 +10,16 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.Team;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
@@ -33,10 +42,12 @@ import org.shee33.act0.battlefield.network.TabEntryDto;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -56,6 +67,11 @@ public final class ConquestMatch {
     private static final int REDEPLOY_DELAY_TICKS = 5 * 20;
     private static final int SPAWN_PROTECTION_TICKS = 3 * 20;
     private static final double SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS = 12.0;
+    private static final int IFF_SYNC_INTERVAL = 2;
+    private static final double ENEMY_MARK_DISTANCE = 96.0;
+    private static final double ENEMY_MARK_DISTANCE_SQR = ENEMY_MARK_DISTANCE * ENEMY_MARK_DISTANCE;
+    private static final double ENEMY_MARK_VIEW_DOT = 0.30;
+    private static final int BREATH_HEAL_DELAY_TICKS = 5 * 20;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -73,6 +89,9 @@ public final class ConquestMatch {
     private final Map<UUID, Integer> kills = new LinkedHashMap<>();
     private final Map<UUID, Integer> deaths = new LinkedHashMap<>();
     private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
+    private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
+    private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
+    private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
     private final BattlefieldData data;
 
     private boolean ended;
@@ -80,6 +99,7 @@ public final class ConquestMatch {
     private Faction winner;
     private int captureAccum;
     private int hudAccum;
+    private int iffAccum;
     private long startedTick;
     private int startCountdownTicks;
     private int startCountdownLastSecond = -1;
@@ -137,6 +157,7 @@ public final class ConquestMatch {
     public void begin() {
         startCountdownTicks = START_COUNTDOWN_TICKS;
         startCountdownLastSecond = -1;
+        setupNameTagTeams();
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
@@ -159,6 +180,7 @@ public final class ConquestMatch {
         kills.put(id, 0);
         deaths.put(id, 0);
         buildSquads();
+        setupNameTagTeams();
         beginRedeploy(player, faction);
         broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
         broadcastHud();
@@ -171,6 +193,8 @@ public final class ConquestMatch {
         if (faction == null) {
             return false;
         }
+        clearEnemyGlowFor(player);
+        clearEnemyGlowTarget(player);
         clearRedeployState(player, true);
         BattlefieldData.BaseSpawn base = data.base(faction);
         if (base != null) {
@@ -182,11 +206,15 @@ public final class ConquestMatch {
         kills.remove(id);
         deaths.remove(id);
         protectedUntil.remove(id);
+        lastHurtTick.remove(id);
         buildSquads();
+        setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
         if (factionOf.isEmpty()) {
             ended = true;
+            clearAllEnemyGlows();
+            clearNameTagTeams();
         } else {
             broadcastHud();
         }
@@ -212,6 +240,11 @@ public final class ConquestMatch {
             resolveCaptureAndBleed();
         }
         processRedeployTick();
+        if (++iffAccum >= IFF_SYNC_INTERVAL) {
+            iffAccum = 0;
+            syncEnemyIdentification();
+        }
+        tickBreathHealing();
         if (ended) {
             return;
         }
@@ -299,6 +332,8 @@ public final class ConquestMatch {
         }
         ServerPlayer p = player(victimId);
         if (p != null) {
+            clearEnemyGlowFor(p);
+            clearEnemyGlowTarget(p);
             p.setHealth(p.getMaxHealth());
             p.removeAllEffects();
             p.clearFire();
@@ -306,6 +341,7 @@ public final class ConquestMatch {
             beginRedeploy(p, f);
         }
         deaths.merge(victimId, 1, Integer::sum);
+        lastHurtTick.remove(victimId);
         handleKillCredit(victimId, killerId);
         tickets.onDeath(f, rules);
         Faction w = tickets.winner();
@@ -315,6 +351,17 @@ public final class ConquestMatch {
             broadcastHud();
         }
         return true;
+    }
+
+    public void onHurt(UUID victimId) {
+        if (ended || !factionOf.containsKey(victimId)) {
+            return;
+        }
+        lastHurtTick.put(victimId, (long) server.getTickCount());
+        ServerPlayer p = player(victimId);
+        if (p != null) {
+            p.removeEffect(MobEffects.REGENERATION);
+        }
     }
 
     private void handleKillCredit(UUID victimId, @Nullable UUID killerId) {
@@ -719,6 +766,8 @@ public final class ConquestMatch {
         ArcadeLoadoutBridge.apply(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
+        lastHurtTick.remove(id);
+        p.removeEffect(MobEffects.REGENERATION);
         protectedUntil.put(id, (long) server.getTickCount() + SPAWN_PROTECTION_TICKS);
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
@@ -825,6 +874,9 @@ public final class ConquestMatch {
         deployTarget.clear();
         redeployOriginalMode.clear();
         protectedUntil.clear();
+        lastHurtTick.clear();
+        clearAllEnemyGlows();
+        clearNameTagTeams();
         sendFireLockToAll(false);
     }
 
@@ -925,7 +977,212 @@ public final class ConquestMatch {
         deployTarget.clear();
         redeployOriginalMode.clear();
         protectedUntil.clear();
+        lastHurtTick.clear();
+        clearAllEnemyGlows();
+        clearNameTagTeams();
         sendFireLockToAll(false);
+    }
+
+    // ---- 敌我识别 ----
+
+    private void setupNameTagTeams() {
+        clearNameTagTeams();
+        Scoreboard scoreboard = server.getScoreboard();
+        PlayerTeam alpha = createNameTagTeam(scoreboard, Faction.ALPHA);
+        PlayerTeam bravo = createNameTagTeam(scoreboard, Faction.BRAVO);
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            ServerPlayer p = player(e.getKey());
+            if (p == null) {
+                continue;
+            }
+            scoreboard.addPlayerToTeam(p.getScoreboardName(), e.getValue() == Faction.ALPHA ? alpha : bravo);
+        }
+    }
+
+    private PlayerTeam createNameTagTeam(Scoreboard scoreboard, Faction faction) {
+        String teamName = scoreboardTeamName(faction);
+        PlayerTeam existing = scoreboard.getPlayerTeam(teamName);
+        if (existing != null) {
+            scoreboard.removePlayerTeam(existing);
+        }
+        PlayerTeam team = scoreboard.addPlayerTeam(teamName);
+        team.setNameTagVisibility(Team.Visibility.HIDE_FOR_OTHER_TEAMS);
+        team.setColor(ChatFormatting.RED);
+        nameTagTeams.add(team);
+        return team;
+    }
+
+    private void clearNameTagTeams() {
+        if (nameTagTeams.isEmpty()) {
+            return;
+        }
+        Scoreboard scoreboard = server.getScoreboard();
+        for (PlayerTeam team : new ArrayList<>(nameTagTeams)) {
+            PlayerTeam live = scoreboard.getPlayerTeam(team.getName());
+            if (live != null) {
+                scoreboard.removePlayerTeam(live);
+            }
+        }
+        nameTagTeams.clear();
+    }
+
+    private String scoreboardTeamName(Faction faction) {
+        String suffix = faction == Faction.ALPHA ? "a" : "b";
+        String base = "bf" + Integer.toHexString(System.identityHashCode(this)) + suffix;
+        return base.length() <= 16 ? base : base.substring(0, 16);
+    }
+
+    private void syncEnemyIdentification() {
+        for (UUID viewerId : new ArrayList<>(factionOf.keySet())) {
+            ServerPlayer viewer = player(viewerId);
+            if (!canViewerIdentify(viewer)) {
+                clearEnemyGlowFor(viewerId);
+                continue;
+            }
+            Set<UUID> active = visibleEnemyGlows.computeIfAbsent(viewerId, ignored -> new HashSet<>());
+            Set<UUID> shouldKeep = new HashSet<>();
+            for (UUID targetId : factionOf.keySet()) {
+                if (targetId.equals(viewerId)) {
+                    continue;
+                }
+                ServerPlayer target = player(targetId);
+                boolean show = shouldShowEnemyGlow(viewer, target);
+                if (show) {
+                    shouldKeep.add(targetId);
+                    if (active.add(targetId)) {
+                        GlowSync.showGlowTo(viewer, target);
+                    }
+                } else if (active.remove(targetId) && target != null) {
+                    GlowSync.hideGlowFrom(viewer, target);
+                }
+            }
+            for (UUID stale : new HashSet<>(active)) {
+                if (!shouldKeep.contains(stale)) {
+                    ServerPlayer target = player(stale);
+                    if (target != null) {
+                        GlowSync.hideGlowFrom(viewer, target);
+                    }
+                    active.remove(stale);
+                }
+            }
+        }
+    }
+
+    private boolean canViewerIdentify(@Nullable ServerPlayer viewer) {
+        if (viewer == null || viewer.level() != level || !viewer.isAlive() || viewer.isSpectator()) {
+            return false;
+        }
+        return !redeployReadyTick.containsKey(viewer.getUUID());
+    }
+
+    private boolean shouldShowEnemyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
+        if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
+            return false;
+        }
+        UUID viewerId = viewer.getUUID();
+        UUID targetId = target.getUUID();
+        Faction viewerFaction = factionOf.get(viewerId);
+        Faction targetFaction = factionOf.get(targetId);
+        if (viewerFaction == null || targetFaction == null || viewerFaction == targetFaction) {
+            return false;
+        }
+        if (redeployReadyTick.containsKey(targetId)) {
+            return false;
+        }
+        if (viewer.distanceToSqr(target) > ENEMY_MARK_DISTANCE_SQR) {
+            return false;
+        }
+        if (!isInFrontOf(viewer, target)) {
+            return false;
+        }
+        return hasClearSight(viewer, target);
+    }
+
+    private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
+        Vec3 eyes = viewer.getEyePosition();
+        Vec3 toTarget = target.getEyePosition().subtract(eyes);
+        if (toTarget.lengthSqr() < 0.0001D) {
+            return true;
+        }
+        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= ENEMY_MARK_VIEW_DOT;
+    }
+
+    private boolean hasClearSight(ServerPlayer viewer, ServerPlayer target) {
+        Vec3 from = viewer.getEyePosition();
+        Vec3 toEyes = target.getEyePosition();
+        Vec3 toBody = target.position().add(0.0D, target.getBbHeight() * 0.55D, 0.0D);
+        return clearBlockRay(viewer, from, toEyes) || clearBlockRay(viewer, from, toBody);
+    }
+
+    private boolean clearBlockRay(ServerPlayer viewer, Vec3 from, Vec3 to) {
+        HitResult hit = level.clip(new ClipContext(from, to,
+                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, viewer));
+        return hit.getType() == HitResult.Type.MISS;
+    }
+
+    private void clearEnemyGlowFor(ServerPlayer viewer) {
+        if (viewer != null) {
+            clearEnemyGlowFor(viewer.getUUID());
+        }
+    }
+
+    private void clearEnemyGlowFor(UUID viewerId) {
+        Set<UUID> active = visibleEnemyGlows.remove(viewerId);
+        if (active == null || active.isEmpty()) {
+            return;
+        }
+        ServerPlayer viewer = player(viewerId);
+        if (viewer == null) {
+            return;
+        }
+        for (UUID targetId : active) {
+            ServerPlayer target = player(targetId);
+            if (target != null) {
+                GlowSync.hideGlowFrom(viewer, target);
+            }
+        }
+    }
+
+    private void clearEnemyGlowTarget(ServerPlayer target) {
+        if (target == null) {
+            return;
+        }
+        UUID targetId = target.getUUID();
+        for (Map.Entry<UUID, Set<UUID>> e : new ArrayList<>(visibleEnemyGlows.entrySet())) {
+            if (e.getValue().remove(targetId)) {
+                ServerPlayer viewer = player(e.getKey());
+                if (viewer != null) {
+                    GlowSync.hideGlowFrom(viewer, target);
+                }
+            }
+        }
+    }
+
+    private void clearAllEnemyGlows() {
+        for (UUID viewerId : new ArrayList<>(visibleEnemyGlows.keySet())) {
+            clearEnemyGlowFor(viewerId);
+        }
+        visibleEnemyGlows.clear();
+    }
+
+    private void tickBreathHealing() {
+        long now = server.getTickCount();
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
+                    || redeployReadyTick.containsKey(id)) {
+                continue;
+            }
+            if (p.getHealth() >= p.getMaxHealth()) {
+                p.removeEffect(MobEffects.REGENERATION);
+                lastHurtTick.remove(id);
+                continue;
+            }
+            long last = lastHurtTick.getOrDefault(id, now);
+            if (now - last >= BREATH_HEAL_DELAY_TICKS) {
+                p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 1, false, false, true));
+            }
+        }
     }
 
     // ---- HUD ----

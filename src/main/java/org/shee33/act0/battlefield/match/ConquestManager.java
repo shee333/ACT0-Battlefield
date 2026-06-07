@@ -395,7 +395,9 @@ public final class ConquestManager {
         UUID attacker = resolveKiller(event.getSource().getEntity(), event.getSource().getDirectEntity());
         if (active.shouldCancelDamage(victim.getUUID(), attacker)) {
             event.setCanceled(true);
+            return;
         }
+        active.onHurt(victim.getUUID());
     }
 
     private UUID resolveKiller(Entity attacker, Entity direct) {
