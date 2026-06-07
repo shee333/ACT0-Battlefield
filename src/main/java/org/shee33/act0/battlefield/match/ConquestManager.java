@@ -8,6 +8,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.CommandEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
@@ -55,6 +56,19 @@ public final class ConquestManager {
         for (Map<UUID, Faction> lobby : lobbies.values()) {
             lobby.remove(id);
         }
+    }
+
+    public boolean leaveMatch(ServerPlayer player) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        if (match == null) {
+            return false;
+        }
+        boolean ok = match.quitPlayer(player);
+        if (match.isEnded()) {
+            activeByWorld.values().removeIf(ConquestMatch::isEnded);
+        }
+        broadcastStatus(player.getServer());
+        return ok;
     }
 
     public Map<UUID, Faction> lobby() {
@@ -312,6 +326,23 @@ public final class ConquestManager {
     }
 
     // ---- 事件 ----
+
+    @SubscribeEvent
+    public void onCommand(CommandEvent event) {
+        if (!(event.getParseResults().getContext().getSource().getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        if (player.hasPermissions(2) || activeContaining(player.getUUID()) == null) {
+            return;
+        }
+        String raw = event.getParseResults().getReader().getString().trim();
+        String cmd = raw.startsWith("/") ? raw.substring(1) : raw;
+        if (cmd.equals("suicide") || cmd.startsWith("battlefield leave")) {
+            return;
+        }
+        event.setCanceled(true);
+        player.sendSystemMessage(Component.literal("§c大战场中只能使用 /battlefield leave 或 /suicide。"));
+    }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {

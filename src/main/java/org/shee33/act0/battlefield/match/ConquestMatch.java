@@ -164,6 +164,34 @@ public final class ConquestMatch {
         return true;
     }
 
+    public boolean quitPlayer(ServerPlayer player) {
+        UUID id = player.getUUID();
+        Faction faction = factionOf.remove(id);
+        if (faction == null) {
+            return false;
+        }
+        clearRedeployState(player, true);
+        BattlefieldData.BaseSpawn base = data.base(faction);
+        if (base != null) {
+            player.teleportTo(level, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
+        }
+        player.getInventory().clearContent();
+        BattlefieldNetwork.clearHud(player);
+        BattlefieldNetwork.sendFireLock(player, false);
+        kills.remove(id);
+        deaths.remove(id);
+        protectedUntil.remove(id);
+        buildSquads();
+        broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
+        player.sendSystemMessage(Component.literal("§7已退出大战场。"));
+        if (factionOf.isEmpty()) {
+            ended = true;
+        } else {
+            broadcastHud();
+        }
+        return true;
+    }
+
     // ---- 每刻 ----
 
     public void tick() {
@@ -785,6 +813,7 @@ public final class ConquestMatch {
                 if (base != null) {
                     p.teleportTo(level, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
                 }
+                p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }
         }
@@ -830,6 +859,7 @@ public final class ConquestMatch {
                 } else {
                     p.setInvulnerable(false);
                 }
+                p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }
         }

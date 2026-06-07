@@ -83,6 +83,12 @@ public final class BattlefieldCommand {
                                 .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets")))))
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop)));
+        dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
+    }
+
+    private static int suicide(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        c.getSource().getPlayerOrException().kill();
+        return 1;
     }
 
     // ---- 候选名单 ----
@@ -102,6 +108,9 @@ public final class BattlefieldCommand {
 
     private static int leave(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         ServerPlayer player = c.getSource().getPlayerOrException();
+        if (Act0Battlefield.manager().leaveMatch(player)) {
+            return 1;
+        }
         Act0Battlefield.manager().leaveLobby(player.getUUID());
         feedback(c, "§7已退出候选名单。");
         return 1;
