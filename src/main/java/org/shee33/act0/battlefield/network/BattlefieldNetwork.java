@@ -16,7 +16,7 @@ import java.util.List;
  */
 public final class BattlefieldNetwork {
 
-    private static final String PROTOCOL = "4";
+    private static final String PROTOCOL = "5";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -49,6 +49,8 @@ public final class BattlefieldNetwork {
             SyncBattleTabPacket::encode, SyncBattleTabPacket::decode, SyncBattleTabPacket::handle);
         CHANNEL.registerMessage(id++, SyncBattleResultPacket.class,
             SyncBattleResultPacket::encode, SyncBattleResultPacket::decode, SyncBattleResultPacket::handle);
+        CHANNEL.registerMessage(id++, SyncFireLockPacket.class,
+            SyncFireLockPacket::encode, SyncFireLockPacket::decode, SyncFireLockPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -73,6 +75,10 @@ public final class BattlefieldNetwork {
     /** 向玩家推送部署界面状态。 */
     public static void sendDeploy(ServerPlayer player, boolean open, DeployStatusDto status) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncDeployPacket(open, status));
+    }
+
+    public static void sendFireLock(ServerPlayer player, boolean locked) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncFireLockPacket(locked));
     }
 
     /** 向玩家推送击杀提示。 */

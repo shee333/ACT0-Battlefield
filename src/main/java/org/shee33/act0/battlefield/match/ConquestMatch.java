@@ -1,6 +1,9 @@
 package org.shee33.act0.battlefield.match;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -48,6 +51,7 @@ public final class ConquestMatch {
     private static final double CAPTURE_DELTA = CAPTURE_INTERVAL / 20.0;
     private static final int HUD_INTERVAL = 10;
     private static final int SQUAD_SIZE = 5;
+    private static final int START_COUNTDOWN_TICKS = 5 * 20;
     private static final int REDEPLOY_DELAY_TICKS = 5 * 20;
     private static final int SPAWN_PROTECTION_TICKS = 3 * 20;
     private static final double SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS = 12.0;
@@ -76,6 +80,8 @@ public final class ConquestMatch {
     private int captureAccum;
     private int hudAccum;
     private long startedTick;
+    private int startCountdownTicks;
+    private int startCountdownLastSecond = -1;
 
     public ConquestMatch(ServerLevel level, ConquestRules rules,
                          List<ControlPointDef> defs, Map<UUID, Faction> roster,
@@ -128,15 +134,18 @@ public final class ConquestMatch {
 
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {
-        startedTick = server.getTickCount();
+        startCountdownTicks = START_COUNTDOWN_TICKS;
+        startCountdownLastSecond = -1;
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
                 deploy(p, e.getValue());
-                p.sendSystemMessage(Component.literal("§6大战场开始！你属于 " + e.getValue().coloredName()
+                BattlefieldNetwork.sendFireLock(p, true);
+                p.sendSystemMessage(Component.literal("§6大战场即将开始！你属于 " + e.getValue().coloredName()
                         + "§6，占领据点压制敌方票数。"));
             }
         }
+        showTitle("§e准备", "§7大战场将在 5 秒后开始", 5, 30, 8);
         broadcastHud();
     }
 
@@ -159,6 +168,14 @@ public final class ConquestMatch {
 
     public void tick() {
         if (ended) {
+            return;
+        }
+        if (startCountdownTicks > 0) {
+            tickStartCountdown();
+            if (++hudAccum >= HUD_INTERVAL) {
+                hudAccum = 0;
+                broadcastHud();
+            }
             return;
         }
         if (++captureAccum >= CAPTURE_INTERVAL) {
@@ -213,6 +230,26 @@ public final class ConquestMatch {
         Faction w = tickets.winner();
         if (w != null) {
             end(w);
+        }
+    }
+
+    private void tickStartCountdown() {
+        int secs = Math.max(0, (int) Math.ceil(startCountdownTicks / 20.0));
+        if (secs != startCountdownLastSecond) {
+            startCountdownLastSecond = secs;
+            if (secs > 0) {
+                showTitle("§e§l" + secs, "§7准备进入大战场", 0, 16, 4);
+                playToAll(SoundEvents.NOTE_BLOCK_HAT.value(), 1.0f + (5 - secs) * 0.12f);
+            }
+        }
+        startCountdownTicks--;
+        if (startCountdownTicks <= 0) {
+            startCountdownTicks = 0;
+            startedTick = server.getTickCount();
+            sendFireLockToAll(false);
+            showTitle("§a§l战斗开始", "", 2, 24, 8);
+            playToAll(SoundEvents.PLAYER_LEVELUP, 1.0f);
+            broadcast("§a大战场正式开始！");
         }
     }
 
@@ -281,6 +318,9 @@ public final class ConquestMatch {
     public boolean shouldCancelDamage(UUID victimId, @Nullable UUID attackerId) {
         if (!factionOf.containsKey(victimId)) {
             return false;
+        }
+        if (startCountdownTicks > 0) {
+            return true;
         }
         if (redeployReadyTick.containsKey(victimId)) {
             return true;
@@ -653,6 +693,7 @@ public final class ConquestMatch {
         protectedUntil.put(id, (long) server.getTickCount() + SPAWN_PROTECTION_TICKS);
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
+        BattlefieldNetwork.sendFireLock(p, startCountdownTicks > 0);
     }
 
     private void clearRedeployState(ServerPlayer player, boolean restoreOriginalMode) {
@@ -752,6 +793,7 @@ public final class ConquestMatch {
         deployTarget.clear();
         redeployOriginalMode.clear();
         protectedUntil.clear();
+        sendFireLockToAll(false);
     }
 
     private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
@@ -796,6 +838,7 @@ public final class ConquestMatch {
         deployTarget.clear();
         redeployOriginalMode.clear();
         protectedUntil.clear();
+        sendFireLockToAll(false);
     }
 
     // ---- HUD ----
@@ -979,6 +1022,32 @@ public final class ConquestMatch {
             ServerPlayer p = player(id);
             if (p != null) {
                 p.sendSystemMessage(Component.literal(msg));
+            }
+        }
+    }
+
+    private void sendFireLockToAll(boolean locked) {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                BattlefieldNetwork.sendFireLock(p, locked);
+            }
+        }
+    }
+
+    private void showTitle(String title, String sub, int fadeIn, int stay, int fadeOut) {
+        ClientboundSetTitlesAnimationPacket anim = new ClientboundSetTitlesAnimationPacket(fadeIn, stay, fadeOut);
+        ClientboundSetTitleTextPacket titlePacket = new ClientboundSetTitleTextPacket(Component.literal(title));
+        ClientboundSetSubtitleTextPacket subPacket = sub == null || sub.isBlank()
+                ? null : new ClientboundSetSubtitleTextPacket(Component.literal(sub));
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                p.connection.send(anim);
+                p.connection.send(titlePacket);
+                if (subPacket != null) {
+                    p.connection.send(subPacket);
+                }
             }
         }
     }
