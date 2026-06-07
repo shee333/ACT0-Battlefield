@@ -799,7 +799,7 @@ public final class ConquestMatch {
     private void end(Faction w) {
         this.ended = true;
         this.winner = w;
-        broadcast("§6§l" + w.coloredName() + " §6§l获胜！票数压制成功。");
+        broadcast("§6§l对局结束：" + w.coloredName() + " §6§l取得票数压制。");
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
@@ -808,6 +808,7 @@ public final class ConquestMatch {
                 } else {
                     p.setInvulnerable(false);
                 }
+                sendPersonalResult(p, e.getValue(), w);
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
                 BattlefieldData.BaseSpawn base = data.base(e.getValue());
                 if (base != null) {
@@ -823,6 +824,17 @@ public final class ConquestMatch {
         redeployOriginalMode.clear();
         protectedUntil.clear();
         sendFireLockToAll(false);
+    }
+
+    private void sendPersonalResult(ServerPlayer player, Faction mine, Faction winner) {
+        boolean won = mine == winner;
+        sendTitle(player, won ? "§a§l胜利" : "§c§l失败",
+                winner.coloredName() + " §7取得胜利", 5, 60, 15);
+        UUID id = player.getUUID();
+        player.sendSystemMessage(Component.literal("§6战报 §8| " + (won ? "§a胜利" : "§c失败")
+                + " §8| §7剩余票数 §9北大西洋公约 §f" + tickets.displayTickets(Faction.ALPHA)
+                + " §8/ §c无邦军团 §f" + tickets.displayTickets(Faction.BRAVO)
+            + " §8| §7你的 K/D §e" + kills.getOrDefault(id, 0) + "§7/§c" + deaths.getOrDefault(id, 0)));
     }
 
     private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
@@ -1079,6 +1091,14 @@ public final class ConquestMatch {
                     p.connection.send(subPacket);
                 }
             }
+        }
+    }
+
+    private void sendTitle(ServerPlayer player, String title, String sub, int fadeIn, int stay, int fadeOut) {
+        player.connection.send(new ClientboundSetTitlesAnimationPacket(fadeIn, stay, fadeOut));
+        player.connection.send(new ClientboundSetTitleTextPacket(Component.literal(title)));
+        if (sub != null && !sub.isBlank()) {
+            player.connection.send(new ClientboundSetSubtitleTextPacket(Component.literal(sub)));
         }
     }
 
