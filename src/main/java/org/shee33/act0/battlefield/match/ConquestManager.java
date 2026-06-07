@@ -130,19 +130,10 @@ public final class ConquestManager {
     }
 
     public void quickJoin(ServerPlayer player, String key) {
-        ResourceKey<Level> levelKey = null;
-        if (key != null && key.startsWith("bf@")) {
-            String raw = key.substring(3);
-            for (ResourceKey<Level> candidate : activeByWorld.keySet()) {
-                if (candidate.location().toString().equals(raw)) {
-                    levelKey = candidate;
-                    break;
-                }
-            }
-        }
+        ResourceKey<Level> levelKey = resolveQuickJoinKey(key);
         ConquestMatch match = levelKey != null ? activeByWorld.get(levelKey) : activeFor(player.serverLevel());
         if (match == null || match.isEnded()) {
-            player.displayClientMessage(Component.literal("§c该大战场已结束"), true);
+            player.displayClientMessage(Component.literal("§c该大战场不存在或已结束"), true);
             return;
         }
         if (match.contains(player.getUUID())) {
@@ -156,6 +147,38 @@ public final class ConquestManager {
         } else {
             player.displayClientMessage(Component.literal("§c无法加入该大战场"), true);
         }
+    }
+
+    @Nullable
+    private ResourceKey<Level> resolveQuickJoinKey(String key) {
+        String raw = normalizeQuickJoinKey(key);
+        if (raw.isBlank()) {
+            return null;
+        }
+        if (raw.startsWith("bf@")) {
+            raw = raw.substring(3).trim();
+        }
+        for (Map.Entry<ResourceKey<Level>, ConquestMatch> e : activeByWorld.entrySet()) {
+            if (e.getValue().isEnded()) {
+                continue;
+            }
+            if (e.getKey().location().toString().equals(raw)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeQuickJoinKey(String key) {
+        if (key == null) {
+            return "";
+        }
+        String raw = key.trim();
+        while (raw.length() >= 2 && ((raw.startsWith("\"") && raw.endsWith("\""))
+                || (raw.startsWith("'") && raw.endsWith("'")))) {
+            raw = raw.substring(1, raw.length() - 1).trim();
+        }
+        return raw;
     }
 
     private Map<UUID, Faction> lobbyFor(ServerLevel level) {
