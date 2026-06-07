@@ -827,7 +827,10 @@ public final class ConquestMatch {
             int pressure = point.level() > 0.02 ? 1 : (point.level() < -0.02 ? 2 : 0);
             int progress = Math.min(100, Math.max(0, (int) Math.round(Math.abs(point.level()) * 100.0)));
             pointDtos.add(new ControlPointHudDto(point.displayName(), owner, pressure, progress,
-                    def.pos().getX() + 0.5, def.pos().getY() + 2.35, def.pos().getZ() + 0.5));
+                    def.pos().getX() + 0.5 + def.markerOffsetX(),
+                    def.pos().getY() + def.markerOffsetY(),
+                    def.pos().getZ() + 0.5 + def.markerOffsetZ(),
+                    def.markerScale(), def.markerDistance()));
         }
 
         Faction viewerFaction = factionOf.get(viewer.getUUID());

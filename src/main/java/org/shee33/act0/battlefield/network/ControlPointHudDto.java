@@ -12,8 +12,11 @@ import net.minecraft.network.FriendlyByteBuf;
  * @param x            世界坐标 X（据点中心）
  * @param y            世界坐标 Y（据点中心）
  * @param z            世界坐标 Z（据点中心）
+ * @param markerScale  世界浮标缩放倍率
+ * @param markerDistance 世界浮标最大渲染距离
  */
-public record ControlPointHudDto(String name, int owner, int pressure, int progress, double x, double y, double z) {
+public record ControlPointHudDto(String name, int owner, int pressure, int progress, double x, double y, double z,
+                                 double markerScale, int markerDistance) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeUtf(name);
@@ -23,10 +26,12 @@ public record ControlPointHudDto(String name, int owner, int pressure, int progr
         buf.writeDouble(x);
         buf.writeDouble(y);
         buf.writeDouble(z);
+        buf.writeDouble(markerScale);
+        buf.writeVarInt(markerDistance);
     }
 
     public static ControlPointHudDto decode(FriendlyByteBuf buf) {
         return new ControlPointHudDto(buf.readUtf(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-                buf.readDouble(), buf.readDouble(), buf.readDouble());
+            buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readVarInt());
     }
 }

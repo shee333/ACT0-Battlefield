@@ -22,7 +22,7 @@ import org.shee33.act0.battlefield.network.ControlPointHudDto;
  * 世界空间据点浮标：在 3D 视角中把 A/B/C 据点绘制为面向镜头的悬浮标志。
  *
  * <p>数据复用 {@link ClientBattleHud} 中的 HUD 快照；服务端每 0.5 秒同步据点坐标、归属与进度。
- * 颜色规则与战中 HUD 一致：自己阵营=蓝，敌方=红，中立=灰。
+ * 颜色规则与战中 HUD 一致：自己阵营=蓝，敌方=红，中立=灰；大小、位置与距离可按据点配置。
  */
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldWorldPointOverlay {
@@ -33,7 +33,6 @@ public final class BattlefieldWorldPointOverlay {
     private static final int WHITE = 0xFFE8F4F8;
     private static final int TEXT_DIM = 0xFFB0BEC5;
     private static final int LIGHT = 0xF000F0;
-    private static final double MAX_DISTANCE = 220.0;
 
     private static final ResourceLocation POINT_FRIENDLY = texture("capturepoint/allies.png");
     private static final ResourceLocation POINT_ENEMY = texture("capturepoint/axis.png");
@@ -68,7 +67,7 @@ public final class BattlefieldWorldPointOverlay {
             double dy = point.y() - cam.y;
             double dz = point.z() - cam.z;
             double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (dist > MAX_DISTANCE) {
+            if (dist > point.markerDistance()) {
                 continue;
             }
             renderPoint(pose, buffer, font, camera, point, hud.myFaction(), dx, dy, dz, dist);
@@ -90,8 +89,8 @@ public final class BattlefieldWorldPointOverlay {
         String line2 = ((int) Math.round(distance)) + "m";
         String line3 = progressText(point.progress(), point.pressure() != 0);
 
-        // 随距离略放大，避免远处过小；近处保持克制。
-        float scale = (float) Math.max(0.024, Math.min(0.075, distance * 0.00145));
+        // 随距离略放大，避免远处过小；再乘以每据点可配置倍率。
+        float scale = (float) (Math.max(0.030, Math.min(0.095, distance * 0.00165)) * point.markerScale());
 
         pose.pushPose();
         pose.translate(dx, dy, dz);

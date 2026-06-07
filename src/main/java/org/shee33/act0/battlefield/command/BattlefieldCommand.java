@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -57,7 +58,22 @@ public final class BattlefieldCommand {
                         .then(Commands.literal("name")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(0))
                                         .then(Commands.argument("name", StringArgumentType.string())
-                                                .executes(BattlefieldCommand::setName)))))
+                                    .executes(BattlefieldCommand::setName))))
+                        .then(Commands.literal("marker")
+                            .then(Commands.literal("size")
+                                .then(Commands.argument("id", IntegerArgumentType.integer(0))
+                                    .then(Commands.argument("value", DoubleArgumentType.doubleArg(0.4, 5.0))
+                                        .executes(BattlefieldCommand::setMarkerSize))))
+                            .then(Commands.literal("distance")
+                                .then(Commands.argument("id", IntegerArgumentType.integer(0))
+                                    .then(Commands.argument("blocks", IntegerArgumentType.integer(32, 1000))
+                                        .executes(BattlefieldCommand::setMarkerDistance))))
+                            .then(Commands.literal("offset")
+                                .then(Commands.argument("id", IntegerArgumentType.integer(0))
+                                    .then(Commands.argument("x", DoubleArgumentType.doubleArg(-64.0, 64.0))
+                                        .then(Commands.argument("y", DoubleArgumentType.doubleArg(-64.0, 64.0))
+                                            .then(Commands.argument("z", DoubleArgumentType.doubleArg(-64.0, 64.0))
+                                                .executes(BattlefieldCommand::setMarkerOffset))))))))
                 .then(Commands.literal("start").requires(s -> s.hasPermission(2))
                         .executes(c -> start(c, (int) ConquestRules.standard().startingTickets()))
                         .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100000))
@@ -167,6 +183,43 @@ public final class BattlefieldCommand {
         def.setName(StringArgumentType.getString(c, "name"));
         BattlefieldData.get(c.getSource().getPlayerOrException().serverLevel()).setDirty();
         feedback(c, "§a据点已重命名为 §e" + def.name() + "§a。");
+        return 1;
+    }
+
+    private static int setMarkerSize(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ControlPointDef def = requirePoint(c);
+        if (def == null) {
+            return 0;
+        }
+        def.setMarkerScale(DoubleArgumentType.getDouble(c, "value"));
+        BattlefieldData.get(c.getSource().getPlayerOrException().serverLevel()).setDirty();
+        feedback(c, "§a据点 §e" + def.name() + " §a浮标大小已设为 §e" + def.markerScale() + "§a。");
+        return 1;
+    }
+
+    private static int setMarkerDistance(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ControlPointDef def = requirePoint(c);
+        if (def == null) {
+            return 0;
+        }
+        def.setMarkerDistance(IntegerArgumentType.getInteger(c, "blocks"));
+        BattlefieldData.get(c.getSource().getPlayerOrException().serverLevel()).setDirty();
+        feedback(c, "§a据点 §e" + def.name() + " §a浮标距离已设为 §e" + def.markerDistance() + " §a格。");
+        return 1;
+    }
+
+    private static int setMarkerOffset(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ControlPointDef def = requirePoint(c);
+        if (def == null) {
+            return 0;
+        }
+        double x = DoubleArgumentType.getDouble(c, "x");
+        double y = DoubleArgumentType.getDouble(c, "y");
+        double z = DoubleArgumentType.getDouble(c, "z");
+        def.setMarkerOffset(x, y, z);
+        BattlefieldData.get(c.getSource().getPlayerOrException().serverLevel()).setDirty();
+        feedback(c, "§a据点 §e" + def.name() + " §a浮标偏移已设为 §e"
+                + def.markerOffsetX() + ", " + def.markerOffsetY() + ", " + def.markerOffsetZ() + "§a。");
         return 1;
     }
 
