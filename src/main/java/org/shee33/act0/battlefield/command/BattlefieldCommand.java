@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
@@ -16,6 +17,7 @@ import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
+import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestMatch;
 import org.shee33.act0.battlefield.match.ConquestManager;
 
@@ -44,6 +46,7 @@ public final class BattlefieldCommand {
                 .then(Commands.literal("leave").executes(BattlefieldCommand::leave))
                 .then(Commands.literal("squad").executes(BattlefieldCommand::squadInfo))
                 .then(Commands.literal("status").executes(BattlefieldCommand::status))
+                .then(buildHologramBranch())
                 .then(Commands.literal("base").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("set")
                                 .then(Commands.literal("alpha").executes(c -> setBase(c, Faction.ALPHA)))
@@ -84,6 +87,37 @@ public final class BattlefieldCommand {
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop)));
         dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> buildHologramBranch() {
+        return Commands.literal("hologram")
+            .requires(src -> src.hasPermission(2))
+            .then(Commands.literal("browser")
+                .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.BROWSER)))
+            .then(Commands.literal("loadout")
+                .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.LOADOUT)))
+            .then(Commands.literal("battlefield")
+                .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.BATTLEFIELD)))
+            .then(Commands.literal("all")
+                .executes(BattlefieldCommand::createAllHolograms))
+            .then(Commands.literal("clear")
+                .executes(ctx -> clearHolograms(ctx, 6.0D))
+                .then(Commands.argument("radius", DoubleArgumentType.doubleArg(1.0D, 64.0D))
+                    .executes(ctx -> clearHolograms(ctx, DoubleArgumentType.getDouble(ctx, "radius")))));
+    }
+
+    private static int createHologram(CommandContext<CommandSourceStack> ctx,
+                                      BattlefieldEntranceHolograms.EntryType type)
+            throws CommandSyntaxException {
+        return BattlefieldEntranceHolograms.create(ctx.getSource().getPlayerOrException(), type);
+    }
+
+    private static int createAllHolograms(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        return BattlefieldEntranceHolograms.createAll(ctx.getSource().getPlayerOrException());
+    }
+
+    private static int clearHolograms(CommandContext<CommandSourceStack> ctx, double radius) throws CommandSyntaxException {
+        return BattlefieldEntranceHolograms.clear(ctx.getSource().getPlayerOrException(), radius);
     }
 
     private static int suicide(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {

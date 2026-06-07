@@ -5,6 +5,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
@@ -40,6 +41,7 @@ public final class Act0Battlefield {
         BattlefieldNetwork.register();
 
         MinecraftForge.EVENT_BUS.register(MANAGER);
+        MinecraftForge.EVENT_BUS.register(BattlefieldEntranceHolograms.INSTANCE);
 
         LOGGER.info("{}constructed", LOG_PREFIX);
     }
