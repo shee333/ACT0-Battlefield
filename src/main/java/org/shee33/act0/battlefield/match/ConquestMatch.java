@@ -18,6 +18,7 @@ import org.shee33.act0.battlefield.core.TicketPool;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
+import org.shee33.act0.battlefield.integration.MatchResultBroadcaster;
 import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BattleResultDto;
 import org.shee33.act0.battlefield.network.BattleTabDto;
@@ -800,6 +801,7 @@ public final class ConquestMatch {
         this.ended = true;
         this.winner = w;
         broadcast("§6§l对局结束：" + w.coloredName() + " §6§l取得票数压制。");
+        broadcastMatchResult(w);
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
@@ -835,6 +837,49 @@ public final class ConquestMatch {
                 + " §8| §7剩余票数 §9北大西洋公约 §f" + tickets.displayTickets(Faction.ALPHA)
                 + " §8/ §c无邦军团 §f" + tickets.displayTickets(Faction.BRAVO)
             + " §8| §7你的 K/D §e" + kills.getOrDefault(id, 0) + "§7/§c" + deaths.getOrDefault(id, 0)));
+    }
+
+    private void broadcastMatchResult(Faction winner) {
+        TopKiller top = topKiller();
+        MatchResultBroadcaster.sendBattlefieldResult(
+                battleId(),
+                "大战场",
+                elapsedSeconds(),
+                winner.displayName(),
+                List.of(winner.displayName()),
+                top.name(),
+                top.kills(),
+                "北大西洋公约 " + tickets.displayTickets(Faction.ALPHA)
+                        + " / 无邦军团 " + tickets.displayTickets(Faction.BRAVO));
+    }
+
+    private String battleId() {
+        return level.dimension().location() + ":" + startedTick;
+    }
+
+    private TopKiller topKiller() {
+        UUID topId = null;
+        int topKills = -1;
+        for (Map.Entry<UUID, Integer> e : kills.entrySet()) {
+            int value = e.getValue() == null ? 0 : e.getValue();
+            if (topId == null || value > topKills
+                    || (value == topKills && nameOf(e.getKey()).compareToIgnoreCase(nameOf(topId)) < 0)) {
+                topId = e.getKey();
+                topKills = value;
+            }
+        }
+        if (topId == null) {
+            return new TopKiller("暂无击杀王", 0);
+        }
+        return new TopKiller(nameOf(topId), Math.max(0, topKills));
+    }
+
+    private String nameOf(UUID id) {
+        ServerPlayer p = player(id);
+        return p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
+    }
+
+    private record TopKiller(String name, int kills) {
     }
 
     private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
