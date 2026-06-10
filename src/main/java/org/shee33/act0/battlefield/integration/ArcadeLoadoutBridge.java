@@ -69,6 +69,7 @@ public final class ArcadeLoadoutBridge {
             Method apply = applierClass.getMethod("apply", ServerPlayer.class, loadoutClass, rulesetClass,
                     Set.class, boolean.class);
             apply.invoke(applier, player, loadout, fullRuleset, unlocked, true);
+                applySharedApparel(server, player, playerId, services, applier, applierClass, unlocked);
             return true;
         } catch (ClassNotFoundException e) {
             if (!warnedMissing) {
@@ -82,6 +83,23 @@ public final class ArcadeLoadoutBridge {
                 LOGGER.warn("[ACT/0/Battlefield] failed to apply shared ACT0-Arcade loadout: {}", e.toString());
             }
             return false;
+        }
+    }
+
+    private static void applySharedApparel(MinecraftServer server, ServerPlayer player, UUID playerId,
+                                           Object services, Object applier, Class<?> applierClass, Object unlocked) {
+        try {
+            Object apparel = services.getClass().getMethod("apparel").invoke(services);
+            Class<?> apparelRegistryClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelRegistry");
+            Class<?> selectionClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelSelection");
+            Class<?> apparelStoreClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeApparelStore");
+            Object apparelStore = apparelStoreClass.getMethod("get", MinecraftServer.class).invoke(null, server);
+            Object selection = apparelStoreClass.getMethod("getOrCreate", UUID.class).invoke(apparelStore, playerId);
+            Method applyApparel = applierClass.getMethod("applyApparel", ServerPlayer.class,
+                    selectionClass, apparelRegistryClass, Set.class);
+            applyApparel.invoke(applier, player, selection, apparel, unlocked);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // 兼容旧版 ACT0-Arcade：没有服饰系统时只发放普通配装。
         }
     }
 }
