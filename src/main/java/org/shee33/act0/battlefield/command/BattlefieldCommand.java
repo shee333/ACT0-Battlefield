@@ -41,7 +41,11 @@ public final class BattlefieldCommand {
             .then(Commands.literal("browser").executes(BattlefieldCommand::openUi))
                 .then(Commands.literal("join")
                         .then(Commands.literal("alpha").executes(c -> join(c, Faction.ALPHA)))
-                        .then(Commands.literal("bravo").executes(c -> join(c, Faction.BRAVO))))
+                    .then(Commands.literal("bravo").executes(c -> join(c, Faction.BRAVO))))
+                .then(Commands.literal("joinall").requires(s -> s.hasPermission(2))
+                    .executes(BattlefieldCommand::joinAll))
+                .then(Commands.literal("join_all").requires(s -> s.hasPermission(2))
+                    .executes(BattlefieldCommand::joinAll))
                 .then(Commands.literal("quickjoin")
                     .then(Commands.argument("battle", StringArgumentType.greedyString())
                         .executes(BattlefieldCommand::quickJoin)))
@@ -131,6 +135,10 @@ public final class BattlefieldCommand {
     private static int suicide(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         c.getSource().getPlayerOrException().kill();
         return 1;
+    }
+
+    private static int joinAll(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        return Act0Battlefield.manager().joinAllInWorld(c.getSource().getPlayerOrException());
     }
 
     // ---- 候选名单 ----

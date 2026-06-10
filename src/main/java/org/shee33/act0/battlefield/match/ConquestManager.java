@@ -54,6 +54,42 @@ public final class ConquestManager {
         broadcastStatus(player.getServer());
     }
 
+    /** 将当前世界所有在线玩家均衡加入候选名单，方便管理员一键开局。 */
+    public int joinAllInWorld(ServerPlayer operator) {
+        ServerLevel level = operator.serverLevel();
+        if (activeFor(level) != null) {
+            operator.sendSystemMessage(Component.literal("§c该世界已有进行中的大战场，不能批量加入候选。"));
+            return 0;
+        }
+        Map<UUID, Faction> lobby = lobbyFor(level);
+        int alpha = 0;
+        int bravo = 0;
+        for (Faction faction : lobby.values()) {
+            if (faction == Faction.ALPHA) {
+                alpha++;
+            } else if (faction == Faction.BRAVO) {
+                bravo++;
+            }
+        }
+        int added = 0;
+        for (ServerPlayer player : level.players()) {
+            leaveLobby(player.getUUID());
+            Faction target = alpha <= bravo ? Faction.ALPHA : Faction.BRAVO;
+            lobby.put(player.getUUID(), target);
+            if (target == Faction.ALPHA) {
+                alpha++;
+            } else {
+                bravo++;
+            }
+            player.sendSystemMessage(Component.literal("§6你已被加入大战场候选名单：" + target.coloredName()));
+            added++;
+        }
+        broadcastStatus(operator.getServer());
+        operator.sendSystemMessage(Component.literal("§a已将当前世界 §e" + added
+                + " §a名玩家加入候选名单 §7(北大西洋公约 " + alpha + " / 无邦军团 " + bravo + ")"));
+        return added;
+    }
+
     public void leaveLobby(UUID id) {
         for (Map<UUID, Faction> lobby : lobbies.values()) {
             lobby.remove(id);
