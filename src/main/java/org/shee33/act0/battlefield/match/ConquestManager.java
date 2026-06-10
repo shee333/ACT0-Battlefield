@@ -436,17 +436,15 @@ public final class ConquestManager {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();
+        if (event.getEntity() instanceof ServerPlayer player) {
+            leaveMatch(player);
+        }
         leaveLobby(id);
     }
+
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) {
-            ConquestMatch active = activeContaining(player.getUUID());
-            if (active == null) {
-                return;
-            }
-            active.onPlayerLogin(player);
-        }
+        // 不再自动归位；玩家可通过大战场/游戏浏览器中途加入。
     }
 
     @SubscribeEvent

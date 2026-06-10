@@ -850,6 +850,7 @@ public final class ConquestMatch {
         this.ended = true;
         this.winner = w;
         broadcast("§6§l对局结束：" + w.coloredName() + " §6§l取得票数压制。");
+        broadcastServerResult(w);
         broadcastMatchResult(w);
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
@@ -889,6 +890,18 @@ public final class ConquestMatch {
                 + " §8| §7剩余票数 §9北大西洋公约 §f" + tickets.displayTickets(Faction.ALPHA)
                 + " §8/ §c无邦军团 §f" + tickets.displayTickets(Faction.BRAVO)
             + " §8| §7你的 K/D §e" + kills.getOrDefault(id, 0) + "§7/§c" + deaths.getOrDefault(id, 0)));
+    }
+
+    private void broadcastServerResult(Faction winner) {
+        TopKiller top = topKiller();
+        String mvp = top.kills() > 0 ? " §8| §7击杀王 §e" + top.name() + " §7(" + top.kills() + "杀)" : "";
+        Component message = Component.literal("§6[ACT0赛果] §f大战场 · 征服 §8| §a"
+                + winner.displayName() + " §7胜出 §8| §7票数 §9北大西洋公约 §f"
+                + tickets.displayTickets(Faction.ALPHA) + " §8/ §c无邦军团 §f"
+                + tickets.displayTickets(Faction.BRAVO) + mvp);
+        for (ServerPlayer online : server.getPlayerList().getPlayers()) {
+            online.sendSystemMessage(message);
+        }
     }
 
     private void broadcastMatchResult(Faction winner) {
@@ -1007,7 +1020,7 @@ public final class ConquestMatch {
         }
         PlayerTeam team = scoreboard.addPlayerTeam(teamName);
         team.setNameTagVisibility(Team.Visibility.HIDE_FOR_OTHER_TEAMS);
-        team.setColor(ChatFormatting.RED);
+        team.setColor(faction == Faction.ALPHA ? ChatFormatting.BLUE : ChatFormatting.RED);
         nameTagTeams.add(team);
         return team;
     }
@@ -1046,7 +1059,7 @@ public final class ConquestMatch {
                     continue;
                 }
                 ServerPlayer target = player(targetId);
-                boolean show = shouldShowEnemyGlow(viewer, target);
+                boolean show = shouldShowFriendlyGlow(viewer, target) || shouldShowEnemyGlow(viewer, target);
                 if (show) {
                     shouldKeep.add(targetId);
                     if (active.add(targetId)) {
@@ -1096,6 +1109,17 @@ public final class ConquestMatch {
             return false;
         }
         return hasClearSight(viewer, target);
+    }
+
+    private boolean shouldShowFriendlyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
+        if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
+            return false;
+        }
+        UUID viewerId = viewer.getUUID();
+        UUID targetId = target.getUUID();
+        Faction viewerFaction = factionOf.get(viewerId);
+        Faction targetFaction = factionOf.get(targetId);
+        return viewerFaction != null && viewerFaction == targetFaction && !redeployReadyTick.containsKey(targetId);
     }
 
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
