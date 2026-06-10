@@ -37,6 +37,8 @@ public final class BattlefieldCommand {
         dispatcher.register(Commands.literal("battlefield")
                 .executes(BattlefieldCommand::openUi)
                 .then(Commands.literal("ui").executes(BattlefieldCommand::openUi))
+            .then(Commands.literal("browse").executes(BattlefieldCommand::openUi))
+            .then(Commands.literal("browser").executes(BattlefieldCommand::openUi))
                 .then(Commands.literal("join")
                         .then(Commands.literal("alpha").executes(c -> join(c, Faction.ALPHA)))
                         .then(Commands.literal("bravo").executes(c -> join(c, Faction.BRAVO))))
@@ -86,7 +88,10 @@ public final class BattlefieldCommand {
                 .then(Commands.literal("start").requires(s -> s.hasPermission(2))
                         .executes(c -> start(c, (int) ConquestRules.standard().startingTickets()))
                         .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100000))
-                                .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets")))))
+                        .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets")))
+                        .then(Commands.argument("name", StringArgumentType.greedyString())
+                            .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets"),
+                                StringArgumentType.getString(c, "name"))))))
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop)));
         dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
@@ -291,14 +296,20 @@ public final class BattlefieldCommand {
     // ---- 开局/停止 ----
 
     private static int start(CommandContext<CommandSourceStack> c, int tickets) throws CommandSyntaxException {
+        return start(c, tickets, null);
+    }
+
+    private static int start(CommandContext<CommandSourceStack> c, int tickets, String name) throws CommandSyntaxException {
         ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
         ConquestRules rules = ConquestRules.builder().startingTickets(tickets).build();
-        String err = Act0Battlefield.manager().start(level, rules);
+        String err = name == null
+                ? Act0Battlefield.manager().start(level, rules)
+                : Act0Battlefield.manager().start(level, rules, name);
         if (err != null) {
             feedback(c, err);
             return 0;
         }
-        feedback(c, "§6大战场已开始（每方 " + tickets + " 票）。");
+        feedback(c, "§6大战场已开始（每方 " + tickets + " 票" + (name == null ? "" : "，战役 " + name) + "）。");
         return 1;
     }
 

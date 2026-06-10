@@ -44,6 +44,8 @@ public final class ConquestManager {
 
     /** 每个世界最多一场进行中的对局。 */
     private final Map<ResourceKey<Level>, ConquestMatch> activeByWorld = new LinkedHashMap<>();
+    /** 进行中大战场名称：世界 → 战役名。 */
+    private final Map<ResourceKey<Level>, String> battleNames = new LinkedHashMap<>();
 
     // ---- 候选名单 ----
 
@@ -112,9 +114,10 @@ public final class ConquestManager {
             if (match.isEnded()) {
                 continue;
             }
+                String battleName = battleNames.getOrDefault(e.getKey(), defaultBattleName(e.getKey()));
             rows.add(new String[]{
                     "bf@" + e.getKey().location(),
-                    "大战场 · 征服",
+                    "大战场 · " + battleName,
                     e.getKey().location().toString(),
                     "-",
                     Integer.toString(match.totalMembers()),
@@ -143,7 +146,9 @@ public final class ConquestManager {
         Faction faction = match.memberCount(Faction.ALPHA) <= match.memberCount(Faction.BRAVO)
                 ? Faction.ALPHA : Faction.BRAVO;
         if (match.addLatecomer(player, faction)) {
-            player.displayClientMessage(Component.literal("§a已加入 " + faction.coloredName()), true);
+            ResourceKey<Level> battleKey = levelKey != null ? levelKey : player.serverLevel().dimension();
+            player.displayClientMessage(Component.literal("§a已加入 "
+                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + faction.coloredName()), true);
         } else {
             player.displayClientMessage(Component.literal("§c无法加入该大战场"), true);
         }
@@ -192,6 +197,12 @@ public final class ConquestManager {
      */
     @Nullable
     public String start(ServerLevel level, ConquestRules rules) {
+        return start(level, rules, defaultBattleName(level.dimension()));
+    }
+
+    /** 用当前候选名单开局并命名战役。 */
+    @Nullable
+    public String start(ServerLevel level, ConquestRules rules, String battleName) {
         if (activeFor(level) != null) {
             return "§c该世界已有进行中的大战场对局。";
         }
@@ -209,6 +220,7 @@ public final class ConquestManager {
         }
         ConquestMatch active = new ConquestMatch(level, rules, defs, new LinkedHashMap<>(lobby), data);
         activeByWorld.put(level.dimension(), active);
+        battleNames.put(level.dimension(), normalizeBattleName(battleName, level.dimension()));
         lobby.clear();
         active.begin();
         return null;
@@ -220,6 +232,7 @@ public final class ConquestManager {
         if (active != null) {
             active.abort();
             activeByWorld.remove(level.dimension());
+            battleNames.remove(level.dimension());
             return true;
         }
         return false;
@@ -387,6 +400,7 @@ public final class ConquestManager {
         if (!ended.isEmpty()) {
             for (ResourceKey<Level> key : ended) {
                 activeByWorld.remove(key);
+                battleNames.remove(key);
             }
             broadcastStatus(event.getServer());
         }
@@ -453,6 +467,19 @@ public final class ConquestManager {
             match.abort();
         }
         activeByWorld.clear();
+        battleNames.clear();
         lobbies.clear();
+    }
+
+    private static String defaultBattleName(ResourceKey<Level> key) {
+        return key.location().getPath();
+    }
+
+    private static String normalizeBattleName(String name, ResourceKey<Level> key) {
+        if (name == null || name.isBlank()) {
+            return defaultBattleName(key);
+        }
+        String trimmed = name.trim();
+        return trimmed.length() > 32 ? trimmed.substring(0, 32) : trimmed;
     }
 }
