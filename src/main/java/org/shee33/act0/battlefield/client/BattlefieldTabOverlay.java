@@ -21,12 +21,13 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldTabOverlay {
 
-    private static final int BLUE = 0xFF57C7FF;
-    private static final int RED = 0xFFE7654E;
-    private static final int WHITE = 0xFFE8F4F8;
-    private static final int DIM = 0xFF9EA7AA;
-    private static final int BG = 0xCC000000;
-    private static final int PANEL = 0xAA101820;
+    // ---- 扁平化配色 ----
+    private static final int BLUE = 0xFF4A90D9;
+    private static final int RED = 0xFFD94A4A;
+    private static final int WHITE = 0xFFEEEEEE;
+    private static final int DIM = 0xFFA0A8B0;
+    private static final int BG = 0xCC0A0C10;
+    private static final int PANEL = 0xBB141820;
 
     private BattlefieldTabOverlay() {
     }
@@ -50,7 +51,7 @@ public final class BattlefieldTabOverlay {
 
         int w = Math.min(520, gg.guiWidth() - 40);
         int x = (gg.guiWidth() - w) / 2;
-        int y = 24;
+        int y = 52; // 下移避免遮挡据点和进度条
         int colGap = 8;
         int colW = (w - colGap) / 2;
         int rows = Math.max(tab.alpha().size(), tab.bravo().size());

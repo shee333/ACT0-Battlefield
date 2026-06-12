@@ -22,10 +22,10 @@ public final class PixelTheme {
     /** 次文本。 */
     public static final int TEXT_DIM = 0xFF8A8F88;
 
-    /** 北大西洋公约强调色。 */
-    public static final int ALPHA_COLOR = 0xFF4A7AB5;
-    /** 无邦军团强调色。 */
-    public static final int BRAVO_COLOR = 0xFFC0504D;
+    /** 北大西洋公约强调色（扁平蓝）。 */
+    public static final int ALPHA_COLOR = 0xFF4A90D9;
+    /** 无邦军团强调色（扁平红）。 */
+    public static final int BRAVO_COLOR = 0xFFD94A4A;
 
     private PixelTheme() {
     }

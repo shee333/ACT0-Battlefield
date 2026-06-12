@@ -23,17 +23,19 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldHudOverlay {
 
-    private static final int BLUE = 0xFF57C7FF;
-    private static final int BLUE_DIM = 0x8857C7FF;
-    private static final int RED = 0xFFE7654E;
-    private static final int RED_DIM = 0x88E7654E;
-    private static final int GREY = 0xFF9EA7AA;
-    private static final int BG = 0x78000000;
-    private static final int BG_DARK = 0xA0000000;
-    private static final int WHITE = 0xFFE8F4F8;
-    private static final int TEXT_DIM = 0xFFB0BEC5;
-    private static final int GREEN = 0xFF8EEA5A;
+    // ---- 扁平化配色 ----
+    private static final int BLUE = 0xFF4A90D9;
+    private static final int BLUE_DIM = 0x884A90D9;
+    private static final int RED = 0xFFD94A4A;
+    private static final int RED_DIM = 0x88D94A4A;
+    private static final int GREY = 0xFF8C9196;
+    private static final int BG = 0x88101418;
+    private static final int BG_DARK = 0xAA101418;
+    private static final int WHITE = 0xFFEEEEEE;
+    private static final int TEXT_DIM = 0xFFA0A8B0;
+    private static final int GREEN = 0xFF66CC66;
 
+    // 扁平化不再需要 BlockFront 贴图资产；保留字段引用以兼容编译但不再使用。
     private static final ResourceLocation SCORE_BG = texture("scores/progress.png");
     private static final ResourceLocation SCORE_BLUE = texture("scores/progress_allies.png");
     private static final ResourceLocation SCORE_RED = texture("scores/progress_axis.png");
@@ -77,18 +79,16 @@ public final class BattlefieldHudOverlay {
         int alphaColor = factionColor(1, hud.myFaction());
         int bravoColor = factionColor(2, hud.myFaction());
 
-        // 左票数 + 左进度条（BlockFront 扁平条资产）
-        String alphaText = "[ " + hud.alphaTickets() + " ]";
-        int leftTextX = center - 184;
-        drawScaledText(gg, font, alphaText, leftTextX, top + 1, alphaColor, 1.2f);
-        drawTexturedScoreBar(gg, center - 118, top + 4, hud.alphaTickets(), max, true,
-            scoreTexture(1, hud.myFaction()));
+        // 左票数 + 扁平进度条
+        String alphaText = String.valueOf(hud.alphaTickets());
+        int leftTextX = center - 140;
+        drawScaledText(gg, font, alphaText, leftTextX, top + 1, alphaColor, 1.1f);
+        drawFlatScoreBar(gg, center - 118, top + 4, hud.alphaTickets(), max, alphaColor);
 
-        // 右票数 + 右进度条（BlockFront 扁平条资产）
-        drawTexturedScoreBar(gg, center + 44, top + 4, hud.bravoTickets(), max, false,
-            scoreTexture(2, hud.myFaction()));
-        String bravoText = "[ " + hud.bravoTickets() + " ]";
-        drawScaledText(gg, font, bravoText, center + 128, top + 1, bravoColor, 1.2f);
+        // 右票数 + 扁平进度条
+        drawFlatScoreBar(gg, center + 44, top + 4, hud.bravoTickets(), max, bravoColor);
+        String bravoText = String.valueOf(hud.bravoTickets());
+        drawScaledText(gg, font, bravoText, center + 124, top + 1, bravoColor, 1.1f);
 
         // 中央据点图标（A/B/C...）
         renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28);
@@ -104,21 +104,17 @@ public final class BattlefieldHudOverlay {
 
     private static void drawTexturedScoreBar(GuiGraphics gg, int x, int y, int value, int max,
                                              boolean fromRight, ResourceLocation fillTex) {
+        drawFlatScoreBar(gg, x, y, value, max, GREY);
+    }
+
+    /** 扁平化票数进度条：背景深色 + 纯色填充。 */
+    private static void drawFlatScoreBar(GuiGraphics gg, int x, int y, int value, int max, int color) {
         int w = 74;
-        int h = 12;
-        gg.blit(SCORE_BG, x, y, 0, 0, w, h, w, h);
-        int fill = Math.max(0, Math.min(w, Math.round(w * (value / (float) max))));
-        if (fill <= 0) {
-            return;
-        }
-        if (fromRight) {
-            gg.enableScissor(x + w - fill, y, x + w, y + h);
-            gg.blit(fillTex, x, y, 0, 0, w, h, w, h);
-            gg.disableScissor();
-        } else {
-            gg.enableScissor(x, y, x + fill, y + h);
-            gg.blit(fillTex, x, y, 0, 0, w, h, w, h);
-            gg.disableScissor();
+        int h = 10;
+        gg.fill(x, y, x + w, y + h, BG_DARK);
+        int fill = Math.max(0, Math.min(w - 2, Math.round((w - 2) * (value / (float) Math.max(1, max)))));
+        if (fill > 0) {
+            gg.fill(x + 1, y + 1, x + 1 + fill, y + h - 1, color);
         }
     }
 
@@ -238,17 +234,15 @@ public final class BattlefieldHudOverlay {
                 hud.focusState() == 3 ? null : captureBarTexture(hud.focusFaction(), hud.myFaction()));
     }
 
+    /** 扁平化据点占领进度条。 */
     private static void drawCaptureProgressBar(GuiGraphics gg, int x, int y, int progress, ResourceLocation fillTex) {
         int w = 118;
-        int h = 8;
-        gg.blit(CAPTURE_BAR_BG, x, y, 0, 0, w, h, w, h);
-        int fill = Math.max(0, Math.min(w, Math.round(w * (progress / 100.0f))));
-        if (fill > 0 && fillTex != null) {
-            gg.enableScissor(x, y, x + fill, y + h);
-            gg.blit(fillTex, x, y, 0, 0, w, h, w, h);
-            gg.disableScissor();
-        } else if (fill > 0) {
-            gg.fill(x, y, x + fill, y + h, 0xAA9EA7AA);
+        int h = 6;
+        gg.fill(x, y, x + w, y + h, BG_DARK);
+        int fill = Math.max(0, Math.min(w - 2, Math.round((w - 2) * (progress / 100.0f))));
+        if (fill > 0) {
+            int color = fillTex == CAPTURE_BAR_BLUE ? BLUE : (fillTex == CAPTURE_BAR_RED ? RED : GREY);
+            gg.fill(x + 1, y + 1, x + 1 + fill, y + h - 1, color);
         }
     }
 
