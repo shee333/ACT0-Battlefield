@@ -1062,6 +1062,7 @@ public final class ConquestMatch {
                 clearEnemyGlowFor(viewerId);
                 continue;
             }
+            syncRelativeTeams(viewer, viewerId);
             Set<UUID> active = visibleEnemyGlows.computeIfAbsent(viewerId, ignored -> new HashSet<>());
             Set<UUID> shouldKeep = new HashSet<>();
             for (UUID targetId : factionOf.keySet()) {
@@ -1089,6 +1090,12 @@ public final class ConquestMatch {
                 }
             }
         }
+    }
+
+    private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
+        Faction mine = factionOf.get(viewerId);
+        RelativeTeamSync.sync(viewer, factionOf.keySet(), this::player,
+                id -> mine != null && mine == factionOf.get(id));
     }
 
     private boolean canViewerIdentify(@Nullable ServerPlayer viewer) {
