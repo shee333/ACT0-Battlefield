@@ -48,21 +48,30 @@ public final class BattlefieldHudOverlay {
     private static final ResourceLocation CAPTURE_BAR_BLUE = texture("capturepoint/progress_allies.png");
     private static final ResourceLocation CAPTURE_BAR_RED = texture("capturepoint/progress_axis.png");
 
+    private static String focusName = "";
+    private static int focusState;
+    private static int focusProgress;
+    private static int focusFaction;
+    private static long focusStartMs;
+    private static long focusLastSeenMs;
+
     private BattlefieldHudOverlay() {
     }
 
     @SubscribeEvent
     public static void onRenderGui(RenderGuiEvent.Post event) {
-        BattleHudDto hud = ClientBattleHud.hud();
-        if (!ClientBattleHud.isShown() || hud == null) {
-            return;
-        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.options.hideGui) {
             return;
         }
         GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
+
+        BattleHudDto hud = ClientBattleHud.hud();
+        if (!ClientBattleHud.isShown() || hud == null) {
+            renderHitFeedback(gg, font);
+            return;
+        }
 
         renderTopHud(gg, font, hud);
         renderCaptureFocus(gg, font, hud);
@@ -76,11 +85,12 @@ public final class BattlefieldHudOverlay {
             return;
         }
         long age = System.currentTimeMillis() - ClientHitFeedback.startedMs();
-        float t = Math.max(0f, Math.min(1f, age / 650.0f));
+        float lifeMs = ClientHitFeedback.isKill() ? 880.0f : 650.0f;
+        float t = Math.max(0f, Math.min(1f, age / lifeMs));
         float fade = 1.0f - t;
-        float elastic = (float) (1.0f + Math.sin(t * Math.PI * 4.0f) * (1.0f - t) * 0.34f);
+        float elastic = (float) (1.0f + Math.sin(t * Math.PI * 4.0f) * (1.0f - t) * (ClientHitFeedback.isKill() ? 0.46f : 0.34f));
         float intro = Math.min(1.0f, age / 80.0f);
-        float scale = (0.72f + 0.28f * intro) * elastic;
+        float scale = (ClientHitFeedback.isKill() ? 1.18f : 0.90f) * (0.72f + 0.28f * intro) * elastic;
 
         int centerX = gg.guiWidth() / 2;
         int centerY = gg.guiHeight() / 2;
@@ -91,7 +101,7 @@ public final class BattlefieldHudOverlay {
         int jitterY = ((phase * 11) % 3) - 1;
 
         boolean kill = ClientHitFeedback.isKill();
-        String marker = kill ? "KILL" : "HIT";
+        String marker = kill ? "KILL +100" : "HIT";
         int main = withAlpha(kill ? RED : BLUE, fade);
         int ghostA = withAlpha(0xFF00E5FF, fade * 0.48f);
         int ghostB = withAlpha(0xFFFF2A8A, fade * 0.36f);
@@ -141,7 +151,7 @@ public final class BattlefieldHudOverlay {
         drawScaledText(gg, font, bravoText, center + 124, top + 1, bravoColor, 1.1f);
 
         // 中央据点图标（A/B/C...）
-        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28);
+        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28, activeFocusName(hud));
     }
 
     private static void drawScaledText(GuiGraphics gg, Font font, String text, int x, int y, int color, float scale) {
@@ -169,7 +179,7 @@ public final class BattlefieldHudOverlay {
     }
 
     private static void renderPointRow(GuiGraphics gg, Font font, List<ControlPointHudDto> points, int myFaction,
-                                       int center, int y) {
+                                       int center, int y, String activeFocus) {
         if (points.isEmpty()) {
             return;
         }
@@ -179,14 +189,21 @@ public final class BattlefieldHudOverlay {
         int x = center - totalW / 2;
         for (ControlPointHudDto p : points) {
             int pressureColor = factionColor(p.pressure(), myFaction);
+            boolean focused = activeFocus != null && !activeFocus.isBlank() && activeFocus.equals(p.name());
+            int drawIcon = focused ? 22 : icon;
+            int dx = focused ? x - 3 : x;
+            int dy = focused ? y - 3 : y;
 
-            // 据点图标使用授权导入的 BlockFront 扁平资产。
-            gg.blit(pointTexture(p, myFaction), x, y, 0, 0, icon, icon, icon, icon);
+            // 顶部据点条：当前所在据点同步放大高亮。
+            gg.blit(pointTexture(p, myFaction), dx, dy, 0, 0, drawIcon, drawIcon, icon, icon);
             String label = p.name();
             if (label.length() > 1) {
                 label = label.substring(0, 1);
             }
             gg.drawString(font, label, x + icon / 2 - font.width(label) / 2, y + 5, WHITE, true);
+            if (focused) {
+                gg.fill(x - 2, y + icon + 7, x + icon + 2, y + icon + 9, pressureColor);
+            }
 
             // 据点进度：中立/被中和/反占都显示进度条，颜色代表当前推进方向。
             gg.fill(x, y + icon + 3, x + icon, y + icon + 5, 0x66000000);
@@ -262,26 +279,72 @@ public final class BattlefieldHudOverlay {
     }
 
     private static void renderCaptureFocus(GuiGraphics gg, Font font, BattleHudDto hud) {
+        updateFocusState(hud);
+        long now = System.currentTimeMillis();
+        boolean hasLiveFocus = hud.focusState() != 0 && !hud.focusName().isBlank();
+        long age = now - focusStartMs;
+        long sinceSeen = now - focusLastSeenMs;
+        if (!hasLiveFocus && sinceSeen > 280L) {
+            return;
+        }
+
+        float in = easeOut(Math.min(1.0f, age / 220.0f));
+        float out = hasLiveFocus ? 1.0f : (1.0f - Math.min(1.0f, sinceSeen / 280.0f));
+        float alpha = Math.max(0.0f, Math.min(1.0f, in * out));
+        int center = gg.guiWidth() / 2;
+        int topRowY = 35;
+        int focusY = 60;
+        int y = Math.round(topRowY + (focusY - topRowY) * in);
+        int panelW = 166;
+        int panelH = 48;
+        int x = center - panelW / 2;
+        int factionColor = focusState == 3 ? GREY : factionColor(focusFaction, hud.myFaction());
+        int aColor = withAlpha(factionColor, alpha);
+
+        gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, alpha * 0.72f));
+        gg.fill(x, y, x + panelW, y + 2, aColor);
+
+        float scale = 1.0f + 0.55f * in;
+        String label = focusName.length() > 1 ? focusName.substring(0, 1) : focusName;
+        gg.pose().pushPose();
+        gg.pose().translate(center - 5 * scale, y + 6, 300);
+        gg.pose().scale(scale, scale, 1.0f);
+        gg.drawString(font, label, 0, 0, aColor, true);
+        gg.pose().popPose();
+
+        String title = focusTitle(focusState) + " " + focusName;
+        gg.drawString(font, title, center - font.width(title) / 2, y + 24, aColor, false);
+
+        int barX = center - 59;
+        int barY = y + 37;
+        drawCaptureProgressBar(gg, barX, barY, focusProgress,
+                focusState == 3 ? null : captureBarTexture(focusFaction, hud.myFaction()));
+    }
+
+    private static void updateFocusState(BattleHudDto hud) {
+        long now = System.currentTimeMillis();
         if (hud.focusState() == 0 || hud.focusName().isBlank()) {
             return;
         }
-        int center = gg.guiWidth() / 2;
-        int y = Math.max(54, (int) (gg.guiHeight() * 0.67f));
-        int panelW = 154;
-        int panelH = 34;
-        int x = center - panelW / 2;
-        int factionColor = hud.focusState() == 3 ? GREY : factionColor(hud.focusFaction(), hud.myFaction());
+        if (!hud.focusName().equals(focusName) || focusState == 0) {
+            focusStartMs = now;
+        }
+        focusName = hud.focusName();
+        focusState = hud.focusState();
+        focusProgress = hud.focusProgress();
+        focusFaction = hud.focusFaction();
+        focusLastSeenMs = now;
+    }
 
-        gg.fill(x, y, x + panelW, y + panelH, 0x77000000);
-        gg.fill(x, y, x + panelW, y + 1, factionColor);
+    private static String activeFocusName(BattleHudDto hud) {
+        if (hud.focusState() != 0 && !hud.focusName().isBlank()) {
+            return hud.focusName();
+        }
+        return System.currentTimeMillis() - focusLastSeenMs <= 280L ? focusName : "";
+    }
 
-        String title = focusTitle(hud.focusState()) + " " + hud.focusName();
-        gg.drawString(font, title, center - font.width(title) / 2, y + 5, factionColor, false);
-
-        int barX = center - 59;
-        int barY = y + 20;
-        drawCaptureProgressBar(gg, barX, barY, hud.focusProgress(),
-                hud.focusState() == 3 ? null : captureBarTexture(hud.focusFaction(), hud.myFaction()));
+    private static float easeOut(float t) {
+        return 1.0f - (float) Math.pow(1.0f - t, 3.0f);
     }
 
     /** 扁平化据点占领进度条。 */

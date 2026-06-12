@@ -22,6 +22,7 @@ public final class ClientHitFeedback {
     }
 
     public static boolean active() {
-        return startedMs > 0L && System.currentTimeMillis() - startedMs < 650L;
+        long life = kill ? 900L : 650L;
+        return startedMs > 0L && System.currentTimeMillis() - startedMs < life;
     }
 }
