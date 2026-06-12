@@ -16,7 +16,7 @@ import java.util.List;
  */
 public final class BattlefieldNetwork {
 
-    private static final String PROTOCOL = "5";
+    private static final String PROTOCOL = "6";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -51,6 +51,8 @@ public final class BattlefieldNetwork {
             SyncBattleResultPacket::encode, SyncBattleResultPacket::decode, SyncBattleResultPacket::handle);
         CHANNEL.registerMessage(id++, SyncFireLockPacket.class,
             SyncFireLockPacket::encode, SyncFireLockPacket::decode, SyncFireLockPacket::handle);
+        CHANNEL.registerMessage(id++, HitFeedbackPacket.class,
+            HitFeedbackPacket::encode, HitFeedbackPacket::decode, HitFeedbackPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -85,6 +87,11 @@ public final class BattlefieldNetwork {
     public static void sendKillFeed(ServerPlayer player, String killer, String victim, int killerFaction, int victimFaction) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                 new KillFeedPacket(killer, victim, killerFaction, victimFaction));
+    }
+
+    /** 向攻击者推送准心命中/击杀反馈。 */
+    public static void sendHitFeedback(ServerPlayer player, boolean kill) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new HitFeedbackPacket(kill));
     }
 
     /** 向玩家推送自定义 TAB 战绩面板。 */

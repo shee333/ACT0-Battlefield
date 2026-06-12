@@ -364,6 +364,15 @@ public final class ConquestMatch {
         }
     }
 
+    public boolean isEnemyHit(UUID victimId, @Nullable UUID attackerId) {
+        if (victimId == null || attackerId == null || victimId.equals(attackerId)) {
+            return false;
+        }
+        Faction victimFaction = factionOf.get(victimId);
+        Faction attackerFaction = factionOf.get(attackerId);
+        return victimFaction != null && attackerFaction != null && victimFaction != attackerFaction;
+    }
+
     private void handleKillCredit(UUID victimId, @Nullable UUID killerId) {
         if (killerId == null || killerId.equals(victimId)) {
             return;
@@ -386,6 +395,7 @@ public final class ConquestMatch {
             }
         }
         if (killer != null) {
+            BattlefieldNetwork.sendHitFeedback(killer, true);
             killer.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.6f, 1.35f);
         }
     }

@@ -68,6 +68,56 @@ public final class BattlefieldHudOverlay {
         renderCaptureFocus(gg, font, hud);
         renderSquadPanel(gg, font, hud.squad());
         renderKillFeed(gg, font, hud.myFaction());
+        renderHitFeedback(gg, font);
+    }
+
+    private static void renderHitFeedback(GuiGraphics gg, Font font) {
+        if (!ClientHitFeedback.active()) {
+            return;
+        }
+        long age = System.currentTimeMillis() - ClientHitFeedback.startedMs();
+        float t = Math.max(0f, Math.min(1f, age / 650.0f));
+        float fade = 1.0f - t;
+        float elastic = (float) (1.0f + Math.sin(t * Math.PI * 4.0f) * (1.0f - t) * 0.34f);
+        float intro = Math.min(1.0f, age / 80.0f);
+        float scale = (0.72f + 0.28f * intro) * elastic;
+
+        int centerX = gg.guiWidth() / 2;
+        int centerY = gg.guiHeight() / 2;
+        int x = centerX - 42;
+        int y = centerY + 20;
+        int phase = (int) (age / 38L);
+        int jitterX = ((phase * 7) % 5) - 2;
+        int jitterY = ((phase * 11) % 3) - 1;
+
+        boolean kill = ClientHitFeedback.isKill();
+        String marker = kill ? "KILL" : "HIT";
+        int main = withAlpha(kill ? RED : BLUE, fade);
+        int ghostA = withAlpha(0xFF00E5FF, fade * 0.48f);
+        int ghostB = withAlpha(0xFFFF2A8A, fade * 0.36f);
+
+        gg.pose().pushPose();
+        gg.pose().translate(x + jitterX, y + jitterY, 420);
+        gg.pose().scale(scale, scale, 1.0f);
+
+        // 赛博故障双重色偏：青/品红幽灵偏移 + 主标记。
+        gg.drawString(font, "<", -10 + (phase % 2), 0, ghostA, false);
+        gg.drawString(font, marker, 1 + ((phase % 3) - 1), -1, ghostB, false);
+        gg.drawString(font, marker, 0, 0, main, false);
+        gg.drawString(font, ">", font.width(marker) + 4 - (phase % 2), 0, ghostA, false);
+
+        int barW = Math.max(18, font.width(marker) + 6);
+        int bar = Math.max(1, Math.round(barW * fade));
+        gg.fill(0, 11, bar, 12, main);
+        if ((phase & 1) == 0) {
+            gg.fill(3, -3, Math.min(barW, 3 + bar / 2), -2, ghostA);
+        }
+        gg.pose().popPose();
+    }
+
+    private static int withAlpha(int color, float alpha) {
+        int a = Math.max(0, Math.min(255, Math.round(255 * alpha)));
+        return (color & 0x00FFFFFF) | (a << 24);
     }
 
     private static void renderTopHud(GuiGraphics gg, Font font, BattleHudDto hud) {
