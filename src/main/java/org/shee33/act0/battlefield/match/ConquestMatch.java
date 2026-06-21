@@ -193,6 +193,7 @@ public final class ConquestMatch {
         if (faction == null) {
             return false;
         }
+        clearRelativeTeamsFor(player);
         clearEnemyGlowFor(player);
         clearEnemyGlowTarget(player);
         clearRedeployState(player, true);
@@ -214,6 +215,7 @@ public final class ConquestMatch {
         if (factionOf.isEmpty()) {
             ended = true;
             clearAllEnemyGlows();
+            clearAllRelativeTeams();
             clearNameTagTeams();
         } else {
             broadcastHud();
@@ -887,6 +889,7 @@ public final class ConquestMatch {
         protectedUntil.clear();
         lastHurtTick.clear();
         clearAllEnemyGlows();
+        clearAllRelativeTeams();
         clearNameTagTeams();
         sendFireLockToAll(false);
     }
@@ -1002,6 +1005,7 @@ public final class ConquestMatch {
         protectedUntil.clear();
         lastHurtTick.clear();
         clearAllEnemyGlows();
+        clearAllRelativeTeams();
         clearNameTagTeams();
         sendFireLockToAll(false);
     }
@@ -1164,6 +1168,7 @@ public final class ConquestMatch {
     private void clearEnemyGlowFor(ServerPlayer viewer) {
         if (viewer != null) {
             clearEnemyGlowFor(viewer.getUUID());
+            clearRelativeTeamsFor(viewer);
         }
     }
 
@@ -1193,6 +1198,7 @@ public final class ConquestMatch {
             if (e.getValue().remove(targetId)) {
                 ServerPlayer viewer = player(e.getKey());
                 if (viewer != null) {
+                    RelativeTeamSync.removeTarget(viewer, target);
                     GlowSync.hideGlowFrom(viewer, target);
                 }
             }
@@ -1204,6 +1210,19 @@ public final class ConquestMatch {
             clearEnemyGlowFor(viewerId);
         }
         visibleEnemyGlows.clear();
+    }
+
+    private void clearRelativeTeamsFor(ServerPlayer viewer) {
+        RelativeTeamSync.clear(viewer);
+    }
+
+    private void clearAllRelativeTeams() {
+        for (UUID viewerId : factionOf.keySet()) {
+            ServerPlayer viewer = player(viewerId);
+            if (viewer != null) {
+                clearRelativeTeamsFor(viewer);
+            }
+        }
     }
 
     private void tickBreathHealing() {

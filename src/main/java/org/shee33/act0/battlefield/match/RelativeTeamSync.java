@@ -50,6 +50,33 @@ public final class RelativeTeamSync {
         }
     }
 
+    /** 清除某观察者客户端里的本模组虚拟友方/敌方队伍。 */
+    public static void clear(ServerPlayer viewer) {
+        if (viewer == null) {
+            return;
+        }
+        Scoreboard board = new Scoreboard();
+        PlayerTeam friendly = board.addPlayerTeam(teamName(viewer, true));
+        PlayerTeam enemy = board.addPlayerTeam(teamName(viewer, false));
+        viewer.connection.send(ClientboundSetPlayerTeamPacket.createRemovePacket(friendly));
+        viewer.connection.send(ClientboundSetPlayerTeamPacket.createRemovePacket(enemy));
+    }
+
+    /** 从某观察者客户端的虚拟友方/敌方队伍里移除一个目标玩家。 */
+    public static void removeTarget(ServerPlayer viewer, ServerPlayer target) {
+        if (viewer == null || target == null) {
+            return;
+        }
+        Scoreboard board = new Scoreboard();
+        PlayerTeam friendly = board.addPlayerTeam(teamName(viewer, true));
+        PlayerTeam enemy = board.addPlayerTeam(teamName(viewer, false));
+        String name = target.getScoreboardName();
+        viewer.connection.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(
+                friendly, name, ClientboundSetPlayerTeamPacket.Action.REMOVE));
+        viewer.connection.send(ClientboundSetPlayerTeamPacket.createPlayerPacket(
+                enemy, name, ClientboundSetPlayerTeamPacket.Action.REMOVE));
+    }
+
     private static String teamName(ServerPlayer viewer, boolean friendly) {
         String base = "bf" + Integer.toHexString(viewer.getUUID().hashCode()) + (friendly ? "F" : "E");
         return base.length() <= 16 ? base : base.substring(0, 16);
