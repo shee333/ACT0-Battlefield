@@ -413,7 +413,7 @@ public final class ConquestManager {
             return;
         }
         event.setCanceled(true);
-        player.sendSystemMessage(Component.literal("§c大战场中只能使用 /battlefield leave 或 /suicide。"));
+        player.sendSystemMessage(Component.literal("§c大战场中无法使用该指令，使用退出按钮可离开。"));
     }
 
     @SubscribeEvent
