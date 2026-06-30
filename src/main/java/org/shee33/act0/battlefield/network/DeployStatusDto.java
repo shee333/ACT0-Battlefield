@@ -10,7 +10,8 @@ import java.util.List;
  */
 public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint, boolean canBase,
                               String selectedKind, String selectedTarget, int readyInTicks,
-                              double baseX, double baseZ, double squadX, double squadZ,
+                              double baseX, double baseY, double baseZ,
+                              double squadX, double squadY, double squadZ,
                               List<DeployPointDto> points,
                               List<DeploySquadMateDto> squadMates) {
 
@@ -23,8 +24,10 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         buf.writeUtf(selectedTarget);
         buf.writeVarInt(readyInTicks);
         buf.writeDouble(baseX);
+        buf.writeDouble(baseY);
         buf.writeDouble(baseZ);
         buf.writeDouble(squadX);
+        buf.writeDouble(squadY);
         buf.writeDouble(squadZ);
         buf.writeVarInt(points.size());
         for (DeployPointDto point : points) {
@@ -45,8 +48,10 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         String selectedTarget = buf.readUtf();
         int ready = buf.readVarInt();
         double baseX = buf.readDouble();
+        double baseY = buf.readDouble();
         double baseZ = buf.readDouble();
         double squadX = buf.readDouble();
+        double squadY = buf.readDouble();
         double squadZ = buf.readDouble();
         int n = buf.readVarInt();
         List<DeployPointDto> points = new ArrayList<>(n);
@@ -59,11 +64,11 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
             squadMates.add(DeploySquadMateDto.decode(buf));
         }
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
-                baseX, baseZ, squadX, squadZ, points, squadMates);
+                baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
-            0, 0, 0, 0, List.of(), List.of());
+            0, 0, 0, 0, 0, 0, List.of(), List.of());
     }
 }

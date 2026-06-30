@@ -62,7 +62,7 @@ public final class ConquestMatch {
     private static final int CAPTURE_INTERVAL = 10; // 0.5s
     private static final double CAPTURE_DELTA = CAPTURE_INTERVAL / 20.0;
     private static final int HUD_INTERVAL = 10;
-    private static final int SQUAD_SIZE = 5;
+    private static final int SQUAD_SIZE = 4;
     private static final int START_COUNTDOWN_TICKS = 5 * 20;
     private static final int REDEPLOY_DELAY_TICKS = 5 * 20;
     private static final int SPAWN_PROTECTION_TICKS = 3 * 20;
@@ -125,7 +125,7 @@ public final class ConquestMatch {
         buildSquads();
     }
 
-    /** 按阵营自动分队：每个小队最多 5 人，北大西洋公约/无邦军团各自独立连续编号。 */
+    /** 按阵营自动分队：每个小队最多 4 人，北大西洋公约/无邦军团各自独立连续编号。 */
     private void buildSquads() {
         squadOf.clear();
         squads.clear();
@@ -545,8 +545,8 @@ public final class ConquestMatch {
             deployTarget.put(id, target);
         }
         return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
-                base != null ? base.x() : 0, base != null ? base.z() : 0,
-                squad != null ? squad.x() : 0, squad != null ? squad.z() : 0,
+                base != null ? base.x() : 0, base != null ? base.y() + 1.0 : 0, base != null ? base.z() : 0,
+                squad != null ? squad.x() : 0, squad != null ? squad.y() + 1.0 : 0, squad != null ? squad.z() : 0,
                 pointDtos, squadDtos);
     }
 
@@ -570,7 +570,7 @@ public final class ConquestMatch {
             }
             boolean deployable = !enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS);
                 list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(), mate.getId(),
-                    deployable, mate.getX(), mate.getZ()));
+                    deployable, mate.getX(), mate.getY() + 1.0, mate.getZ()));
         }
         return list;
     }
@@ -582,7 +582,7 @@ public final class ConquestMatch {
             CapturePoint point = points.get(i);
             boolean deployable = point.owner() == faction;
             list.add(new DeployPointDto(Integer.toString(def.pointId()), def.name(), factionCode(point.owner()),
-                    deployable, def.pos().getX() + 0.5, def.pos().getZ() + 0.5));
+                    deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5));
         }
         return list;
     }

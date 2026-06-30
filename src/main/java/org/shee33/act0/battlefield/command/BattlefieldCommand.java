@@ -183,7 +183,7 @@ public final class BattlefieldCommand {
         int size = match.squadSizeOf(player.getUUID());
         Faction faction = match.factionOf(player.getUUID());
         feedback(c, "§a你在 " + (faction != null ? faction.coloredName() : "§7未知")
-                + " §a第 §e" + displaySquadNumber(squadId) + " §a小队（" + size + "/5）。");
+                + " §a第 §e" + displaySquadNumber(squadId) + " §a小队（" + size + "/4）。");
         return 1;
     }
 
