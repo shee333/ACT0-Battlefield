@@ -29,6 +29,7 @@ public final class BattlefieldDeployScreen extends Screen {
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         DeployStatusDto st = ClientDeployStatus.status();
+        BattlefieldDeployWorldOverlay.updateHover(mouseX, mouseY);
 
         // 顶部信息条：保留最小状态信息，真实战场画面保持可见。
         gg.fill(0, 0, width, 28, 0x88000000);
@@ -46,7 +47,23 @@ public final class BattlefieldDeployScreen extends Screen {
         gg.fill(0, height - 26, width, height, 0x88000000);
         gg.drawString(font, hint, width / 2 - font.width(hint) / 2, height - 18, 0xFFFFFFFF, false);
 
+        renderHoverTip(gg, mouseX, mouseY, ready);
+
         renderSpectateFade(gg);
+    }
+
+    private void renderHoverTip(GuiGraphics gg, int mouseX, int mouseY, int ready) {
+        BattlefieldDeployWorldOverlay.DeployClickTarget target = BattlefieldDeployWorldOverlay.hoveredTarget();
+        if (target == null) {
+            return;
+        }
+        String text = ready > 0 ? "§7预选 §f" + target.label() : "§a部署 §f" + target.label();
+        int w = font.width(text) + 12;
+        int x = Math.min(width - w - 6, mouseX + 12);
+        int y = Math.max(34, mouseY - 18);
+        gg.fill(x, y, x + w, y + 15, 0xBB000000);
+        gg.fill(x, y + 14, x + w, y + 15, PixelTheme.ALPHA_COLOR);
+        gg.drawString(font, text, x + 6, y + 4, 0xFFFFFFFF, false);
     }
 
     /** 根据当前选中的具体小队成员，切换到越肩观战相机。 */

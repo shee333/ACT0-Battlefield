@@ -40,6 +40,7 @@ public final class BattlefieldDeployWorldOverlay {
     private static Vec3 cameraLook = new Vec3(0, 0, 1);
     private static Vec3 cameraRight = new Vec3(1, 0, 0);
     private static Vec3 cameraUp = new Vec3(0, 1, 0);
+    private static DeployClickTarget hoveredTarget;
 
     private BattlefieldDeployWorldOverlay() {
     }
@@ -69,23 +70,24 @@ public final class BattlefieldDeployWorldOverlay {
 
         if (status.canBase()) {
             addAndRender(pose, buffer, font, camera, status,
-                    status.baseX(), status.baseY(), status.baseZ(), "H", "基地", true,
+                    status.baseX(), status.baseY(), status.baseZ(), "H", "基地", true, BLUE,
                     DeployActionPacket.DeployKind.BASE, "");
         }
         if (status.canSquad() && status.squadMates().isEmpty()) {
             addAndRender(pose, buffer, font, camera, status,
-                    status.squadX(), status.squadY(), status.squadZ(), "S", "小队", true,
+                    status.squadX(), status.squadY(), status.squadZ(), "S", "小队", true, BLUE,
                     DeployActionPacket.DeployKind.SQUAD, "");
         }
         for (DeploySquadMateDto mate : status.squadMates()) {
             addAndRender(pose, buffer, font, camera, status,
-                    mate.x(), mate.y(), mate.z(), "◆", mate.name(), mate.deployable(),
+                    mate.x(), mate.y(), mate.z(), "◆", mate.name(), mate.deployable(), mate.deployable() ? BLUE : RED,
                     DeployActionPacket.DeployKind.SQUAD, mate.id());
         }
         for (DeployPointDto point : status.points()) {
             String label = point.name() == null || point.name().isBlank() ? "?" : point.name().substring(0, 1);
+            int color = point.owner() == 0 ? GREY : (point.deployable() ? BLUE : RED);
             addAndRender(pose, buffer, font, camera, status,
-                    point.x(), point.y(), point.z(), label, point.name(), point.deployable(),
+                    point.x(), point.y(), point.z(), label, point.name(), point.deployable(), color,
                     DeployActionPacket.DeployKind.POINT, point.id());
         }
         buffer.endBatch();
@@ -95,22 +97,43 @@ public final class BattlefieldDeployWorldOverlay {
         return List.copyOf(TARGETS);
     }
 
+    public static DeployClickTarget hoveredTarget() {
+        return hoveredTarget;
+    }
+
+    public static void updateHover(double mouseX, double mouseY) {
+        hoveredTarget = null;
+        double best = Double.MAX_VALUE;
+        for (DeployClickTarget target : TARGETS) {
+            double dx = mouseX - target.x();
+            double dy = mouseY - target.y();
+            double dist = dx * dx + dy * dy;
+            if (dist <= target.radius() * target.radius() && dist < best) {
+                best = dist;
+                hoveredTarget = target;
+            }
+        }
+    }
+
     private static void addAndRender(PoseStack pose, MultiBufferSource.BufferSource buffer, Font font, Camera camera,
                                      DeployStatusDto status, double x, double y, double z,
-                                     String icon, String name, boolean deployable,
+                                     String icon, String name, boolean deployable, int color,
                                      DeployActionPacket.DeployKind kind, String targetId) {
         Vec3 pos = new Vec3(x, y, z);
         ScreenProjection projected = projectToScreen(Minecraft.getInstance(), pos);
         boolean selected = status.selectedKind().equals(kind.id())
                 && (targetId == null || targetId.isBlank() || targetId.equals(status.selectedTarget()));
+        boolean hovered = hoveredTarget != null && hoveredTarget.kind() == kind
+                && safeId(hoveredTarget.targetId()).equals(safeId(targetId));
         if (projected != null && deployable) {
-            TARGETS.add(new DeployClickTarget(projected.x(), projected.y(), selected ? 22 : 18, kind, targetId));
+            TARGETS.add(new DeployClickTarget(projected.x(), projected.y(), selected || hovered ? 24 : 18, kind, targetId,
+                    safe(name), deployable));
         }
-        renderMarker(pose, buffer, font, camera, pos, icon, name, deployable, selected);
+        renderMarker(pose, buffer, font, camera, pos, icon, name, deployable, selected, hovered, color);
     }
 
     private static void renderMarker(PoseStack pose, MultiBufferSource buffer, Font font, Camera camera, Vec3 pos,
-                                     String icon, String name, boolean deployable, boolean selected) {
+                                     String icon, String name, boolean deployable, boolean selected, boolean hovered, int color) {
         Vec3 cam = camera.getPosition();
         double dx = pos.x - cam.x;
         double dy = pos.y - cam.y;
@@ -120,9 +143,9 @@ public final class BattlefieldDeployWorldOverlay {
             return;
         }
         float scale = (float) Mth.clamp(dist * 0.0018D, 0.035D, 0.115D);
-        int main = !deployable ? GREY : (selected ? GREEN : BLUE);
-        String line1 = selected ? "◆ " + safe(name) : safe(icon);
-        String line2 = deployable ? (selected ? "已选择" : "点击部署") : "不可部署";
+        int main = selected ? GREEN : (hovered && deployable ? WHITE : color);
+        String line1 = (selected || hovered) ? "◆ " + safe(name) : safe(icon);
+        String line2 = deployable ? (selected ? "已选择" : (hovered ? "点击确认" : "点击部署")) : "不可部署";
 
         pose.pushPose();
         pose.translate(dx, dy, dz);
@@ -132,7 +155,7 @@ public final class BattlefieldDeployWorldOverlay {
 
         drawCentered(font, line1, 0, -16, main, mat, buffer, 0x77000000);
         drawCentered(font, line2, 0, -4, deployable ? WHITE : GREY, mat, buffer, 0x66000000);
-        if (selected) {
+        if (selected || hovered) {
             drawCentered(font, "▔▔▔", 0, 8, GREEN, mat, buffer, 0x00000000);
         }
         pose.popPose();
@@ -146,6 +169,10 @@ public final class BattlefieldDeployWorldOverlay {
 
     private static String safe(String text) {
         return text == null || text.isBlank() ? "?" : text;
+    }
+
+    private static String safeId(String text) {
+        return text == null ? "" : text;
     }
 
     private static void captureProjection(RenderLevelStageEvent event) {
@@ -189,7 +216,8 @@ public final class BattlefieldDeployWorldOverlay {
     }
 
     public record DeployClickTarget(double x, double y, double radius,
-                                    DeployActionPacket.DeployKind kind, String targetId) {
+                                    DeployActionPacket.DeployKind kind, String targetId,
+                                    String label, boolean deployable) {
     }
 
     private record ScreenProjection(double x, double y) {
