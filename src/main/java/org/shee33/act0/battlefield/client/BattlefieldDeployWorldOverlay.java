@@ -145,7 +145,7 @@ public final class BattlefieldDeployWorldOverlay {
         float scale = (float) Mth.clamp(dist * 0.0018D, 0.035D, 0.115D);
         int main = selected ? GREEN : (hovered && deployable ? WHITE : color);
         String line1 = (selected || hovered) ? "◆ " + safe(name) : safe(icon);
-        String line2 = deployable ? (selected ? "已选择" : (hovered ? "点击确认" : "点击部署")) : "不可部署";
+        String line2 = deployable ? (selected ? "已选择" : (hovered ? "点击确认" : Math.round(dist) + "m")) : "不可部署";
 
         pose.pushPose();
         pose.translate(dx, dy, dz);
