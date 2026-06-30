@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
+import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
@@ -61,24 +62,22 @@ public final class BattlefieldDeployScreen extends Screen {
 
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-        renderBackground(gg);
         DeployStatusDto st = ClientDeployStatus.status();
         targets.clear();
 
-        PixelTheme.panel(gg, left, top, PANEL_W, PANEL_H);
-
-        String title = "§c§l重新部署";
-        gg.drawString(font, title, left + (PANEL_W - font.width(title)) / 2, top + 9, 0xFFFFFFFF, false);
+        // 战地式无缝部署：不再绘制居中窗口，直接叠加在真实俯视战场上。
+        gg.fill(0, 0, width, 28, 0x88000000);
+        gg.fill(0, 28, width, 30, PixelTheme.ALPHA_COLOR);
+        String title = "§b§l重新部署";
+        gg.drawString(font, title, width / 2 - font.width(title) / 2, 8, 0xFFFFFFFF, false);
         int ready = st == null ? 0 : Math.max(0, st.readyInTicks());
         String timer = ready > 0 ? "§7可部署倒计时 §f" + ((ready + 19) / 20) + " 秒" : "§a可以部署";
-        gg.drawString(font, timer, left + (PANEL_W - font.width(timer)) / 2, top + 24, 0xFFFFFFFF, false);
-
-        renderMap(gg, mouseX, mouseY, st);
-        renderSideCards(gg, mouseX, mouseY, st);
+        gg.drawString(font, timer, width / 2 - font.width(timer) / 2, 19, 0xFFFFFFFF, false);
         updateSquadSpectate(st);
 
-        String hint = ready > 0 ? "§8选择部署点，倒计时结束后部署" : "§7点击地图或右侧部署点重返战场";
-        gg.drawString(font, hint, left + (PANEL_W - font.width(hint)) / 2, top + PANEL_H - 22, 0xFFFFFFFF, false);
+        String hint = ready > 0 ? "§7选择部署点，倒计时结束后部署" : "§f点击战场标记重返战场";
+        gg.fill(0, height - 26, width, height, 0x88000000);
+        gg.drawString(font, hint, width / 2 - font.width(hint) / 2, height - 18, 0xFFFFFFFF, false);
 
         renderSpectateFade(gg);
     }
@@ -276,8 +275,10 @@ public final class BattlefieldDeployScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            for (ClickTarget t : targets) {
-                if (inRect((int) mouseX, (int) mouseY, t.x(), t.y(), t.w(), t.h())) {
+            for (BattlefieldDeployWorldOverlay.DeployClickTarget t : BattlefieldDeployWorldOverlay.targets()) {
+                double dx = mouseX - t.x();
+                double dy = mouseY - t.y();
+                if (dx * dx + dy * dy <= t.radius() * t.radius()) {
                     send(t.kind(), t.targetId());
                     return true;
                 }
