@@ -3,6 +3,7 @@ package org.shee33.act0.battlefield.client.screen;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
@@ -45,7 +46,9 @@ public final class BattlefieldDeployScreen extends Screen {
         updateSquadSpectate(st);
 
         // 底部提示条：不做旧部署面板/小地图。
-        String hint = ready > 0 ? "§7选择部署点，倒计时结束后部署" : "§f点击战场标记重返战场";
+        String hint = ready > 0
+            ? "§7选择部署点，倒计时结束后部署 · R 刷新"
+            : "§f点击战场标记或按 Enter 部署 · R 刷新";
         gg.fill(0, height - 26, width, height, 0x88000000);
         gg.drawString(font, hint, width / 2 - font.width(hint) / 2, height - 18, 0xFFFFFFFF, false);
         renderSelectedTarget(gg, st);
@@ -170,6 +173,35 @@ public final class BattlefieldDeployScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_R) {
+            BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(DeployActionPacket.DeployKind.REFRESH));
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
+            DeployStatusDto st = ClientDeployStatus.status();
+            DeployActionPacket.DeployKind kind = selectedKind(st);
+            if (kind != null) {
+                BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(kind, st.selectedTarget()));
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private static DeployActionPacket.DeployKind selectedKind(DeployStatusDto st) {
+        if (st == null || !st.active() || st.selectedKind().isBlank()) {
+            return null;
+        }
+        return switch (st.selectedKind()) {
+            case "base" -> DeployActionPacket.DeployKind.BASE;
+            case "point" -> DeployActionPacket.DeployKind.POINT;
+            case "squad" -> DeployActionPacket.DeployKind.SQUAD;
+            default -> null;
+        };
     }
 
     @Override
