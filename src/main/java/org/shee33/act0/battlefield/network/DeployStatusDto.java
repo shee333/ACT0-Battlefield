@@ -13,7 +13,11 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
                               double baseX, double baseY, double baseZ,
                               double squadX, double squadY, double squadZ,
                               List<DeployPointDto> points,
-                              List<DeploySquadMateDto> squadMates) {
+                              List<DeploySquadMateDto> squadMates,
+                              boolean hasArea,
+                              double areaMinX, double areaMinY, double areaMinZ,
+                              double areaMaxX, double areaMaxY, double areaMaxZ,
+                              boolean areaExplicit) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(active);
@@ -37,6 +41,14 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         for (DeploySquadMateDto mate : squadMates) {
             mate.encode(buf);
         }
+        buf.writeBoolean(hasArea);
+        buf.writeDouble(areaMinX);
+        buf.writeDouble(areaMinY);
+        buf.writeDouble(areaMinZ);
+        buf.writeDouble(areaMaxX);
+        buf.writeDouble(areaMaxY);
+        buf.writeDouble(areaMaxZ);
+        buf.writeBoolean(areaExplicit);
     }
 
     public static DeployStatusDto decode(FriendlyByteBuf buf) {
@@ -63,12 +75,22 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         for (int i = 0; i < sn; i++) {
             squadMates.add(DeploySquadMateDto.decode(buf));
         }
+        boolean hasArea = buf.readBoolean();
+        double aminX = buf.readDouble();
+        double aminY = buf.readDouble();
+        double aminZ = buf.readDouble();
+        double amaxX = buf.readDouble();
+        double amaxY = buf.readDouble();
+        double amaxZ = buf.readDouble();
+        boolean areaExplicit = buf.readBoolean();
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
-                baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates);
+                baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates,
+                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
-            0, 0, 0, 0, 0, 0, List.of(), List.of());
+            0, 0, 0, 0, 0, 0, List.of(), List.of(),
+            false, 0, 0, 0, 0, 0, 0, false);
     }
 }

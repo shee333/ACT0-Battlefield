@@ -6,6 +6,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
 
 import javax.annotation.Nullable;
@@ -30,6 +31,9 @@ public final class BattlefieldData extends SavedData {
     private BaseSpawn alphaBase;
     @Nullable
     private BaseSpawn bravoBase;
+
+    /** 显式录入的战斗区域边界；为空时按基地+据点推导。 */
+    private BattleArea area = BattleArea.EMPTY;
 
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
@@ -102,6 +106,40 @@ public final class BattlefieldData extends SavedData {
         return faction == Faction.ALPHA ? alphaBase : bravoBase;
     }
 
+    // ---- 战斗区域 ----
+
+    /** 设置显式战斗区域（管理员录入）；传 {@code null} 或空区域则清除显式值，恢复为推导。 */
+    public void setArea(@Nullable BattleArea area) {
+        this.area = (area == null || area.isEmpty()) ? BattleArea.EMPTY : area;
+        setDirty();
+    }
+
+    /** 获取显式录入的战斗区域；若未录入返回 {@link BattleArea#EMPTY}。 */
+    public BattleArea areaOverride() {
+        return area;
+    }
+
+    /**
+     * 取得当前生效的战斗区域：优先使用显式录入，否则从基地+据点推导（外扩 16 格水平 padding）。
+     * 若完全没有基地和据点，则返回 {@link BattleArea#EMPTY}。
+     */
+    public BattleArea effectiveArea() {
+        if (area.isSet()) {
+            return area;
+        }
+        List<double[]> pts = new ArrayList<>();
+        if (alphaBase != null) {
+            pts.add(new double[]{alphaBase.x(), alphaBase.y(), alphaBase.z()});
+        }
+        if (bravoBase != null) {
+            pts.add(new double[]{bravoBase.x(), bravoBase.y(), bravoBase.z()});
+        }
+        for (ControlPointDef def : points.values()) {
+            pts.add(new double[]{def.pos().getX() + 0.5, def.pos().getY() + 0.5, def.pos().getZ() + 0.5});
+        }
+        return BattleArea.derive(pts, 16.0);
+    }
+
     // ---- 持久化 ----
 
     @Override
@@ -116,6 +154,16 @@ public final class BattlefieldData extends SavedData {
         }
         if (bravoBase != null) {
             tag.put("bravoBase", bravoBase.save());
+        }
+        if (area.isSet()) {
+            CompoundTag a = new CompoundTag();
+            a.putDouble("minX", area.minX());
+            a.putDouble("minY", area.minY());
+            a.putDouble("minZ", area.minZ());
+            a.putDouble("maxX", area.maxX());
+            a.putDouble("maxY", area.maxY());
+            a.putDouble("maxZ", area.maxZ());
+            tag.put("area", a);
         }
         return tag;
     }
@@ -132,6 +180,12 @@ public final class BattlefieldData extends SavedData {
         }
         if (tag.contains("bravoBase")) {
             data.bravoBase = BaseSpawn.load(tag.getCompound("bravoBase"));
+        }
+        if (tag.contains("area")) {
+            CompoundTag a = tag.getCompound("area");
+            data.area = new BattleArea(
+                    a.getDouble("minX"), a.getDouble("minY"), a.getDouble("minZ"),
+                    a.getDouble("maxX"), a.getDouble("maxY"), a.getDouble("maxZ"));
         }
         return data;
     }

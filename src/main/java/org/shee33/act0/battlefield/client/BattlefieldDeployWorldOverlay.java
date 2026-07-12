@@ -1,10 +1,12 @@
 package org.shee33.act0.battlefield.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -33,6 +35,8 @@ public final class BattlefieldDeployWorldOverlay {
     private static final int GREEN = 0xFF9DFF9D;
     private static final int WHITE = 0xFFE8F4F8;
     private static final int LIGHT = 0xF000F0;
+    private static final int AREA_FLOOR_RGB = 0xFFE8C36A;
+    private static final int AREA_WALL_RGB = 0xCCB6E3FF;
 
     private static final List<DeployClickTarget> TARGETS = new ArrayList<>();
     private static Matrix4f projectionMatrix;
@@ -89,6 +93,15 @@ public final class BattlefieldDeployWorldOverlay {
             addAndRender(pose, buffer, font, camera, status,
                     point.x(), point.y(), point.z(), label, point.name(), point.deployable(), color,
                     DeployActionPacket.DeployKind.POINT, point.id());
+        }
+        if (status.hasArea()) {
+            drawAreaBox(pose, buffer, camera,
+                    status.areaMinX(), status.areaMinY(), status.areaMinZ(),
+                    status.areaMaxX(), status.areaMaxY(), status.areaMaxZ(),
+                    AREA_FLOOR_RGB, AREA_WALL_RGB);
+            renderAreaLabel(pose, font, buffer, camera,
+                    status.areaMinX(), status.areaMaxY(), status.areaMinZ(),
+                    status.areaExplicit());
         }
         buffer.endBatch();
     }
@@ -221,5 +234,72 @@ public final class BattlefieldDeployWorldOverlay {
     }
 
     private record ScreenProjection(double x, double y) {
+    }
+
+    /** 绘制战斗区域 AABB：12 条边 + 角点强调。 */
+    private static void drawAreaBox(PoseStack pose, MultiBufferSource.BufferSource buffer, Camera camera,
+                                    double minX, double minY, double minZ,
+                                    double maxX, double maxY, double maxZ,
+                                    int floorColor, int wallColor) {
+        Vec3 cam = camera.getPosition();
+        pose.pushPose();
+        pose.translate(-cam.x, -cam.y, -cam.z);
+        Matrix4f matrix = pose.last().pose();
+        pose.popPose();
+
+        VertexConsumer consumer = buffer.getBuffer(RenderType.LINES);
+
+        // 4 底边（地面轮廓）—— 强调色
+        drawLine(consumer, matrix, minX, minY, minZ, maxX, minY, minZ, floorColor);
+        drawLine(consumer, matrix, maxX, minY, minZ, maxX, minY, maxZ, floorColor);
+        drawLine(consumer, matrix, maxX, minY, maxZ, minX, minY, maxZ, floorColor);
+        drawLine(consumer, matrix, minX, minY, maxZ, minX, minY, minZ, floorColor);
+
+        // 4 顶边 + 4 立柱 —— 较淡
+        drawLine(consumer, matrix, minX, maxY, minZ, maxX, maxY, minZ, wallColor);
+        drawLine(consumer, matrix, maxX, maxY, minZ, maxX, maxY, maxZ, wallColor);
+        drawLine(consumer, matrix, maxX, maxY, maxZ, minX, maxY, maxZ, wallColor);
+        drawLine(consumer, matrix, minX, maxY, maxZ, minX, maxY, minZ, wallColor);
+        drawLine(consumer, matrix, minX, minY, minZ, minX, maxY, minZ, wallColor);
+        drawLine(consumer, matrix, maxX, minY, minZ, maxX, maxY, minZ, wallColor);
+        drawLine(consumer, matrix, maxX, minY, maxZ, maxX, maxY, maxZ, wallColor);
+        drawLine(consumer, matrix, minX, minY, maxZ, minX, maxY, maxZ, wallColor);
+    }
+
+    private static void drawLine(VertexConsumer consumer, Matrix4f matrix,
+                                 double x1, double y1, double z1,
+                                 double x2, double y2, double z2,
+                                 int argb) {
+        float a = ((argb >>> 24) & 0xFF) / 255.0f;
+        float r = ((argb >>> 16) & 0xFF) / 255.0f;
+        float g = ((argb >>> 8) & 0xFF) / 255.0f;
+        float b = (argb & 0xFF) / 255.0f;
+        consumer.vertex(matrix, (float) x1, (float) y1, (float) z1).color(r, g, b, a).endVertex();
+        consumer.vertex(matrix, (float) x2, (float) y2, (float) z2).color(r, g, b, a).endVertex();
+    }
+
+    /** 在区域一角绘制"战斗区域"标签：显式录入绿色，推导黄色。 */
+    private static void renderAreaLabel(PoseStack pose, Font font, MultiBufferSource.BufferSource buffer,
+                                        Camera camera, double x, double y, double z, boolean explicit) {
+        Vec3 cam = camera.getPosition();
+        double dx = x - cam.x;
+        double dy = y - cam.y;
+        double dz = z - cam.z;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 800.0D) {
+            return;
+        }
+        float scale = (float) Mth.clamp(dist * 0.0020D, 0.05D, 0.15D);
+        String label = explicit ? "战斗区域" : "战斗区域 (推导)";
+        int color = explicit ? 0xFF9DFF9D : 0xFFFFD37A;
+
+        pose.pushPose();
+        pose.translate(dx, dy, dz);
+        pose.mulPose(camera.rotation());
+        pose.scale(-scale, -scale, scale);
+        Matrix4f matrix = pose.last().pose();
+        font.drawInBatch(label, -font.width(label) / 2.0f, 0f, color, false,
+                matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0x88000000, LIGHT);
+        pose.popPose();
     }
 }

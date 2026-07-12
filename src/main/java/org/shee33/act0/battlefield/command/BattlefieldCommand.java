@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.data.BattlefieldData;
@@ -96,6 +97,7 @@ public final class BattlefieldCommand {
                         .then(Commands.argument("name", StringArgumentType.greedyString())
                             .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets"),
                                 StringArgumentType.getString(c, "name"))))))
+                .then(buildAreaBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop)));
         dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
@@ -116,6 +118,26 @@ public final class BattlefieldCommand {
                 .executes(ctx -> clearHolograms(ctx, 6.0D))
                 .then(Commands.argument("radius", DoubleArgumentType.doubleArg(1.0D, 64.0D))
                     .executes(ctx -> clearHolograms(ctx, DoubleArgumentType.getDouble(ctx, "radius")))));
+    }
+
+    /** /battlefield area {info|set|clear|here}：管理战斗区域边界。 */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildAreaBranch() {
+        return Commands.literal("area")
+            .then(Commands.literal("info")
+                .executes(BattlefieldCommand::areaInfo))
+            .then(Commands.literal("set").requires(s -> s.hasPermission(2))
+                .then(Commands.argument("minX", IntegerArgumentType.integer())
+                    .then(Commands.argument("minY", IntegerArgumentType.integer())
+                        .then(Commands.argument("minZ", IntegerArgumentType.integer())
+                            .then(Commands.argument("maxX", IntegerArgumentType.integer())
+                                .then(Commands.argument("maxY", IntegerArgumentType.integer())
+                                    .then(Commands.argument("maxZ", IntegerArgumentType.integer())
+                                        .executes(BattlefieldCommand::areaSet))))))))
+            .then(Commands.literal("clear").requires(s -> s.hasPermission(2))
+                .executes(BattlefieldCommand::areaClear))
+            .then(Commands.literal("here").requires(s -> s.hasPermission(2))
+                .then(Commands.argument("radius", IntegerArgumentType.integer(8, 4096))
+                    .executes(BattlefieldCommand::areaHere)));
     }
 
     private static int createHologram(CommandContext<CommandSourceStack> ctx,
@@ -330,6 +352,70 @@ public final class BattlefieldCommand {
         }
         feedback(c, stopped ? "§7已停止当前大战场对局。" : "§7当前没有进行中的对局。");
         return 1;
+    }
+
+    // ---- 战斗区域 ----
+
+    private static int areaInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        BattleArea override = data.areaOverride();
+        BattleArea effective = data.effectiveArea();
+        if (!effective.isSet()) {
+            feedback(c, "§7当前世界尚未布置任何据点或基地，无法推导战斗区域。");
+            return 1;
+        }
+        feedback(c, "§b战斗区域（" + (override.isSet() ? "显式录入" : "由据点/基地推导") + "）：");
+        feedback(c, "§7  范围 §f" + fmt(effective.minX()) + " ~ " + fmt(effective.maxX())
+                + " §8/ §f" + fmt(effective.minY()) + " ~ " + fmt(effective.maxY())
+                + " §8/ §f" + fmt(effective.minZ()) + " ~ " + fmt(effective.maxZ()));
+        feedback(c, "§7  尺寸 §f" + fmt(effective.sizeX()) + " × " + fmt(effective.sizeY())
+                + " × " + fmt(effective.sizeZ()));
+        return 1;
+    }
+
+    private static int areaSet(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        int minX = IntegerArgumentType.getInteger(c, "minX");
+        int minY = IntegerArgumentType.getInteger(c, "minY");
+        int minZ = IntegerArgumentType.getInteger(c, "minZ");
+        int maxX = IntegerArgumentType.getInteger(c, "maxX");
+        int maxY = IntegerArgumentType.getInteger(c, "maxY");
+        int maxZ = IntegerArgumentType.getInteger(c, "maxZ");
+        if (maxX <= minX || maxY <= minY || maxZ <= minZ) {
+            feedback(c, "§c区域非法：最大值必须大于最小值。");
+            return 0;
+        }
+        if (maxX - minX > 8192 || maxY - minY > 1024 || maxZ - minZ > 8192) {
+            feedback(c, "§c区域过大：单边上限 8192/1024/8192。");
+            return 0;
+        }
+        BattlefieldData.get(level).setArea(new BattleArea(minX, minY, minZ, maxX, maxY, maxZ));
+        feedback(c, "§a战斗区域已设为 §f" + minX + "," + minY + "," + minZ
+                + " §7~ §f" + maxX + "," + maxY + "," + maxZ + "§a。");
+        return 1;
+    }
+
+    private static int areaClear(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData.get(level).setArea(BattleArea.EMPTY);
+        feedback(c, "§7已清除显式战斗区域，恢复为据点/基地推导。");
+        return 1;
+    }
+
+    private static int areaHere(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer p = c.getSource().getPlayerOrException();
+        int r = IntegerArgumentType.getInteger(c, "radius");
+        BattleArea area = new BattleArea(
+                p.getX() - r, p.getY() - 32, p.getZ() - r,
+                p.getX() + r, p.getY() + 96, p.getZ() + r);
+        BattlefieldData.get(p.serverLevel()).setArea(area);
+        feedback(c, "§a战斗区域已设为以你为中心、半径 §e" + r + " §a格（高度自动 32~96）。");
+        return 1;
+    }
+
+    private static String fmt(double v) {
+        return (v == Math.floor(v)) ? Integer.toString((int) v) : String.format("%.2f", v);
     }
 
     // ---- 状态 ----

@@ -544,10 +544,16 @@ public final class ConquestMatch {
             deploySelection.put(id, selected);
             deployTarget.put(id, target);
         }
+        org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
+        boolean areaExplicit = data.areaOverride().isSet();
         return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
                 base != null ? base.x() : 0, base != null ? base.y() + 1.0 : 0, base != null ? base.z() : 0,
                 squad != null ? squad.x() : 0, squad != null ? squad.y() + 1.0 : 0, squad != null ? squad.z() : 0,
-                pointDtos, squadDtos);
+                pointDtos, squadDtos,
+                area.isSet(),
+                area.minX(), area.minY(), area.minZ(),
+                area.maxX(), area.maxY(), area.maxZ(),
+                areaExplicit);
     }
 
     private List<DeploySquadMateDto> deploySquadMateDtos(UUID self, Faction faction) {
