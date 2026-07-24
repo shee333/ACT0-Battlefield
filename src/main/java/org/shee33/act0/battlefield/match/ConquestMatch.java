@@ -108,6 +108,7 @@ public final class ConquestMatch {
     private final Map<UUID, UUID> lastKilledBy = new LinkedHashMap<>();
     private boolean firstBlood;
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
+    private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -297,6 +298,9 @@ public final class ConquestMatch {
                         alpha++;
                     } else {
                         bravo++;
+                    }
+                    if (point.owner() == e.getValue()) {
+                        captureTime.merge(e.getKey(), CAPTURE_INTERVAL, Integer::sum);
                     }
                 }
             }
@@ -1001,6 +1005,7 @@ public final class ConquestMatch {
         lastKilledBy.clear();
         firstBlood = false;
         spottedUntil.clear();
+        captureTime.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1021,10 +1026,25 @@ public final class ConquestMatch {
     private void broadcastServerResult(Faction winner) {
         TopKiller top = topKiller();
         String mvp = top.kills() > 0 ? " §8| §7击杀王 §e" + top.name() + " §7(" + top.kills() + "杀)" : "";
+
+        String cap = "";
+        int capTime = 0;
+        for (Map.Entry<UUID, Integer> e : captureTime.entrySet()) {
+            if (e.getValue() > capTime) { capTime = e.getValue(); ServerPlayer p = player(e.getKey()); cap = p != null ? p.getGameProfile().getName() : "?"; }
+        }
+        String cp = capTime > 0 ? " §8| §7占点王 §e" + cap + " §7(" + (capTime / 20) + "秒)" : "";
+
+        int bestK = 0, bestId = 0;
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squads.entrySet()) {
+            int t = e.getValue().stream().mapToInt(uid -> kills.getOrDefault(uid, 0)).sum();
+            if (t > bestK) { bestK = t; bestId = e.getKey(); }
+        }
+        String sq = bestK > 0 ? " §8| §7最佳小队 §e第" + displaySquad(bestId) + "小队 §7(" + bestK + "杀)" : "";
+
         Component message = Component.literal("§6[ACT0赛果] §f大战场 · 征服 §8| §a"
                 + winner.displayName() + " §7胜出 §8| §7票数 §9北大西洋公约 §f"
                 + tickets.displayTickets(Faction.ALPHA) + " §8/ §c无邦军团 §f"
-                + tickets.displayTickets(Faction.BRAVO) + mvp);
+                + tickets.displayTickets(Faction.BRAVO) + mvp + cp + sq);
         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
             online.sendSystemMessage(message);
         }
@@ -1070,6 +1090,10 @@ public final class ConquestMatch {
         return p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
     }
 
+    private static int displaySquad(int squadId) {
+        return squadId >= 101 ? squadId - 100 : Math.max(0, squadId);
+    }
+
     private record TopKiller(String name, int kills) {
     }
 
@@ -1088,9 +1112,29 @@ public final class ConquestMatch {
                 .thenComparingInt(TabEntryDto::deaths)
                 .thenComparing(TabEntryDto::name));
         UUID viewerId = viewer.getUUID();
+
+        String topCapturer = "";
+        int topCapturerTime = 0;
+        for (Map.Entry<UUID, Integer> e : captureTime.entrySet()) {
+            if (e.getValue() > topCapturerTime) {
+                topCapturerTime = e.getValue();
+                ServerPlayer p = player(e.getKey());
+                topCapturer = p != null ? p.getGameProfile().getName() : "?";
+            }
+        }
+
+        int bestSquadKills = 0;
+        int bestSquadId = 0;
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squads.entrySet()) {
+            int total = e.getValue().stream().mapToInt(id -> kills.getOrDefault(id, 0)).sum();
+            if (total > bestSquadKills) { bestSquadKills = total; bestSquadId = e.getKey(); }
+        }
+        String bestSquad = bestSquadId > 0 ? "第" + displaySquad(bestSquadId) + "小队" : "";
+
         return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
                 tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
-                kills.getOrDefault(viewerId, 0), deaths.getOrDefault(viewerId, 0), entries);
+                kills.getOrDefault(viewerId, 0), deaths.getOrDefault(viewerId, 0), entries,
+                topCapturer, topCapturerTime / 20, bestSquad, bestSquadKills);
     }
 
     /** 强制中止（服务器关闭/管理员停止）。 */
@@ -1126,6 +1170,7 @@ public final class ConquestMatch {
         lastKilledBy.clear();
         firstBlood = false;
         spottedUntil.clear();
+        captureTime.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();

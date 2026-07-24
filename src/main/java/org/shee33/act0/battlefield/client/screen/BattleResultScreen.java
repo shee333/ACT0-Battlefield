@@ -15,7 +15,7 @@ import java.util.List;
 public final class BattleResultScreen extends Screen {
 
     private static final int PANEL_W = 360;
-    private static final int PANEL_H = 230;
+    private static final int PANEL_H = 280;
 
     private final BattleResultDto result;
     private int left;
@@ -46,16 +46,26 @@ public final class BattleResultScreen extends Screen {
         gg.drawString(font, ticketLine, left + (PANEL_W - font.width(ticketLine)) / 2, top + 30, 0xFFFFFFFF, false);
 
         String mine = "§f你的战绩  §a" + result.myKills() + "§7 / §c" + result.myDeaths();
-        gg.drawString(font, mine, left + 18, top + 54, 0xFFFFFFFF, false);
+        gg.drawString(font, mine, left + 18, top + 48, 0xFFFFFFFF, false);
 
-        gg.fill(left + 14, top + 76, left + PANEL_W - 14, top + 77, PixelTheme.BEVEL_SHADOW);
-        gg.drawString(font, "击杀榜", left + 18, top + 86, PixelTheme.TEXT, false);
-        gg.drawString(font, "K", left + PANEL_W - 72, top + 86, PixelTheme.TEXT_DIM, false);
-        gg.drawString(font, "D", left + PANEL_W - 46, top + 86, PixelTheme.TEXT_DIM, false);
+        if (!result.topCapturer().isBlank()) {
+            String cap = "§7占点王  §e" + result.topCapturer() + " §7" + result.topCapturerTime() + "秒";
+            gg.drawString(font, cap, left + 18, top + 64, 0xFFFFFFFF, false);
+        }
+        if (!result.bestSquad().isBlank()) {
+            String sq = "§7最佳  §e" + result.bestSquad() + " §7" + result.bestSquadKills() + "杀";
+            gg.drawString(font, sq, left + 18, top + 80, 0xFFFFFFFF, false);
+        }
+
+        int tblY = result.topCapturer().isBlank() ? 84 : (result.bestSquad().isBlank() ? 84 : 100);
+        gg.fill(left + 14, top + tblY, left + PANEL_W - 14, top + tblY + 1, PixelTheme.BEVEL_SHADOW);
+        gg.drawString(font, "击杀榜", left + 18, top + tblY + 10, PixelTheme.TEXT, false);
+        gg.drawString(font, "K", left + PANEL_W - 72, top + tblY + 10, PixelTheme.TEXT_DIM, false);
+        gg.drawString(font, "D", left + PANEL_W - 46, top + tblY + 10, PixelTheme.TEXT_DIM, false);
 
         List<TabEntryDto> entries = result.leaderboard();
         int rows = Math.min(8, entries.size());
-        int y = top + 102;
+        int y = top + tblY + 26;
         for (int i = 0; i < rows; i++) {
             TabEntryDto e = entries.get(i);
             int color = e.faction() == 1 ? 0xFFE7654E : 0xFF57C7FF;

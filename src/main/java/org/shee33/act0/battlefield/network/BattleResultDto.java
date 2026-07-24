@@ -9,7 +9,9 @@ import java.util.List;
 public record BattleResultDto(int winnerFaction, int myFaction,
                               int alphaTickets, int bravoTickets,
                               int myKills, int myDeaths,
-                              List<TabEntryDto> leaderboard) {
+                              List<TabEntryDto> leaderboard,
+                              String topCapturer, int topCapturerTime,
+                              String bestSquad, int bestSquadKills) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeVarInt(winnerFaction);
@@ -19,9 +21,11 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         buf.writeVarInt(myKills);
         buf.writeVarInt(myDeaths);
         buf.writeVarInt(leaderboard.size());
-        for (TabEntryDto entry : leaderboard) {
-            entry.encode(buf);
-        }
+        for (TabEntryDto entry : leaderboard) { entry.encode(buf); }
+        buf.writeUtf(topCapturer);
+        buf.writeVarInt(topCapturerTime);
+        buf.writeUtf(bestSquad);
+        buf.writeVarInt(bestSquadKills);
     }
 
     public static BattleResultDto decode(FriendlyByteBuf buf) {
@@ -33,9 +37,11 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         int myDeaths = buf.readVarInt();
         int n = buf.readVarInt();
         List<TabEntryDto> entries = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            entries.add(TabEntryDto.decode(buf));
-        }
-        return new BattleResultDto(winner, mine, alpha, bravo, myKills, myDeaths, entries);
+        for (int i = 0; i < n; i++) { entries.add(TabEntryDto.decode(buf)); }
+        String tc = buf.readUtf();
+        int tct = buf.readVarInt();
+        String bs = buf.readUtf();
+        int bsk = buf.readVarInt();
+        return new BattleResultDto(winner, mine, alpha, bravo, myKills, myDeaths, entries, tc, tct, bs, bsk);
     }
 }
