@@ -8,6 +8,7 @@ import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -105,6 +106,7 @@ public final class ConquestMatch {
     private final Map<UUID, Map<UUID, Long>> recentHits = new LinkedHashMap<>();
     private final Map<UUID, Integer> killStreak = new LinkedHashMap<>();
     private final Map<UUID, UUID> lastKilledBy = new LinkedHashMap<>();
+    private boolean firstBlood;
 
     private boolean ended;
     @Nullable
@@ -300,8 +302,17 @@ public final class ConquestMatch {
             if (st == CapturePoint.CaptureStatus.CAPTURED) {
                 Faction owner = point.owner();
                 if (owner != null) {
+                    ControlPointDef def = defs.get(i);
+                    double cx = def.pos().getX() + 0.5;
+                    double cy = def.pos().getY() + 1.5;
+                    double cz = def.pos().getZ() + 0.5;
+                    level.sendParticles(ParticleTypes.FIREWORK, cx, cy, cz, 8, 0.6, 0.3, 0.6, 0.05);
                     broadcast(owner.coloredName() + " §7占领了据点 §e" + point.displayName());
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
+                    server.execute(() -> {
+                        playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 0.8f);
+                        server.execute(() -> playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 0.6f));
+                    });
                     actionBarNear(point.displayName(), zone, owner.coloredName() + " §a已控制 " + point.displayName());
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
@@ -436,19 +447,33 @@ public final class ConquestMatch {
             int streak = killStreak.get(killerId);
             if (streak == 3) {
                 broadcast(killerFaction.coloredName() + " §e" + killerName + " §6三连杀！");
+                sendTitle(killer, "§6三连杀", "§e正在势不可挡", 2, 20, 10);
             } else if (streak == 5) {
                 broadcast(killerFaction.coloredName() + " §e" + killerName + " §c五连杀！！");
+                sendTitle(killer, "§c§l五连杀", "§e无人能挡", 2, 20, 10);
+                killer.playNotifySound(SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.MASTER, 0.6f, 1.0f);
             } else if (streak == 10) {
                 broadcast(killerFaction.coloredName() + " §e" + killerName + " §4§l十连杀！！！");
+                sendTitle(killer, "§4§l十连杀", "§c§l天降杀神", 5, 30, 15);
+                killer.playNotifySound(SoundEvents.ENDER_DRAGON_GROWL, SoundSource.MASTER, 0.7f, 1.0f);
             } else if (streak == 15) {
                 broadcast(killerFaction.coloredName() + " §e" + killerName + " §5§l十五连杀！！！");
+                sendTitle(killer, "§5§l十五连杀", "§d§l无人能及", 5, 40, 20);
+                killer.playNotifySound(SoundEvents.WITHER_DEATH, SoundSource.MASTER, 0.8f, 1.0f);
+            }
+
+            // 首杀
+            if (!firstBlood) {
+                firstBlood = true;
+                broadcast("§e" + killerName + " §6拿下了首杀！");
+                killer.playNotifySound(SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 1.0f, 1.5f);
             }
 
             // 复仇
             UUID prev = lastKilledBy.remove(killerId);
             if (prev != null && prev.equals(victimId)) {
-                killer.displayClientMessage(Component.literal("§5复仇击杀！"), true);
-                killer.playNotifySound(SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 0.5f, 1.6f);
+                killer.displayClientMessage(Component.literal("§5⚡复仇击杀！"), true);
+                killer.playNotifySound(SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.MASTER, 0.5f, 0.8f);
             }
 
             // 守点击杀
@@ -997,6 +1022,7 @@ public final class ConquestMatch {
         recentHits.clear();
         killStreak.clear();
         lastKilledBy.clear();
+        firstBlood = false;
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1120,6 +1146,7 @@ public final class ConquestMatch {
         recentHits.clear();
         killStreak.clear();
         lastKilledBy.clear();
+        firstBlood = false;
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1599,7 +1626,8 @@ public final class ConquestMatch {
             if (factionOf.get(mateId) == f) {
                 ServerPlayer mate = player(mateId);
                 if (mate != null) {
-                    mate.displayClientMessage(Component.literal("§e" + p.getGameProfile().getName() + " §c倒地了！右键救援"), true);
+                    mate.displayClientMessage(Component.literal("§c§l⚠ " + p.getGameProfile().getName() + " §c倒地了！右键救援"), true);
+                    mate.playNotifySound(SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 0.5f, 0.3f);
                 }
             }
         }
