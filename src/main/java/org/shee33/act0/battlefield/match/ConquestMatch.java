@@ -429,7 +429,6 @@ public final class ConquestMatch {
             }
         }
         if (killer != null) {
-            BattlefieldNetwork.sendHitFeedback(killer, true);
             killer.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.6f, 1.35f);
 
             // 连杀（仅个人 ActionBar）

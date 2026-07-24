@@ -472,10 +472,6 @@ public final class ConquestManager {
             return;
         }
         if (active.isEnemyHit(victim.getUUID(), attacker)) {
-            ServerPlayer hitter = event.getEntity().getServer().getPlayerList().getPlayer(attacker);
-            if (hitter != null) {
-                BattlefieldNetwork.sendHitFeedback(hitter, false);
-            }
         }
         active.onHurt(victim.getUUID(), attacker);
     }

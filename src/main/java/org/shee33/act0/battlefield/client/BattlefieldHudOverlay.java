@@ -70,7 +70,6 @@ public final class BattlefieldHudOverlay {
 
         BattleHudDto hud = ClientBattleHud.hud();
         if (!ClientBattleHud.isShown() || hud == null) {
-            renderHitFeedback(gg, font);
             return;
         }
 
@@ -78,7 +77,6 @@ public final class BattlefieldHudOverlay {
         renderCaptureFocus(gg, font, hud);
         renderSquadPanel(gg, font, hud.squad());
         renderKillFeed(gg, font, hud.myFaction());
-        renderHitFeedback(gg, font);
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
     }
