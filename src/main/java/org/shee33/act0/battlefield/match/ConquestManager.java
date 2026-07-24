@@ -24,6 +24,7 @@ import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.ActionPacket;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BattlefieldStatusDto;
+import org.shee33.act0.battlefield.network.DownedActionPacket;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -490,6 +491,13 @@ public final class ConquestManager {
         ConquestMatch match = activeContaining(spotter.getUUID());
         if (match != null) {
             match.spotEnemy(spotter, targetId);
+        }
+    }
+
+    public void handleDownedAction(ServerPlayer player, DownedActionPacket.Action action) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.handleDownedAction(player, action);
         }
     }
 

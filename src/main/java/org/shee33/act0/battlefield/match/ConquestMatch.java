@@ -37,6 +37,7 @@ import org.shee33.act0.battlefield.network.ControlPointHudDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
+import org.shee33.act0.battlefield.network.DownedActionPacket;
 import org.shee33.act0.battlefield.network.DownedMateDto;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 import org.shee33.act0.battlefield.network.TabEntryDto;
@@ -1594,7 +1595,7 @@ public final class ConquestMatch {
         p.setPose(Pose.SWIMMING);
         p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, DOWNED_DURATION_TICKS, 5, false, false));
         p.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, DOWNED_DURATION_TICKS, 5, false, false));
-        p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
+        p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 20, 0, false, false));
         if (killerId != null) {
             ServerPlayer killer = player(killerId);
             if (killer != null) {
@@ -1610,12 +1611,10 @@ public final class ConquestMatch {
             }
         }
         String killerName = killerId != null ? nameOf(killerId) : "未知";
-        p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！等待队友救援 §7(" + (DOWNED_DURATION_TICKS / 20) + " 秒)"));
+        p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 右键队友救你"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
         for (UUID mateId : factionOf.keySet()) {
-            if (mateId.equals(id)) {
-                continue;
-            }
+            if (mateId.equals(id)) continue;
             if (factionOf.get(mateId) == f) {
                 ServerPlayer mate = player(mateId);
                 if (mate != null) {
@@ -1739,6 +1738,36 @@ public final class ConquestMatch {
 
     public boolean isDowned(UUID id) {
         return downedUntil.containsKey(id);
+    }
+
+    public void handleDownedAction(ServerPlayer player, DownedActionPacket.Action action) {
+        UUID id = player.getUUID();
+        if (!downedUntil.containsKey(id)) {
+            return;
+        }
+        Faction f = factionOf.get(id);
+        if (f == null) {
+            return;
+        }
+        if (action == org.shee33.act0.battlefield.network.DownedActionPacket.Action.GIVE_UP) {
+            downedUntil.remove(id);
+            player.removeAllEffects();
+            player.setPose(Pose.STANDING);
+            player.sendSystemMessage(Component.literal("§7你放弃了救援。"));
+            beginRedeploy(player, f);
+        } else if (action == org.shee33.act0.battlefield.network.DownedActionPacket.Action.CALL_HELP) {
+            player.displayClientMessage(Component.literal("§e已呼叫救援"), true);
+            player.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.6f, 1.5f);
+            for (UUID mateId : factionOf.keySet()) {
+                if (factionOf.get(mateId) == f && !mateId.equals(id)) {
+                    ServerPlayer mate = player(mateId);
+                    if (mate != null) {
+                        mate.displayClientMessage(Component.literal("§c§l" + player.getGameProfile().getName() + " §c呼叫救援！"), true);
+                        mate.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.4f, 1.8f);
+                    }
+                }
+            }
+        }
     }
 
     public void spotEnemy(ServerPlayer spotter, int targetEntityId) {
