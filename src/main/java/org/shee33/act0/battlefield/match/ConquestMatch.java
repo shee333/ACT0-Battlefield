@@ -1590,6 +1590,20 @@ public final class ConquestMatch {
         p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, DOWNED_DURATION_TICKS, 5, false, false));
         p.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, DOWNED_DURATION_TICKS, 5, false, false));
         p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
+        if (killerId != null) {
+            ServerPlayer killer = player(killerId);
+            if (killer != null) {
+                Vec3 from = p.getEyePosition();
+                Vec3 to = killer.getEyePosition();
+                double dx = to.x - from.x;
+                double dy = to.y - from.y;
+                double dz = to.z - from.z;
+                double h = Math.sqrt(dx * dx + dz * dz);
+                float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+                float pitch = (float) (-Math.toDegrees(Math.atan2(dy, h)));
+                p.connection.teleport(p.getX(), p.getY(), p.getZ(), yaw, pitch);
+            }
+        }
         String killerName = killerId != null ? nameOf(killerId) : "未知";
         p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！等待队友救援 §7(" + (DOWNED_DURATION_TICKS / 20) + " 秒)"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
