@@ -11,6 +11,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
+import org.shee33.act0.battlefield.network.DownedMateDto;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import java.util.List;
@@ -78,6 +79,8 @@ public final class BattlefieldHudOverlay {
         renderSquadPanel(gg, font, hud.squad());
         renderKillFeed(gg, font, hud.myFaction());
         renderHitFeedback(gg, font);
+        renderReviveProgress(gg, font, hud);
+        renderDownedMates(gg, font, hud);
     }
 
     private static void renderHitFeedback(GuiGraphics gg, Font font) {
@@ -240,6 +243,9 @@ public final class BattlefieldHudOverlay {
                 gg.fill(x + 6, cy + 5, x + 9, cy + 8, dot);
             }
             String name = mate.self() ? "你" : mate.name();
+            if (mate.downed()) {
+                name = "§4[倒地] " + name;
+            }
             if (font.width(name) > 72) {
                 while (name.length() > 1 && font.width(name + "…") > 72) {
                     name = name.substring(0, name.length() - 1);
@@ -401,5 +407,43 @@ public final class BattlefieldHudOverlay {
     @SuppressWarnings("removal")
     private static ResourceLocation texture(String path) {
         return new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/" + path);
+    }
+
+    /** 救援进度条：正在救援倒地队友时显示。 */
+    private static void renderReviveProgress(GuiGraphics gg, Font font, BattleHudDto hud) {
+        if (hud.revivingName().isBlank()) {
+            return;
+        }
+        int centerX = gg.guiWidth() / 2;
+        int y = gg.guiHeight() - 80;
+        String text = "§a救援 " + hud.revivingName() + " §f" + hud.revivingProgress() + "%";
+        int textW = font.width(text);
+        int barW = Math.max(textW + 20, 140);
+        int barH = 16;
+        int x = centerX - barW / 2;
+        gg.fill(x, y, x + barW, y + barH, 0xCC000000);
+        gg.fill(x + 1, y + 1, x + 1 + Math.round((barW - 2) * (hud.revivingProgress() / 100f)), y + barH - 1, 0xCC4A90D9);
+        gg.drawCenteredString(font, text, centerX, y + 4, 0xFFFFFFFF);
+    }
+
+    /** 倒地队友列表：显示距离和剩余时间。 */
+    private static void renderDownedMates(GuiGraphics gg, Font font, BattleHudDto hud) {
+        if (hud.downedMates().isEmpty()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        int x = 8;
+        int y = gg.guiHeight() - 48 - hud.downedMates().size() * 16;
+        gg.fill(x - 2, y - 2, x + 160, y + hud.downedMates().size() * 16 + 2, 0x99000000);
+        gg.fill(x - 2, y - 2, x + 160, y - 1, RED);
+        for (DownedMateDto d : hud.downedMates()) {
+            double dist = Math.sqrt(mc.player.distanceToSqr(d.x(), d.y(), d.z()));
+            String text = "§4✚ " + d.name() + " §7" + Math.round(dist) + "m §c" + d.remainingSeconds() + "s";
+            gg.drawString(font, text, x + 4, y + 2, 0xFFFFFFFF, false);
+            y += 16;
+        }
     }
 }
