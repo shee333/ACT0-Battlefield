@@ -16,7 +16,7 @@ import java.util.List;
  */
 public final class BattlefieldNetwork {
 
-    private static final String PROTOCOL = "7";
+    private static final String PROTOCOL = "8";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
