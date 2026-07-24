@@ -106,6 +106,7 @@ public final class ConquestMatch {
     private final Map<UUID, Integer> killStreak = new LinkedHashMap<>();
     private final Map<UUID, UUID> lastKilledBy = new LinkedHashMap<>();
     private boolean firstBlood;
+    private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -269,6 +270,7 @@ public final class ConquestMatch {
         tickEscapeBoundary();
         tickDownedPlayers();
         tickRevives();
+        tickSpotted();
         if (ended) {
             return;
         }
@@ -997,6 +999,7 @@ public final class ConquestMatch {
         killStreak.clear();
         lastKilledBy.clear();
         firstBlood = false;
+        spottedUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1121,6 +1124,7 @@ public final class ConquestMatch {
         killStreak.clear();
         lastKilledBy.clear();
         firstBlood = false;
+        spottedUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1431,7 +1435,8 @@ public final class ConquestMatch {
                 pointDtos,
                 squad,
                 focus.name(), focus.state(), focus.progress(), focus.faction(),
-                downedMates, revivingName != null ? revivingName : "", revivingProgress);
+                downedMates, revivingName != null ? revivingName : "", revivingProgress,
+                killStreak.getOrDefault(viewer.getUUID(), 0));
     }
 
     private List<SquadMateHudDto> squadHudFor(ServerPlayer viewer) {
@@ -1734,6 +1739,56 @@ public final class ConquestMatch {
 
     public boolean isDowned(UUID id) {
         return downedUntil.containsKey(id);
+    }
+
+    public void spotEnemy(ServerPlayer spotter, int targetEntityId) {
+        if (spotter == null) {
+            return;
+        }
+        org.shee33.act0.battlefield.core.Faction spotterFaction = factionOf.get(spotter.getUUID());
+        if (spotterFaction == null) {
+            return;
+        }
+        net.minecraft.world.entity.Entity target = level.getEntity(targetEntityId);
+        if (!(target instanceof ServerPlayer enemy) || enemy == spotter) {
+            return;
+        }
+        org.shee33.act0.battlefield.core.Faction enemyFaction = factionOf.get(enemy.getUUID());
+        if (enemyFaction == null || enemyFaction == spotterFaction) {
+            return;
+        }
+        UUID targetUuid = enemy.getUUID();
+        spottedUntil.put(targetUuid, (long) server.getTickCount() + 5 * 20);
+        for (UUID mateId : factionOf.keySet()) {
+            if (factionOf.get(mateId) != spotterFaction) {
+                continue;
+            }
+            ServerPlayer mate = player(mateId);
+            if (mate != null) {
+                GlowSync.showGlowTo(mate, enemy);
+            }
+        }
+        spotter.displayClientMessage(Component.literal("§e已标记敌人 §c" + enemy.getGameProfile().getName()), true);
+    }
+
+    private void tickSpotted() {
+        if (spottedUntil.isEmpty()) {
+            return;
+        }
+        long now = server.getTickCount();
+        List<UUID> expired = new ArrayList<>();
+        for (Map.Entry<UUID, Long> e : spottedUntil.entrySet()) {
+            if (now >= e.getValue()) {
+                expired.add(e.getKey());
+            }
+        }
+        for (UUID id : expired) {
+            spottedUntil.remove(id);
+            ServerPlayer target = player(id);
+            if (target != null) {
+                target.setGlowingTag(false);
+            }
+        }
     }
 
     public int downedSeconds(UUID id) {

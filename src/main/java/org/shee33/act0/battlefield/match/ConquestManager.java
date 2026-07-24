@@ -486,6 +486,13 @@ public final class ConquestManager {
         return null;
     }
 
+    public void spotEnemy(ServerPlayer spotter, int targetId) {
+        ConquestMatch match = activeContaining(spotter.getUUID());
+        if (match != null) {
+            match.spotEnemy(spotter, targetId);
+        }
+    }
+
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();

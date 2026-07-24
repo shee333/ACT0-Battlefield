@@ -53,6 +53,8 @@ public final class BattlefieldNetwork {
             SyncFireLockPacket::encode, SyncFireLockPacket::decode, SyncFireLockPacket::handle);
         CHANNEL.registerMessage(id++, HitFeedbackPacket.class,
             HitFeedbackPacket::encode, HitFeedbackPacket::decode, HitFeedbackPacket::handle);
+        CHANNEL.registerMessage(id++, SpotEnemyPacket.class,
+            SpotEnemyPacket::encode, SpotEnemyPacket::decode, SpotEnemyPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */

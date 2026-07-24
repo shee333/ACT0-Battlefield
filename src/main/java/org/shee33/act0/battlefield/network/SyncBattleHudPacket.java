@@ -32,7 +32,7 @@ public final class SyncBattleHudPacket {
     public static SyncBattleHudPacket decode(FriendlyByteBuf buf) {
         boolean show = buf.readBoolean();
         BattleHudDto hud = show ? BattleHudDto.decode(buf)
-            : new BattleHudDto(0, 0, 0, 1, List.of(), List.of(), "", 0, 0, 0, List.of(), "", 0);
+            : new BattleHudDto(0, 0, 0, 1, List.of(), List.of(), "", 0, 0, 0, List.of(), "", 0, 0);
         return new SyncBattleHudPacket(show, hud);
     }
 

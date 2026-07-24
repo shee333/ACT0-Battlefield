@@ -21,11 +21,18 @@ public final class BattlefieldKeyMappings {
             GLFW.GLFW_KEY_B,
             "key.categories.act0_battlefield");
 
+    public static final KeyMapping SPOT_ENEMY = new KeyMapping(
+            "key.act0_battlefield.spot_enemy",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_Q,
+            "key.categories.act0_battlefield");
+
     private BattlefieldKeyMappings() {
     }
 
     @SubscribeEvent
     public static void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_MENU);
+        event.register(SPOT_ENEMY);
     }
 }

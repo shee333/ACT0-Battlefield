@@ -153,6 +153,7 @@ public final class BattlefieldHudOverlay {
 
         // 中央据点图标（A/B/C...）
         renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28, activeFocusName(hud));
+        renderStreakCounter(gg, font, hud.streak());
     }
 
     private static void drawScaledText(GuiGraphics gg, Font font, String text, int x, int y, int color, float scale) {
@@ -184,6 +185,7 @@ public final class BattlefieldHudOverlay {
         if (points.isEmpty()) {
             return;
         }
+        Minecraft mc = Minecraft.getInstance();
         int icon = 16;
         int gap = 8;
         int totalW = points.size() * icon + (points.size() - 1) * gap;
@@ -195,18 +197,21 @@ public final class BattlefieldHudOverlay {
             int dx = focused ? x - 3 : x;
             int dy = focused ? y - 3 : y;
 
-            // 顶部据点条：当前所在据点同步放大高亮。
             gg.blit(pointTexture(p, myFaction), dx, dy, 0, 0, drawIcon, drawIcon, icon, icon);
             String label = p.name();
             if (label.length() > 1) {
                 label = label.substring(0, 1);
             }
             gg.drawString(font, label, x + icon / 2 - font.width(label) / 2, y + 5, WHITE, true);
+            if (mc.player != null) {
+                double dist = Math.sqrt(mc.player.distanceToSqr(p.x(), p.y(), p.z()));
+                String distText = Math.round(dist) + "m";
+                gg.drawString(font, distText, x + icon / 2 - font.width(distText) / 2, y - 7, TEXT_DIM, false);
+            }
             if (focused) {
                 gg.fill(x - 2, y + icon + 7, x + icon + 2, y + icon + 9, pressureColor);
             }
 
-            // 据点进度：中立/被中和/反占都显示进度条，颜色代表当前推进方向。
             gg.fill(x, y + icon + 3, x + icon, y + icon + 5, 0x66000000);
             int fill = Math.max(0, Math.min(icon, Math.round(icon * (p.progress() / 100.0f))));
             if (fill > 0 && p.pressure() != 0) {
@@ -443,5 +448,16 @@ public final class BattlefieldHudOverlay {
             gg.drawString(font, text, x + 4, y + 2, 0xFFFFFFFF, false);
             y += 16;
         }
+    }
+
+    /** 连杀计数器：准星下方白色数字。 */
+    private static void renderStreakCounter(GuiGraphics gg, Font font, int streak) {
+        if (streak < 2) {
+            return;
+        }
+        int cx = gg.guiWidth() / 2;
+        int cy = gg.guiHeight() / 2;
+        String text = String.valueOf(streak);
+        gg.drawString(font, text, cx - font.width(text) / 2, cy + 28, 0xFFFFFFFF, false);
     }
 }
