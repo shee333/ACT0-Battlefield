@@ -102,6 +102,9 @@ public final class ConquestMatch {
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
     private final Map<UUID, UUID> revivingTarget = new LinkedHashMap<>();
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
+    private final Map<UUID, Map<UUID, Long>> recentHits = new LinkedHashMap<>();
+    private final Map<UUID, Integer> killStreak = new LinkedHashMap<>();
+    private final Map<UUID, UUID> lastKilledBy = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -220,6 +223,9 @@ public final class ConquestMatch {
         escapeTicks.remove(id);
         downedUntil.remove(id);
         cancelRevive(id);
+        killStreak.remove(id);
+        lastKilledBy.remove(id);
+        recentHits.remove(id);
         buildSquads();
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
@@ -375,7 +381,7 @@ public final class ConquestMatch {
         return true;
     }
 
-    public void onHurt(UUID victimId) {
+    public void onHurt(UUID victimId, @Nullable UUID attackerId) {
         if (ended || !factionOf.containsKey(victimId)) {
             return;
         }
@@ -383,6 +389,11 @@ public final class ConquestMatch {
         ServerPlayer p = player(victimId);
         if (p != null) {
             p.removeEffect(MobEffects.REGENERATION);
+        }
+        if (attackerId != null && !attackerId.equals(victimId)
+                && !downedUntil.containsKey(victimId) && !downedUntil.containsKey(attackerId)) {
+            recentHits.computeIfAbsent(victimId, k -> new LinkedHashMap<>())
+                    .put(attackerId, (long) server.getTickCount());
         }
     }
 
@@ -419,6 +430,55 @@ public final class ConquestMatch {
         if (killer != null) {
             BattlefieldNetwork.sendHitFeedback(killer, true);
             killer.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.6f, 1.35f);
+
+            // 连杀
+            killStreak.merge(killerId, 1, Integer::sum);
+            int streak = killStreak.get(killerId);
+            if (streak == 3) {
+                broadcast(killerFaction.coloredName() + " §e" + killerName + " §6三连杀！");
+            } else if (streak == 5) {
+                broadcast(killerFaction.coloredName() + " §e" + killerName + " §c五连杀！！");
+            } else if (streak == 10) {
+                broadcast(killerFaction.coloredName() + " §e" + killerName + " §4§l十连杀！！！");
+            } else if (streak == 15) {
+                broadcast(killerFaction.coloredName() + " §e" + killerName + " §5§l十五连杀！！！");
+            }
+
+            // 复仇
+            UUID prev = lastKilledBy.remove(killerId);
+            if (prev != null && prev.equals(victimId)) {
+                killer.displayClientMessage(Component.literal("§5复仇击杀！"), true);
+                killer.playNotifySound(SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 0.5f, 1.6f);
+            }
+
+            // 守点击杀
+            for (int i = 0; i < points.size(); i++) {
+                if (points.get(i).owner() == killerFaction
+                        && defs.get(i).zone().contains(killer.getX(), killer.getY(), killer.getZ())) {
+                    killer.displayClientMessage(Component.literal("§b守点击杀 §e" + defs.get(i).name()), true);
+                    break;
+                }
+            }
+        }
+        killStreak.put(victimId, 0);
+        lastKilledBy.put(victimId, killerId);
+
+        // 助攻
+        Map<UUID, Long> hitsOnVictim = recentHits.remove(victimId);
+        if (hitsOnVictim != null) {
+            long now = server.getTickCount();
+            for (Map.Entry<UUID, Long> e : hitsOnVictim.entrySet()) {
+                if (e.getKey().equals(killerId)) {
+                    continue;
+                }
+                if (now - e.getValue() <= 200L) {
+                    ServerPlayer assister = player(e.getKey());
+                    if (assister != null) {
+                        assister.displayClientMessage(Component.literal("§e助攻 " + victimName), true);
+                        assister.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.4f, 1.1f);
+                    }
+                }
+            }
         }
     }
 
@@ -934,6 +994,9 @@ public final class ConquestMatch {
         downedUntil.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        recentHits.clear();
+        killStreak.clear();
+        lastKilledBy.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1054,6 +1117,9 @@ public final class ConquestMatch {
         downedUntil.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        recentHits.clear();
+        killStreak.clear();
+        lastKilledBy.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();

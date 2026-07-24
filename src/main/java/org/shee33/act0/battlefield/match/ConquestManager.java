@@ -477,7 +477,7 @@ public final class ConquestManager {
                 BattlefieldNetwork.sendHitFeedback(hitter, false);
             }
         }
-        active.onHurt(victim.getUUID());
+        active.onHurt(victim.getUUID(), attacker);
     }
 
     private UUID resolveKiller(Entity attacker, Entity direct) {
