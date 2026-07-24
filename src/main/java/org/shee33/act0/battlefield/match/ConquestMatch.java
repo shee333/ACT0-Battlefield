@@ -72,6 +72,8 @@ public final class ConquestMatch {
     private static final double ENEMY_MARK_DISTANCE_SQR = ENEMY_MARK_DISTANCE * ENEMY_MARK_DISTANCE;
     private static final double ENEMY_MARK_VIEW_DOT = 0.30;
     private static final int BREATH_HEAL_DELAY_TICKS = 5 * 20;
+    private static final int ESCAPE_BOUNDARY_TICKS = 10 * 20;
+    private static final int DOWNED_DURATION_TICKS = 15 * 20;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -93,6 +95,8 @@ public final class ConquestMatch {
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
     private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
     private final BattlefieldData data;
+    private final Map<UUID, Integer> escapeTicks = new LinkedHashMap<>();
+    private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -208,6 +212,8 @@ public final class ConquestMatch {
         deaths.remove(id);
         protectedUntil.remove(id);
         lastHurtTick.remove(id);
+        escapeTicks.remove(id);
+        downedUntil.remove(id);
         buildSquads();
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
@@ -247,6 +253,8 @@ public final class ConquestMatch {
             syncEnemyIdentification();
         }
         tickBreathHealing();
+        tickEscapeBoundary();
+        tickDownedPlayers();
         if (ended) {
             return;
         }
@@ -281,9 +289,16 @@ public final class ConquestMatch {
                 if (owner != null) {
                     broadcast(owner.coloredName() + " §7占领了据点 §e" + point.displayName());
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
+                    actionBarNear(point.displayName(), zone, owner.coloredName() + " §a已控制 " + point.displayName());
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 broadcast("§7据点 §e" + point.displayName() + " §7已被中立化");
+                playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.7f);
+            } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
+                playNear(point.displayName(), zone, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
+            } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
+                Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
+                actionBarNear(point.displayName(), zone, pushing.coloredName() + " §7正在占领 " + point.displayName());
             }
         }
 
@@ -333,19 +348,28 @@ public final class ConquestMatch {
             return false;
         }
         ServerPlayer p = player(victimId);
+        boolean alreadyDowned = downedUntil.containsKey(victimId);
         if (p != null) {
             clearEnemyGlowFor(p);
             clearEnemyGlowTarget(p);
-            p.setHealth(p.getMaxHealth());
-            p.removeAllEffects();
             p.clearFire();
             p.getFoodData().setFoodLevel(20);
-            beginRedeploy(p, f);
+            if (alreadyDowned) {
+                downedUntil.remove(victimId);
+                p.removeAllEffects();
+                String finisher = killerId != null ? nameOf(killerId) : "未知";
+                p.sendSystemMessage(Component.literal("§c你被 " + finisher + " 终结了。"));
+                beginRedeploy(p, f);
+            } else {
+                enterDowned(p, f, killerId);
+            }
         }
-        deaths.merge(victimId, 1, Integer::sum);
+        if (!alreadyDowned) {
+            deaths.merge(victimId, 1, Integer::sum);
+            tickets.onDeath(f, rules);
+        }
         lastHurtTick.remove(victimId);
         handleKillCredit(victimId, killerId);
-        tickets.onDeath(f, rules);
         Faction w = tickets.winner();
         if (w != null) {
             end(w);
@@ -402,7 +426,7 @@ public final class ConquestMatch {
         }
     }
 
-    /** 是否应取消某玩家受到的伤害：部署中/出生保护/友伤均取消。 */
+    /** 是否应取消某玩家受到的伤害：部署中/出生保护/友伤均取消；倒地玩家允许被敌方终结。 */
     public boolean shouldCancelDamage(UUID victimId, @Nullable UUID attackerId) {
         if (!factionOf.containsKey(victimId)) {
             return false;
@@ -412,6 +436,14 @@ public final class ConquestMatch {
         }
         if (redeployReadyTick.containsKey(victimId)) {
             return true;
+        }
+        if (downedUntil.containsKey(victimId)) {
+            if (attackerId == null || victimId.equals(attackerId)) {
+                return true;
+            }
+            Faction vf = factionOf.get(victimId);
+            Faction af = factionOf.get(attackerId);
+            return vf != null && vf == af; // 队友不能伤害倒地玩家，但敌人可以
         }
         ServerPlayer victim = player(victimId);
         if (victim != null && victim.isSpectator()) {
@@ -435,6 +467,13 @@ public final class ConquestMatch {
         UUID id = player.getUUID();
         Faction faction = factionOf.get(id);
         if (faction == null) {
+            return;
+        }
+        if (downedUntil.containsKey(id)) {
+            downedUntil.remove(id);
+            player.removeAllEffects();
+            player.sendSystemMessage(Component.literal("§c你掉线时倒地过久，已阵亡。"));
+            beginRedeploy(player, faction);
             return;
         }
         if (redeployReadyTick.containsKey(id)) {
@@ -777,10 +816,13 @@ public final class ConquestMatch {
         if (spawn == null) {
             spawn = data.base(f);
         }
+        p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
         if (spawn != null) {
             p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
         }
         clearRedeployState(p, false);
+        escapeTicks.remove(id);
+        downedUntil.remove(id);
         ArcadeLoadoutBridge.apply(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
@@ -894,6 +936,8 @@ public final class ConquestMatch {
         redeployOriginalMode.clear();
         protectedUntil.clear();
         lastHurtTick.clear();
+        escapeTicks.clear();
+        downedUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1010,6 +1054,8 @@ public final class ConquestMatch {
         redeployOriginalMode.clear();
         protectedUntil.clear();
         lastHurtTick.clear();
+        escapeTicks.clear();
+        downedUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1408,6 +1454,178 @@ public final class ConquestMatch {
             return 2;
         }
         return 0;
+    }
+
+    private void tickEscapeBoundary() {
+        if (server.getTickCount() % 20L != 0L) {
+            return;
+        }
+        org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
+        if (!area.isSet()) {
+            return;
+        }
+        for (Map.Entry<UUID, Faction> e : new ArrayList<>(factionOf.entrySet())) {
+            UUID id = e.getKey();
+            if (redeployReadyTick.containsKey(id)) {
+                continue;
+            }
+            ServerPlayer p = player(id);
+            if (p == null || !p.isAlive() || p.isSpectator()) {
+                escapeTicks.remove(id);
+                continue;
+            }
+            if (area.contains(p.getX(), p.getY(), p.getZ())) {
+                escapeTicks.remove(id);
+                continue;
+            }
+            int ticks = escapeTicks.merge(id, 20, Integer::sum);
+            int remain = Math.max(0, ESCAPE_BOUNDARY_TICKS - ticks);
+            if (remain <= 0) {
+                p.kill();
+                p.sendSystemMessage(Component.literal("§c你已离开战斗区域过久，被击杀。"));
+                escapeTicks.remove(id);
+            } else if (ticks % 60 == 0) {
+                p.displayClientMessage(Component.literal("§c⚠ 返回作战区域！" + (remain / 20) + " 秒后将被击杀"), true);
+                playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.6f);
+            }
+        }
+    }
+
+    private void actionBarNear(String pointName, AABB zone, String msg) {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+                p.displayClientMessage(Component.literal(msg), true);
+            }
+        }
+    }
+
+    private void playNear(String pointName, AABB zone, net.minecraft.sounds.SoundEvent sound, float pitch) {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+                p.playNotifySound(sound, SoundSource.MASTER, 0.4f, pitch);
+            }
+        }
+    }
+
+    // ---- 倒地救援 ----
+
+    private void enterDowned(ServerPlayer p, Faction f, @Nullable UUID killerId) {
+        UUID id = p.getUUID();
+        long until = server.getTickCount() + DOWNED_DURATION_TICKS;
+        downedUntil.put(id, until);
+        p.setHealth(1.0f);
+        p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, DOWNED_DURATION_TICKS, 4, false, false));
+        p.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, DOWNED_DURATION_TICKS, 4, false, false));
+        p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
+        String killerName = killerId != null ? nameOf(killerId) : "未知";
+        p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！等待队友救援 §7(" + (DOWNED_DURATION_TICKS / 20) + " 秒)"));
+        p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
+        for (UUID mateId : factionOf.keySet()) {
+            if (mateId.equals(id)) {
+                continue;
+            }
+            if (factionOf.get(mateId) == f) {
+                ServerPlayer mate = player(mateId);
+                if (mate != null) {
+                    mate.displayClientMessage(Component.literal("§e" + p.getGameProfile().getName() + " §c倒地了！右键救援"), true);
+                }
+            }
+        }
+    }
+
+    private void tickDownedPlayers() {
+        if (downedUntil.isEmpty()) {
+            return;
+        }
+        long now = server.getTickCount();
+        List<UUID> expired = new ArrayList<>();
+        for (Map.Entry<UUID, Long> e : downedUntil.entrySet()) {
+            if (now >= e.getValue()) {
+                expired.add(e.getKey());
+            } else {
+                int secs = (int) Math.max(1, (e.getValue() - now) / 20);
+                if ((e.getValue() - now) % 20L == 0L) {
+                    ServerPlayer p = player(e.getKey());
+                    if (p != null) {
+                        p.displayClientMessage(Component.literal("§c倒地 " + secs + " 秒后阵亡..."), true);
+                    }
+                }
+            }
+        }
+        for (UUID id : expired) {
+            downedUntil.remove(id);
+            ServerPlayer p = player(id);
+            Faction f = factionOf.get(id);
+            if (p != null && f != null) {
+                p.removeAllEffects();
+                p.sendSystemMessage(Component.literal("§4救援时间已过，你阵亡了。"));
+                beginRedeploy(p, f);
+            }
+        }
+    }
+
+    public boolean reviveDownedPlayer(UUID targetId, ServerPlayer reviver) {
+        UUID reviverId = reviver.getUUID();
+        if (!downedUntil.containsKey(targetId)) {
+            return false;
+        }
+        Faction tf = factionOf.get(targetId);
+        Faction rf = factionOf.get(reviverId);
+        if (tf == null || rf == null || tf != rf) {
+            return false;
+        }
+        ServerPlayer target = player(targetId);
+        if (target == null) {
+            return false;
+        }
+        double dist = target.distanceToSqr(reviver);
+        if (dist > 16.0D) {
+            return false;
+        }
+        downedUntil.remove(targetId);
+        target.removeAllEffects();
+        target.setHealth(target.getMaxHealth() * 0.5f);
+        target.sendSystemMessage(Component.literal("§a" + reviver.getGameProfile().getName() + " §a救起了你！"));
+        target.displayClientMessage(Component.literal("§a已被救起"), true);
+        reviver.sendSystemMessage(Component.literal("§a你救起了 " + target.getGameProfile().getName()));
+        reviver.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
+        target.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
+        return true;
+    }
+
+    public boolean finishDownedPlayer(UUID targetId, ServerPlayer attacker) {
+        if (!downedUntil.containsKey(targetId)) {
+            return false;
+        }
+        Faction tf = factionOf.get(targetId);
+        Faction af = factionOf.get(attacker.getUUID());
+        if (tf == null || af == null || tf == af) {
+            return false;
+        }
+        ServerPlayer target = player(targetId);
+        if (target == null) {
+            return false;
+        }
+        downedUntil.remove(targetId);
+        target.removeAllEffects();
+        target.sendSystemMessage(Component.literal("§c你被 " + attacker.getGameProfile().getName() + " 终结了。"));
+        attacker.sendSystemMessage(Component.literal("§c你终结了 " + target.getGameProfile().getName()));
+        beginRedeploy(target, tf);
+        return true;
+    }
+
+    public boolean isDowned(UUID id) {
+        return downedUntil.containsKey(id);
+    }
+
+    public int downedSeconds(UUID id) {
+        Long until = downedUntil.get(id);
+        if (until == null) {
+            return 0;
+        }
+        return (int) Math.max(0, (until - server.getTickCount()) / 20);
     }
 
     // ---- 工具 ----
