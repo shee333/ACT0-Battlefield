@@ -428,11 +428,18 @@ public final class ConquestMatch {
         ServerPlayer victim = player(victimId);
         String killerName = killer != null ? killer.getGameProfile().getName() : "未知";
         String victimName = victim != null ? victim.getGameProfile().getName() : "未知";
+        String weapon = "";
+        if (killer != null) {
+            var item = killer.getMainHandItem();
+            if (!item.isEmpty()) {
+                weapon = item.getHoverName().getString();
+            }
+        }
         for (UUID id : factionOf.keySet()) {
             ServerPlayer viewer = player(id);
             if (viewer != null) {
                 BattlefieldNetwork.sendKillFeed(viewer, killerName, victimName,
-                        factionCode(killerFaction), factionCode(victimFaction));
+                        factionCode(killerFaction), factionCode(victimFaction), weapon);
             }
         }
         if (killer != null) {
@@ -1105,7 +1112,8 @@ public final class ConquestMatch {
             String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
             int ping = p != null ? p.latency : -1;
             entries.add(new TabEntryDto(name, factionCode(e.getValue()),
-                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, p == null ? 2 : 0));
+                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, p == null ? 2 : (downedUntil.containsKey(id) ? 3 : 0),
+                    displaySquad(squadOf.getOrDefault(id, 0))));
         }
         entries.sort(Comparator
                 .comparingInt(TabEntryDto::kills).reversed()
@@ -1431,10 +1439,12 @@ public final class ConquestMatch {
             UUID id = e.getKey();
             ServerPlayer p = player(id);
             String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
-            int state = p == null ? 2 : (p.isSpectator() || redeployReadyTick.containsKey(id) ? 1 : 0);
+            int state = p == null ? 2 : (downedUntil.containsKey(id) ? 3 :
+                    (p.isSpectator() || redeployReadyTick.containsKey(id) ? 1 : 0));
             int ping = p != null ? p.latency : -1;
+            int sq = displaySquad(squadOf.getOrDefault(id, 0));
             TabEntryDto dto = new TabEntryDto(name, factionCode(e.getValue()),
-                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, state);
+                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, state, sq);
             if (e.getValue() == Faction.ALPHA) {
                 alpha.add(dto);
             } else {

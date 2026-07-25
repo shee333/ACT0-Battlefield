@@ -8,21 +8,17 @@ import org.shee33.act0.battlefield.client.ClientKillFeed;
 
 import java.util.function.Supplier;
 
-/**
- * S→C：战中击杀提示。客户端右上角显示短暂击杀信息。
- */
 public final class KillFeedPacket {
 
-    private final String killer;
-    private final String victim;
-    private final int killerFaction;
-    private final int victimFaction;
+    private final String killer, victim, weapon;
+    private final int killerFaction, victimFaction;
 
-    public KillFeedPacket(String killer, String victim, int killerFaction, int victimFaction) {
+    public KillFeedPacket(String killer, String victim, int killerFaction, int victimFaction, String weapon) {
         this.killer = killer != null ? killer : "";
         this.victim = victim != null ? victim : "";
         this.killerFaction = killerFaction;
         this.victimFaction = victimFaction;
+        this.weapon = weapon != null ? weapon : "";
     }
 
     public static void encode(KillFeedPacket msg, FriendlyByteBuf buf) {
@@ -30,16 +26,17 @@ public final class KillFeedPacket {
         buf.writeUtf(msg.victim);
         buf.writeVarInt(msg.killerFaction);
         buf.writeVarInt(msg.victimFaction);
+        buf.writeUtf(msg.weapon);
     }
 
     public static KillFeedPacket decode(FriendlyByteBuf buf) {
-        return new KillFeedPacket(buf.readUtf(), buf.readUtf(), buf.readVarInt(), buf.readVarInt());
+        return new KillFeedPacket(buf.readUtf(), buf.readUtf(), buf.readVarInt(), buf.readVarInt(), buf.readUtf());
     }
 
     public static void handle(KillFeedPacket msg, Supplier<NetworkEvent.Context> ctx) {
         NetworkEvent.Context context = ctx.get();
         context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
-                () -> () -> ClientKillFeed.add(msg.killer, msg.victim, msg.killerFaction, msg.victimFaction)));
+                () -> () -> ClientKillFeed.add(msg.killer, msg.victim, msg.killerFaction, msg.victimFaction, msg.weapon)));
         context.setPacketHandled(true);
     }
 }

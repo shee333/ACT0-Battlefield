@@ -273,13 +273,16 @@ public final class BattlefieldHudOverlay {
         for (ClientKillFeed.Entry e : ClientKillFeed.entries()) {
             int killerColor = factionColor(e.killerFaction(), myFaction);
             int victimColor = factionColor(e.victimFaction(), myFaction);
-            String mid = "  击杀  ";
-            int w = font.width(e.killer()) + font.width(mid) + font.width(e.victim()) + 10;
+            String weapon = e.weapon() != null && !e.weapon().isBlank() ? " §7[" + e.weapon() + "]" : "";
+            String mid = " 击杀 ";
+            int w = font.width(e.killer()) + font.width(weapon) + font.width(mid) + font.width(e.victim()) + 10;
             int x = xRight - w;
             gg.fill(x - 2, y - 2, xRight + 2, y + 10, 0x66000000);
             int cx = x + 3;
             gg.drawString(font, e.killer(), cx, y, killerColor, false);
             cx += font.width(e.killer());
+            gg.drawString(font, weapon, cx, y, DIM, false);
+            cx += font.width(weapon);
             gg.drawString(font, mid, cx, y, TEXT_DIM, false);
             cx += font.width(mid);
             gg.drawString(font, e.victim(), cx, y, victimColor, false);

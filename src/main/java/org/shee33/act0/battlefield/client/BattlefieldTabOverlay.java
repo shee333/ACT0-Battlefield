@@ -74,19 +74,20 @@ public final class BattlefieldTabOverlay {
         gg.fill(x, y, x + w, y + 2, color);
         String header = (mine ? "● " : "") + name + "  " + entries.size() + "人";
         gg.drawString(font, header, x + 6, y + 7, color, false);
-        gg.drawString(font, "K", x + w - 58, y + 7, DIM, false);
-        gg.drawString(font, "D", x + w - 38, y + 7, DIM, false);
-        gg.drawString(font, "ms", x + w - 20, y + 7, DIM, false);
+        gg.drawString(font, "K", x + w - 68, y + 7, DIM, false);
+        gg.drawString(font, "D", x + w - 48, y + 7, DIM, false);
+        gg.drawString(font, "ms", x + w - 30, y + 7, DIM, false);
 
         int cy = y + 22;
         for (TabEntryDto e : entries) {
-            String n = trim(font, e.name(), w - 84);
+            String sq = e.squad() > 0 ? "§7" + e.squad() + " " : "";
+            String n = trim(font, sq + e.name(), w - 94);
             int nameColor = e.state() == 0 ? WHITE : DIM;
-            String state = e.state() == 1 ? " §8部署" : (e.state() == 2 ? " §8离线" : "");
+            String state = e.state() == 3 ? " §4倒地" : (e.state() == 1 ? " §8部署" : (e.state() == 2 ? " §8离线" : ""));
             gg.drawString(font, n + state, x + 6, cy + 2, nameColor, false);
-            gg.drawString(font, Integer.toString(e.kills()), x + w - 58, cy + 2, WHITE, false);
-            gg.drawString(font, Integer.toString(e.deaths()), x + w - 38, cy + 2, WHITE, false);
-            gg.drawString(font, e.ping() < 0 ? "-" : Integer.toString(e.ping()), x + w - 20, cy + 2, DIM, false);
+            gg.drawString(font, Integer.toString(e.kills()), x + w - 68, cy + 2, WHITE, false);
+            gg.drawString(font, Integer.toString(e.deaths()), x + w - 48, cy + 2, WHITE, false);
+            gg.drawString(font, e.ping() < 0 ? "-" : Integer.toString(e.ping()), x + w - 30, cy + 2, DIM, false);
             cy += 13;
         }
     }

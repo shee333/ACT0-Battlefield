@@ -88,9 +88,9 @@ public final class BattlefieldNetwork {
     }
 
     /** 向玩家推送击杀提示。 */
-    public static void sendKillFeed(ServerPlayer player, String killer, String victim, int killerFaction, int victimFaction) {
+    public static void sendKillFeed(ServerPlayer player, String killer, String victim, int killerFaction, int victimFaction, String weapon) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
-                new KillFeedPacket(killer, victim, killerFaction, victimFaction));
+                new KillFeedPacket(killer, victim, killerFaction, victimFaction, weapon));
     }
 
     /** 向攻击者推送准心命中/击杀反馈。 */
