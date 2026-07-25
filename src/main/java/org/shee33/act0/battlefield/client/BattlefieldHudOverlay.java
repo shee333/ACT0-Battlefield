@@ -281,7 +281,7 @@ public final class BattlefieldHudOverlay {
             int cx = x + 3;
             gg.drawString(font, e.killer(), cx, y, killerColor, false);
             cx += font.width(e.killer());
-            gg.drawString(font, weapon, cx, y, DIM, false);
+            gg.drawString(font, weapon, cx, y, TEXT_DIM, false);
             cx += font.width(weapon);
             gg.drawString(font, mid, cx, y, TEXT_DIM, false);
             cx += font.width(mid);
