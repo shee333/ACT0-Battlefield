@@ -68,7 +68,7 @@ public final class BattleResultScreen extends Screen {
         int y = top + tblY + 26;
         for (int i = 0; i < rows; i++) {
             TabEntryDto e = entries.get(i);
-            int color = e.faction() == 1 ? 0xFFE7654E : 0xFF57C7FF;
+            int color = e.faction() == 1 ? 0xFF57C7FF : 0xFFE7654E;
             String rank = (i + 1) + ".";
             gg.drawString(font, rank, left + 18, y, PixelTheme.TEXT_DIM, false);
             String name = trim(e.name(), 170);
