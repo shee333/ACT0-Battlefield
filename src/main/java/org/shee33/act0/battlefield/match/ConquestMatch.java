@@ -45,6 +45,7 @@ import org.shee33.act0.battlefield.network.TabEntryDto;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -72,6 +73,8 @@ public final class ConquestMatch {
     private final int spawnProtectionTicks;
     private final double squadDeployEnemyBlockRadius;
     private final int iffSyncInterval;
+    private static final int IFF_CHUNK_SIZE = 16;           // 16-block grid cells for spatial partitioning
+    private static final int IFF_CHUNK_RADIUS = 6;          // ceil(ENEMY_MARK_DISTANCE / IFF_CHUNK_SIZE) = ceil(96/16)
     private final double enemyMarkDistance;
     private final double enemyMarkDistanceSqr;
     private final double enemyMarkViewDot;
@@ -111,6 +114,8 @@ public final class ConquestMatch {
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
+    private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
+    private final Map<UUID, Integer> lastTabHash = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -249,6 +254,8 @@ public final class ConquestMatch {
         killStreak.remove(id);
         lastKilledBy.remove(id);
         recentHits.remove(id);
+        lastHudHash.remove(id);
+        lastTabHash.remove(id);
         buildSquads();
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
@@ -1282,7 +1289,19 @@ public final class ConquestMatch {
         return base.length() <= 16 ? base : base.substring(0, 16);
     }
 
+    /**
+     * IFF (Identify Friend/Foe) sync: manages per-player enemy glow visibility.
+     *
+     * <p>Uses a 16-block chunk-based spatial index to reduce O(n²) ray tracing.
+     * For each viewer, only targets within {@code IFF_CHUNK_RADIUS} chunks (6 × 16 = 96 blocks,
+     * matching {@code ENEMY_MARK_DISTANCE}) undergo the expensive ray-trace visibility check.
+     * Far-away targets still receive friendly glow (cheap, no ray trace) to preserve
+     * unlimited-range squad/faction identification.
+     */
     private void syncEnemyIdentification() {
+        // Build spatial index: bucket all alive, in-dimension participants by 16-block chunks.
+        Map<IffChunkKey, List<UUID>> spatialIndex = buildIffSpatialIndex();
+
         for (UUID viewerId : new ArrayList<>(factionOf.keySet())) {
             ServerPlayer viewer = player(viewerId);
             if (!canViewerIdentify(viewer)) {
@@ -1292,13 +1311,46 @@ public final class ConquestMatch {
             syncRelativeTeams(viewer, viewerId);
             Set<UUID> active = visibleEnemyGlows.computeIfAbsent(viewerId, ignored -> new HashSet<>());
             Set<UUID> shouldKeep = new HashSet<>();
+
+            IffChunkKey viewerChunk = iffChunkKey(viewer);
+
+            // Pass 1: nearby chunks — full enemy glow check with ray trace, plus friendly glow.
+            int minCx = viewerChunk.cx() - IFF_CHUNK_RADIUS;
+            int maxCx = viewerChunk.cx() + IFF_CHUNK_RADIUS;
+            int minCz = viewerChunk.cz() - IFF_CHUNK_RADIUS;
+            int maxCz = viewerChunk.cz() + IFF_CHUNK_RADIUS;
+            for (int cx = minCx; cx <= maxCx; cx++) {
+                for (int cz = minCz; cz <= maxCz; cz++) {
+                    List<UUID> chunk = spatialIndex.get(new IffChunkKey(cx, cz));
+                    if (chunk == null) {
+                        continue;
+                    }
+                    for (UUID targetId : chunk) {
+                        if (targetId.equals(viewerId)) {
+                            continue;
+                        }
+                        ServerPlayer target = player(targetId);
+                        boolean show = shouldShowFriendlyGlow(viewer, target)
+                                || shouldShowEnemyGlow(viewer, target);
+                        if (show) {
+                            shouldKeep.add(targetId);
+                            if (active.add(targetId)) {
+                                GlowSync.showGlowTo(viewer, target);
+                            }
+                        } else if (active.remove(targetId) && target != null) {
+                            GlowSync.hideGlowFrom(viewer, target);
+                        }
+                    }
+                }
+            }
+
+            // Pass 2: far-away targets — friendly glow only (cheap, no ray trace).
             for (UUID targetId : factionOf.keySet()) {
-                if (targetId.equals(viewerId)) {
+                if (targetId.equals(viewerId) || shouldKeep.contains(targetId)) {
                     continue;
                 }
                 ServerPlayer target = player(targetId);
-                boolean show = shouldShowFriendlyGlow(viewer, target) || shouldShowEnemyGlow(viewer, target);
-                if (show) {
+                if (shouldShowFriendlyGlow(viewer, target)) {
                     shouldKeep.add(targetId);
                     if (active.add(targetId)) {
                         GlowSync.showGlowTo(viewer, target);
@@ -1307,6 +1359,8 @@ public final class ConquestMatch {
                     GlowSync.hideGlowFrom(viewer, target);
                 }
             }
+
+            // Remove stale glows for targets no longer visible.
             for (UUID stale : new HashSet<>(active)) {
                 if (!shouldKeep.contains(stale)) {
                     ServerPlayer target = player(stale);
@@ -1318,6 +1372,30 @@ public final class ConquestMatch {
             }
         }
     }
+
+    /** Builds a spatial index mapping 16-block chunk keys to lists of active player UUIDs. */
+    private Map<IffChunkKey, List<UUID>> buildIffSpatialIndex() {
+        Map<IffChunkKey, List<UUID>> index = new LinkedHashMap<>();
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
+                continue;
+            }
+            IffChunkKey key = iffChunkKey(p);
+            index.computeIfAbsent(key, k -> new ArrayList<>()).add(id);
+        }
+        return index;
+    }
+
+    /** Returns the 16-block chunk coordinate for a player's current position. */
+    private static IffChunkKey iffChunkKey(ServerPlayer p) {
+        return new IffChunkKey(
+                (int) Math.floor(p.getX() / IFF_CHUNK_SIZE),
+                (int) Math.floor(p.getZ() / IFF_CHUNK_SIZE));
+    }
+
+    /** 16-block chunk coordinate key for spatial indexing (record = value-based equality + hash). */
+    private record IffChunkKey(int cx, int cz) {}
 
     private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
         Faction mine = factionOf.get(viewerId);
@@ -1473,9 +1551,30 @@ public final class ConquestMatch {
     private void broadcastHud() {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
-            if (p != null) {
-                BattlefieldNetwork.sendBattleHud(p, buildHudFor(p));
-                BattlefieldNetwork.sendBattleTab(p, buildTabFor(p));
+            if (p == null) {
+                continue;
+            }
+
+            BattleHudDto hud = buildHudFor(p);
+            int hudHash = Objects.hash(
+                    hud.alphaTickets(), hud.bravoTickets(),
+                    hud.points().hashCode(), hud.focusState(), hud.focusProgress(),
+                    hud.squad().hashCode(), hud.downedMates().hashCode(),
+                    hud.revivingName(), hud.revivingProgress(), hud.streak(), hud.focusFaction());
+            Integer prevHudHash = lastHudHash.get(id);
+            if (prevHudHash == null || prevHudHash != hudHash) {
+                BattlefieldNetwork.sendBattleHud(p, hud);
+                lastHudHash.put(id, hudHash);
+            }
+
+            BattleTabDto tab = buildTabFor(p);
+            int tabHash = Objects.hash(
+                    tab.alphaTickets(), tab.bravoTickets(), tab.myFaction(),
+                    tab.alpha().hashCode(), tab.bravo().hashCode());
+            Integer prevTabHash = lastTabHash.get(id);
+            if (prevTabHash == null || prevTabHash != tabHash) {
+                BattlefieldNetwork.sendBattleTab(p, tab);
+                lastTabHash.put(id, tabHash);
             }
         }
     }
