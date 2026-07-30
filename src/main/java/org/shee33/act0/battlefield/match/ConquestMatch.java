@@ -295,7 +295,18 @@ public final class ConquestMatch {
                     }
                 }
             }
-            CapturePoint.CaptureStatus st = point.tick(alpha, bravo, rules, captureDelta);
+            // Comeback boost: when a faction has <70% of its starting tickets, its in-zone count
+            // counts as 1.5x for CapturePoint.tick, letting the trailing side flip points faster.
+            double maxTickets = Math.max(1.0, rules.startingTickets());
+            int alphaEffective = alpha;
+            int bravoEffective = bravo;
+            if (tickets.tickets(Faction.ALPHA) / maxTickets < 0.7) {
+                alphaEffective = (int) Math.ceil(alpha * 1.5);
+            }
+            if (tickets.tickets(Faction.BRAVO) / maxTickets < 0.7) {
+                bravoEffective = (int) Math.ceil(bravo * 1.5);
+            }
+            CapturePoint.CaptureStatus st = point.tick(alphaEffective, bravoEffective, rules, captureDelta);
             if (st == CapturePoint.CaptureStatus.CAPTURED) {
                 Faction owner = point.owner();
                 if (owner != null) {
