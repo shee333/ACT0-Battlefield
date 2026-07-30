@@ -8,6 +8,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
+import org.shee33.act0.battlefield.match.BreakthroughManager;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
@@ -36,6 +37,8 @@ public final class Act0Battlefield {
     /** 全局征服对局管理器（注册到 Forge 事件总线，路由 ServerTick / LivingDeath）。 */
     private static final ConquestManager MANAGER = new ConquestManager();
 
+    public static final BreakthroughManager BREAKTHROUGH_MANAGER = new BreakthroughManager();
+
     public Act0Battlefield() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
@@ -45,6 +48,7 @@ public final class Act0Battlefield {
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, BattlefieldConfig.SPEC);
 
         MinecraftForge.EVENT_BUS.register(MANAGER);
+        MinecraftForge.EVENT_BUS.register(BREAKTHROUGH_MANAGER);
         MinecraftForge.EVENT_BUS.register(BattlefieldEntranceHolograms.INSTANCE);
 
         LOGGER.info("{}constructed", LOG_PREFIX);

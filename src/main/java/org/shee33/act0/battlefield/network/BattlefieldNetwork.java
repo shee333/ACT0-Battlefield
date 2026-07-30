@@ -57,6 +57,8 @@ public final class BattlefieldNetwork {
             SpotEnemyPacket::encode, SpotEnemyPacket::decode, SpotEnemyPacket::handle);
         CHANNEL.registerMessage(id++, DownedActionPacket.class,
             DownedActionPacket::encode, DownedActionPacket::decode, DownedActionPacket::handle);
+        CHANNEL.registerMessage(id++, SyncBreakthroughHudPacket.class,
+            SyncBreakthroughHudPacket::encode, SyncBreakthroughHudPacket::decode, SyncBreakthroughHudPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -76,6 +78,15 @@ public final class BattlefieldNetwork {
     /** 向玩家推送 BF 风格 HUD 快照（顶部票数/据点进度/小队）。 */
     public static void sendBattleHud(ServerPlayer player, BattleHudDto hud) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleHudPacket(true, hud));
+    }
+
+    public static void sendBreakthroughHud(ServerPlayer player, BreakthroughHudDto hud) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBreakthroughHudPacket(hud));
+    }
+
+    public static void clearBreakthroughHud(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBreakthroughHudPacket(
+                new BreakthroughHudDto(false, 0, 0, 0, 0, List.of(), List.of(), 0, 0)));
     }
 
     /** 向玩家推送部署界面状态。 */
