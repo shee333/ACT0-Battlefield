@@ -11,7 +11,8 @@ import net.minecraft.network.FriendlyByteBuf;
  * @param self      是否为当前客户端玩家
  * @param downed    是否倒地等待救援
  */
-public record SquadMateHudDto(String name, int healthPct, boolean alive, boolean self, boolean downed) {
+public record SquadMateHudDto(String name, int healthPct, boolean alive, boolean self, boolean downed,
+                              boolean isSquadLeader) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeUtf(name);
@@ -19,10 +20,11 @@ public record SquadMateHudDto(String name, int healthPct, boolean alive, boolean
         buf.writeBoolean(alive);
         buf.writeBoolean(self);
         buf.writeBoolean(downed);
+        buf.writeBoolean(isSquadLeader);
     }
 
     public static SquadMateHudDto decode(FriendlyByteBuf buf) {
         return new SquadMateHudDto(buf.readUtf(), buf.readVarInt(),
-                buf.readBoolean(), buf.readBoolean(), buf.readBoolean());
+                buf.readBoolean(), buf.readBoolean(), buf.readBoolean(), buf.readBoolean());
     }
 }

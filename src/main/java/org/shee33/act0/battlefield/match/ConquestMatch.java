@@ -249,6 +249,7 @@ public final class ConquestMatch {
             resolveCaptureAndBleed();
         }
         processRedeployTick();
+        squadManager.tick(server.getTickCount());
         if (++iffAccum >= iffSyncInterval) {
             iffAccum = 0;
             syncEnemyIdentification();
@@ -1029,7 +1030,7 @@ public final class ConquestMatch {
                     hud.alphaTickets(), hud.bravoTickets(),
                     hud.points().hashCode(), hud.focusState(), hud.focusProgress(),
                     hud.squad().hashCode(), hud.downedMates().hashCode(),
-                    hud.revivingName(), hud.revivingProgress(), hud.streak(), hud.focusFaction());
+                    hud.revivingName(), hud.revivingProgress(), hud.isSquadLeader(), hud.streak(), hud.focusFaction());
             Integer prevHudHash = lastHudHash.get(id);
             if (prevHudHash == null || prevHudHash != hudHash) {
                 BattlefieldNetwork.sendBattleHud(p, hud);
@@ -1108,6 +1109,7 @@ public final class ConquestMatch {
                 squad,
                 focus.name(), focus.state(), focus.progress(), focus.faction(),
                 downedMates, revivingName != null ? revivingName : "", revivingProgress,
+                squadManager.isSquadLeader(viewer.getUUID()),
                 killTracker.killStreakOf(viewer.getUUID()));
     }
 
@@ -1116,21 +1118,22 @@ public final class ConquestMatch {
         Integer squadId = squadManager.getSquadOf().get(viewer.getUUID());
         LinkedHashSet<UUID> members = squadId == null ? null : squadManager.getSquads().get(squadId);
         if (members == null || members.isEmpty()) {
-            addSquadMate(squad, viewer, true);
+            addSquadMate(squad, viewer, true, false);
             return squad;
         }
         // 自己固定排第一。
-        addSquadMate(squad, viewer, true);
+        UUID viewerId = viewer.getUUID();
+        addSquadMate(squad, viewer, true, squadManager.isSquadLeader(viewerId));
         for (UUID mateId : members) {
             if (squad.size() >= squadManager.getSquadSize()) {
                 break;
             }
-            if (mateId.equals(viewer.getUUID())) {
+            if (mateId.equals(viewerId)) {
                 continue;
             }
             ServerPlayer mate = player(mateId);
             if (mate != null) {
-                addSquadMate(squad, mate, false);
+                addSquadMate(squad, mate, false, squadManager.isSquadLeader(mateId));
             }
         }
         return squad;
@@ -1185,12 +1188,13 @@ public final class ConquestMatch {
         private static final FocusHud NONE = new FocusHud("", 0, 0, 0);
     }
 
-    private void addSquadMate(List<SquadMateHudDto> squad, ServerPlayer player, boolean self) {
+    private void addSquadMate(List<SquadMateHudDto> squad, ServerPlayer player, boolean self,
+                               boolean isSquadLeader) {
         int hp = (int) Math.ceil((player.getHealth() / Math.max(1.0f, player.getMaxHealth())) * 100.0f);
         hp = Math.max(0, Math.min(100, hp));
         boolean downed = downedUntil.containsKey(player.getUUID());
         squad.add(new SquadMateHudDto(player.getGameProfile().getName(), hp,
-                player.isAlive() || downed, self, downed));
+                player.isAlive() || downed, self, downed, isSquadLeader));
     }
 
     static int factionCode(@Nullable Faction faction) {

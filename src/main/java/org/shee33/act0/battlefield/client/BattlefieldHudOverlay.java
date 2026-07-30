@@ -225,6 +225,9 @@ public final class BattlefieldHudOverlay {
                 gg.fill(x + 6, cy + 5, x + 9, cy + 8, dot);
             }
             String name = mate.self() ? "你" : mate.name();
+            if (mate.isSquadLeader()) {
+                name = "★ " + name;
+            }
             if (mate.downed()) {
                 name = "§4[倒地] " + name;
             }

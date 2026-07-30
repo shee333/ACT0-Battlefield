@@ -12,7 +12,7 @@ class DtoRoundTripTest {
 
     @Test
     void squadMateHudDtoRoundTrip() {
-        SquadMateHudDto dto = new SquadMateHudDto("Player1", 75, true, false, true);
+        SquadMateHudDto dto = new SquadMateHudDto("Player1", 75, true, false, true, false);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         SquadMateHudDto decoded = SquadMateHudDto.decode(buf);
@@ -21,17 +21,18 @@ class DtoRoundTripTest {
         assertEquals(dto.alive(), decoded.alive());
         assertEquals(dto.self(), decoded.self());
         assertEquals(dto.downed(), decoded.downed());
+        assertEquals(dto.isSquadLeader(), decoded.isSquadLeader());
     }
 
     @Test
     void battleHudDtoRoundTrip() {
         ControlPointHudDto cp = new ControlPointHudDto("A", 1, 1, 50, 100.0, 64.0, 200.0, 1.0, 256);
-        SquadMateHudDto sm = new SquadMateHudDto("P1", 80, true, false, false);
+        SquadMateHudDto sm = new SquadMateHudDto("P1", 80, true, false, false, false);
         DownedMateDto dm = new DownedMateDto("P2", 10.0, 64.0, 20.0, 12);
         BattleHudDto dto = new BattleHudDto(1, 250, 180, 300,
                 List.of(cp), List.of(sm),
                 "A", 1, 50, 1,
-                List.of(dm), "P2", 60, 5);
+                List.of(dm), "P2", 60, false, 5);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         BattleHudDto decoded = BattleHudDto.decode(buf);

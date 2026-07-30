@@ -28,6 +28,8 @@ public final class SquadManager {
     private final Map<UUID, Faction> factionOf;
     private final Map<UUID, Integer> squadOf = new LinkedHashMap<>();
     private final Map<Integer, LinkedHashSet<UUID>> squads = new LinkedHashMap<>();
+    private final Map<Integer, UUID> squadLeaders = new LinkedHashMap<>();
+    private final Map<Integer, Map<UUID, Long>> orderRequests = new LinkedHashMap<>();
 
     // Deploy context — set once via initDeployContext after construction.
     private Function<UUID, ServerPlayer> playerLookup;
@@ -95,6 +97,65 @@ public final class SquadManager {
             }
             squadOf.put(e.getKey(), squadId);
             squads.computeIfAbsent(squadId, ignored -> new LinkedHashSet<>()).add(e.getKey());
+        }
+        // Auto-designate first member of each squad as leader.
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> entry : squads.entrySet()) {
+            if (!squadLeaders.containsKey(entry.getKey()) && !entry.getValue().isEmpty()) {
+                squadLeaders.put(entry.getKey(), entry.getValue().iterator().next());
+            }
+        }
+        squadLeaders.keySet().removeIf(id -> !squads.containsKey(id));
+        orderRequests.keySet().removeIf(id -> !squads.containsKey(id));
+    }
+
+    // ---- Squad leader ----
+
+    public boolean isSquadLeader(UUID playerId) {
+        Integer squadId = squadOf.get(playerId);
+        if (squadId == null) {
+            return false;
+        }
+        return playerId.equals(squadLeaders.get(squadId));
+    }
+
+    public void requestOrder(UUID playerId, long currentTick) {
+        Integer squadId = squadOf.get(playerId);
+        if (squadId == null || isSquadLeader(playerId)) {
+            return;
+        }
+        orderRequests.computeIfAbsent(squadId, k -> new LinkedHashMap<>())
+                .putIfAbsent(playerId, currentTick);
+    }
+
+    public void promoteLeader(int squadId, UUID newLeader) {
+        LinkedHashSet<UUID> members = squads.get(squadId);
+        if (members == null || !members.contains(newLeader)) {
+            return;
+        }
+        squadLeaders.put(squadId, newLeader);
+        Map<UUID, Long> requests = orderRequests.get(squadId);
+        if (requests != null) {
+            requests.clear();
+        }
+    }
+
+    /**
+     * Auto-promotion tick: if a squad member's order request goes unanswered
+     * for 60 seconds, promote the requesting member to leader.
+     */
+    public void tick(long currentTick) {
+        for (Map.Entry<Integer, Map<UUID, Long>> entry : new ArrayList<>(orderRequests.entrySet())) {
+            int squadId = entry.getKey();
+            UUID toPromote = null;
+            for (Map.Entry<UUID, Long> req : new ArrayList<>(entry.getValue().entrySet())) {
+                if (currentTick - req.getValue() >= 1200L) {
+                    toPromote = req.getKey();
+                    break;
+                }
+            }
+            if (toPromote != null) {
+                promoteLeader(squadId, toPromote);
+            }
         }
     }
 
