@@ -30,6 +30,15 @@ public final class SquadManager {
     private final Map<Integer, LinkedHashSet<UUID>> squads = new LinkedHashMap<>();
     private final Map<Integer, UUID> squadLeaders = new LinkedHashMap<>();
     private final Map<Integer, Map<UUID, Long>> orderRequests = new LinkedHashMap<>();
+    private final Map<Integer, SquadOrder> activeOrders = new LinkedHashMap<>();
+
+    /**
+     * Active squad order — attack or defend a specific capture point.
+     *
+     * @param pointId target capture point ID
+     * @param attack  true = attack order, false = defend order
+     */
+    public record SquadOrder(int pointId, boolean attack) {}
 
     // Deploy context — set once via initDeployContext after construction.
     private Function<UUID, ServerPlayer> playerLookup;
@@ -106,6 +115,7 @@ public final class SquadManager {
         }
         squadLeaders.keySet().removeIf(id -> !squads.containsKey(id));
         orderRequests.keySet().removeIf(id -> !squads.containsKey(id));
+        activeOrders.keySet().removeIf(id -> !squads.containsKey(id));
     }
 
     // ---- Squad leader ----
@@ -174,6 +184,33 @@ public final class SquadManager {
         }
         LinkedHashSet<UUID> members = squads.get(squadId);
         return members == null ? 0 : members.size();
+    }
+
+    // ---- Squad orders ----
+
+    public void setOrder(int squadId, SquadOrder order) {
+        activeOrders.put(squadId, order);
+    }
+
+    @Nullable
+    public SquadOrder getOrder(int squadId) {
+        return activeOrders.get(squadId);
+    }
+
+    public void clearOrder(int squadId) {
+        activeOrders.remove(squadId);
+    }
+
+    public Map<Integer, SquadOrder> getActiveOrders() {
+        return activeOrders;
+    }
+
+    /** Clear any active order when a player leaves the match. */
+    void onPlayerLeave(UUID playerId) {
+        Integer squadId = squadOf.get(playerId);
+        if (squadId != null && isSquadLeader(playerId)) {
+            activeOrders.remove(squadId);
+        }
     }
 
     // ---- Squad spawn / deploy methods ----

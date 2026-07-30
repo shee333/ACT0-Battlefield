@@ -56,6 +56,7 @@ public final class BattlefieldCommand {
                         .executes(BattlefieldCommand::quickJoin)))
                 .then(Commands.literal("leave").executes(BattlefieldCommand::leave))
                 .then(Commands.literal("squad").executes(BattlefieldCommand::squadInfo))
+                .then(buildOrderBranch())
                 .then(Commands.literal("status").executes(BattlefieldCommand::status))
                 .then(buildHologramBranch())
                 .then(Commands.literal("base").requires(s -> s.hasPermission(2))
@@ -154,6 +155,16 @@ public final class BattlefieldCommand {
                     .executes(ctx -> clearHolograms(ctx, DoubleArgumentType.getDouble(ctx, "radius")))));
     }
 
+    private static LiteralArgumentBuilder<CommandSourceStack> buildOrderBranch() {
+        return Commands.literal("order")
+                .then(Commands.literal("attack")
+                        .then(Commands.argument("pointId", IntegerArgumentType.integer(0))
+                                .executes(c -> setOrder(c, true))))
+                .then(Commands.literal("defend")
+                        .then(Commands.argument("pointId", IntegerArgumentType.integer(0))
+                                .executes(c -> setOrder(c, false))));
+    }
+
     /** /battlefield area {info|set|clear|here}：管理战斗区域边界。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildAreaBranch() {
         return Commands.literal("area")
@@ -241,6 +252,24 @@ public final class BattlefieldCommand {
         feedback(c, "§a你在 " + (faction != null ? faction.coloredName() : "§7未知")
                 + " §a第 §e" + displaySquadNumber(squadId) + " §a小队（" + size + "/4）。");
         return 1;
+    }
+
+    private static int setOrder(CommandContext<CommandSourceStack> c, boolean attack) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        ConquestMatch match = Act0Battlefield.manager().activeContaining(player.getUUID());
+        if (match == null || !match.contains(player.getUUID())) {
+            feedback(c, "§7当前未加入任何对局。");
+            return 0;
+        }
+        if (!match.isSquadLeader(player.getUUID())) {
+            feedback(c, "§c只有小队长可以下达命令。");
+            return 0;
+        }
+        int pointId = IntegerArgumentType.getInteger(c, "pointId");
+        ConquestMatch mgr = match;
+        String result = mgr.setSquadOrder(player.getUUID(), pointId, attack);
+        feedback(c, result != null ? result : "§a命令已下达。");
+        return result != null ? 0 : 1;
     }
 
     private static int displaySquadNumber(int squadId) {

@@ -10,7 +10,8 @@ public record BattleHudDto(
         List<ControlPointHudDto> points, List<SquadMateHudDto> squad,
         String focusName, int focusState, int focusProgress, int focusFaction,
         List<DownedMateDto> downedMates, String revivingName, int revivingProgress,
-        boolean isSquadLeader, int streak) {
+        boolean isSquadLeader, int streak,
+        int squadOrderPointId, boolean squadOrderAttack) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeVarInt(myFaction);
@@ -31,6 +32,8 @@ public record BattleHudDto(
         buf.writeVarInt(revivingProgress);
         buf.writeBoolean(isSquadLeader);
         buf.writeVarInt(streak);
+        buf.writeVarInt(squadOrderPointId);
+        buf.writeBoolean(squadOrderAttack);
     }
 
     public static BattleHudDto decode(FriendlyByteBuf buf) {
@@ -50,6 +53,8 @@ public record BattleHudDto(
         int rp = buf.readVarInt();
         boolean sl = buf.readBoolean();
         int sk = buf.readVarInt();
-        return new BattleHudDto(mf, at, bt, mt, pts, sq, fn, fs, fp, ff, dm, rn, rp, sl, sk);
+        int sop = buf.readVarInt();
+        boolean soa = buf.readBoolean();
+        return new BattleHudDto(mf, at, bt, mt, pts, sq, fn, fs, fp, ff, dm, rn, rp, sl, sk, sop, soa);
     }
 }

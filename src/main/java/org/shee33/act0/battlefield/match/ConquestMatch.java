@@ -103,6 +103,7 @@ public final class ConquestMatch {
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastTabHash = new LinkedHashMap<>();
+    private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
 
     private boolean ended;
     private boolean paused;
@@ -215,6 +216,7 @@ public final class ConquestMatch {
         cancelRevive(id);
         lastHudHash.remove(id);
         lastTabHash.remove(id);
+        squadManager.onPlayerLeave(id);
         squadManager.buildSquads();
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
@@ -298,12 +300,15 @@ public final class ConquestMatch {
                     broadcast(owner.coloredName() + " §7占领了据点 §e" + point.displayName());
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
                     actionBarNear(point.displayName(), zone, owner.coloredName() + " §a已控制 " + point.displayName());
+                    rewardAttackOrder(defs.get(i).pointId(), owner);
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 broadcast("§7据点 §e" + point.displayName() + " §7已被中立化");
                 playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.7f);
+                clearDefendOrder(defs.get(i).pointId());
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
                 playNear(point.displayName(), zone, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
+                notifyDefendOrder(point, defs.get(i).pointId());
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
                 actionBarNear(point.displayName(), zone, pushing.coloredName() + " §7正在占领 " + point.displayName());
@@ -317,6 +322,62 @@ public final class ConquestMatch {
         Faction w = tickets.winner();
         if (w != null) {
             end(w);
+        }
+    }
+
+    private void rewardAttackOrder(int pointId, Faction capturer) {
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (order.attack() && order.pointId() == pointId) {
+                LinkedHashSet<UUID> members = squadManager.getSquads().get(e.getKey());
+                if (members != null && !members.isEmpty()) {
+                    UUID first = members.iterator().next();
+                    if (factionOf.get(first) == capturer) {
+                        squadBroadcast(e.getKey(), "§6★ 小队完成了攻击命令！据点已占领。");
+                        tickets.addTickets(capturer, 5);
+                        squadBroadcast(e.getKey(), "§a" + capturer.coloredName() + " §7获得 +5 票数奖励。");
+                        squadManager.clearOrder(e.getKey());
+                    }
+                }
+            }
+        }
+    }
+
+    private void clearDefendOrder(int pointId) {
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (!order.attack() && order.pointId() == pointId) {
+                squadManager.clearOrder(e.getKey());
+                squadBroadcast(e.getKey(), "§7据点已被中立化，防御命令已取消。");
+            }
+        }
+    }
+
+    private void notifyDefendOrder(CapturePoint point, int pointId) {
+        Faction owner = point.owner();
+        if (owner == null) return;
+        long now = server.getTickCount();
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (order.attack() || order.pointId() != pointId) continue;
+            LinkedHashSet<UUID> members = squadManager.getSquads().get(e.getKey());
+            if (members == null || members.isEmpty()) continue;
+            UUID first = members.iterator().next();
+            if (factionOf.get(first) != owner) continue;
+            Long last = defendNotificationCooldown.get(e.getKey());
+            if (last != null && now - last < 600L) continue;
+            defendNotificationCooldown.put(e.getKey(), now);
+            squadBroadcast(e.getKey(), "§e▣ 正在防守据点！保住这个位置。");
+        }
+    }
+
+    private void squadBroadcast(int squadId, String msg) {
+        LinkedHashSet<UUID> members = squadManager.getSquads().get(squadId);
+        if (members == null) return;
+        Component component = Component.literal(msg);
+        for (UUID uid : members) {
+            ServerPlayer p = player(uid);
+            if (p != null) p.sendSystemMessage(component);
         }
     }
 
@@ -1030,7 +1091,8 @@ public final class ConquestMatch {
                     hud.alphaTickets(), hud.bravoTickets(),
                     hud.points().hashCode(), hud.focusState(), hud.focusProgress(),
                     hud.squad().hashCode(), hud.downedMates().hashCode(),
-                    hud.revivingName(), hud.revivingProgress(), hud.isSquadLeader(), hud.streak(), hud.focusFaction());
+                    hud.revivingName(), hud.revivingProgress(), hud.isSquadLeader(), hud.streak(), hud.focusFaction(),
+                    hud.squadOrderPointId(), hud.squadOrderAttack());
             Integer prevHudHash = lastHudHash.get(id);
             if (prevHudHash == null || prevHudHash != hudHash) {
                 BattlefieldNetwork.sendBattleHud(p, hud);
@@ -1090,7 +1152,7 @@ public final class ConquestMatch {
                     def.pos().getX() + 0.5 + def.markerOffsetX(),
                     def.pos().getY() + def.markerOffsetY(),
                     def.pos().getZ() + 0.5 + def.markerOffsetZ(),
-                    def.markerScale(), def.markerDistance()));
+                    def.markerScale(), def.markerDistance(), def.pointId()));
         }
 
         Faction viewerFaction = factionOf.get(viewer.getUUID());
@@ -1110,7 +1172,22 @@ public final class ConquestMatch {
                 focus.name(), focus.state(), focus.progress(), focus.faction(),
                 downedMates, revivingName != null ? revivingName : "", revivingProgress,
                 squadManager.isSquadLeader(viewer.getUUID()),
-                killTracker.killStreakOf(viewer.getUUID()));
+                killTracker.killStreakOf(viewer.getUUID()),
+                squadOrderPointId(viewer.getUUID()), squadOrderAttack(viewer.getUUID()));
+    }
+
+    private int squadOrderPointId(UUID playerId) {
+        Integer squadId = squadManager.getSquadOf().get(playerId);
+        if (squadId == null) return 0;
+        SquadManager.SquadOrder order = squadManager.getOrder(squadId);
+        return order != null ? order.pointId() : 0;
+    }
+
+    private boolean squadOrderAttack(UUID playerId) {
+        Integer squadId = squadManager.getSquadOf().get(playerId);
+        if (squadId == null) return false;
+        SquadManager.SquadOrder order = squadManager.getOrder(squadId);
+        return order != null && order.attack();
     }
 
     private List<SquadMateHudDto> squadHudFor(ServerPlayer viewer) {
@@ -1722,6 +1799,27 @@ public final class ConquestMatch {
         }
         LinkedHashSet<UUID> members = squadManager.getSquads().get(squadId);
         return members == null ? 0 : members.size();
+    }
+
+    public boolean isSquadLeader(UUID playerId) {
+        return squadManager.isSquadLeader(playerId);
+    }
+
+    @Nullable
+    public String setSquadOrder(UUID playerId, int pointId, boolean attack) {
+        Integer squadId = squadManager.getSquadOf().get(playerId);
+        if (squadId == null) {
+            return "§c未找到你的小队。";
+        }
+        if (!squadManager.isSquadLeader(playerId)) {
+            return "§c只有小队长可以下达命令。";
+        }
+        boolean valid = defs.stream().anyMatch(d -> d.pointId() == pointId);
+        if (!valid) {
+            return "§c找不到编号为 " + pointId + " 的据点。";
+        }
+        squadManager.setOrder(squadId, new SquadManager.SquadOrder(pointId, attack));
+        return null;
     }
 
     public int killsOf(UUID id) {

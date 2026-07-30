@@ -130,7 +130,8 @@ public final class BattlefieldHudOverlay {
         drawScaledText(gg, font, bravoText, center + 124, top + 1, bravoColor, 1.1f);
 
         // 中央据点图标（A/B/C...）
-        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28, activeFocusName(hud));
+        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28, activeFocusName(hud),
+                hud.squadOrderPointId(), hud.squadOrderAttack());
         renderStreakCounter(gg, font, hud.streak());
     }
 
@@ -154,7 +155,7 @@ public final class BattlefieldHudOverlay {
     }
 
     private static void renderPointRow(GuiGraphics gg, Font font, List<ControlPointHudDto> points, int myFaction,
-                                       int center, int y, String activeFocus) {
+                                       int center, int y, String activeFocus, int orderPointId, boolean orderAttack) {
         if (points.isEmpty()) {
             return;
         }
@@ -166,6 +167,7 @@ public final class BattlefieldHudOverlay {
         for (ControlPointHudDto p : points) {
             int pressureColor = factionColor(p.pressure(), myFaction);
             boolean focused = activeFocus != null && !activeFocus.isBlank() && activeFocus.equals(p.name());
+            boolean ordered = p.pointId() == orderPointId;
             int drawIcon = focused ? 22 : icon;
             int dx = focused ? x - 3 : x;
             int dy = focused ? y - 3 : y;
@@ -189,6 +191,12 @@ public final class BattlefieldHudOverlay {
             }
             if (focused) {
                 gg.fill(x - 2, y + icon + 7, x + icon + 2, y + icon + 9, pressureColor);
+            }
+
+            if (ordered) {
+                int orderColor = orderAttack ? GREEN : BLUE;
+                String marker = "◆";
+                gg.drawString(font, marker, x + icon / 2 - font.width(marker) / 2, y - 18, orderColor, false);
             }
 
             gg.fill(x, y + icon + 3, x + icon, y + icon + 5, 0x66000000);

@@ -16,7 +16,7 @@ import net.minecraft.network.FriendlyByteBuf;
  * @param markerDistance 世界浮标最大渲染距离
  */
 public record ControlPointHudDto(String name, int owner, int pressure, int progress, double x, double y, double z,
-                                 double markerScale, int markerDistance) {
+                                 double markerScale, int markerDistance, int pointId) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeUtf(name);
@@ -28,10 +28,12 @@ public record ControlPointHudDto(String name, int owner, int pressure, int progr
         buf.writeDouble(z);
         buf.writeDouble(markerScale);
         buf.writeVarInt(markerDistance);
+        buf.writeVarInt(pointId);
     }
 
     public static ControlPointHudDto decode(FriendlyByteBuf buf) {
         return new ControlPointHudDto(buf.readUtf(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
-            buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readVarInt());
+            buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readVarInt(),
+            buf.readVarInt());
     }
 }
