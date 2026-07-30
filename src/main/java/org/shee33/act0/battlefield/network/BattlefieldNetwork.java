@@ -61,6 +61,10 @@ public final class BattlefieldNetwork {
             SyncBreakthroughHudPacket::encode, SyncBreakthroughHudPacket::decode, SyncBreakthroughHudPacket::handle);
         CHANNEL.registerMessage(id++, SyncDeployLoadoutPacket.class,
             SyncDeployLoadoutPacket::encode, SyncDeployLoadoutPacket::decode, SyncDeployLoadoutPacket::handle);
+        CHANNEL.registerMessage(id++, DeploySpawnFxPacket.class,
+            DeploySpawnFxPacket::encode, DeploySpawnFxPacket::decode, DeploySpawnFxPacket::handle);
+        CHANNEL.registerMessage(id++, DownedFeedbackPacket.class,
+            DownedFeedbackPacket::encode, DownedFeedbackPacket::decode, DownedFeedbackPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -113,6 +117,21 @@ public final class BattlefieldNetwork {
     /** 向攻击者推送准心命中/击杀反馈。 */
     public static void sendHitFeedback(ServerPlayer player, boolean kill) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new HitFeedbackPacket(kill));
+    }
+
+    /** 向玩家推送部署传送落地反馈（屏幕淡出 + 底部据点提示）。 */
+    public static void sendDeploySpawnFx(ServerPlayer player, String pointLabel) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DeploySpawnFxPacket(pointLabel));
+    }
+
+    /** 向被击倒玩家推送倒地开始反馈（四角 vignette + 顶部横幅）。 */
+    public static void sendDownedFeedback(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DownedFeedbackPacket((byte) 0, ""));
+    }
+
+    /** 向被救起玩家推送救援成功反馈。 */
+    public static void sendRevivedFeedback(ServerPlayer player, String reviverName) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DownedFeedbackPacket((byte) 1, reviverName));
     }
 
     /** 向玩家推送自定义 TAB 战绩面板。 */

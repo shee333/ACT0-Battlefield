@@ -407,6 +407,7 @@ public final class RedeployService {
         p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
         if (spawn != null) {
             p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
+            BattlefieldNetwork.sendDeploySpawnFx(p, deployLocationLabel(kind, targetId, f));
         }
         clearRedeployState(p, false);
         escapeTicks.remove(id);
@@ -422,6 +423,20 @@ public final class RedeployService {
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
         BattlefieldNetwork.sendFireLock(p, fireLocked);
+    }
+
+    private String deployLocationLabel(String kind, String targetId, Faction f) {
+        if ("point".equals(kind)) {
+            for (ControlPointDef def : defs) {
+                if (Integer.toString(def.pointId()).equals(targetId)) {
+                    return def.name();
+                }
+            }
+        }
+        if ("squad".equals(kind)) {
+            return "小队信标";
+        }
+        return f == Faction.ALPHA ? "ALPHA基地" : "BRAVO基地";
     }
 
     // ---- Public: spawn helpers (also used by ConquestMatch) ----

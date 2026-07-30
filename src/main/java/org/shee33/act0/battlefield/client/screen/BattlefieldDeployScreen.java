@@ -226,42 +226,55 @@ public final class BattlefieldDeployScreen extends Screen {
         return false;
     }
 
+    /**
+     * BF5-style vertical loadout panel on the right side.
+     * Anchored between the top header bar (y=30) and the bottom hint bar (y=height-26).
+     */
     private void renderLoadoutPanel(GuiGraphics gg) {
         DeployLoadoutDto loadout = ClientDeployLoadout.get();
         if (loadout == null || loadout.slotNames().isEmpty()) {
             return;
         }
-        final int cardW = 90;
-        final int cardH = 24;
-        final int gap = 4;
-        final int panelH = cardH + 12;
-        int totalW = loadout.slotNames().size() * cardW + (loadout.slotNames().size() - 1) * gap + 16;
-        int x = width / 2 - totalW / 2;
-        int y = height - 26 - panelH - 4;
 
-        // background
-        gg.fill(x, y, x + totalW, y + panelH, 0x99101418);
-        gg.fill(x, y, x + totalW, y + 1, PixelTheme.ALPHA_COLOR);
+        final int panelX = width - 208;
+        final int panelY = 35;
+        final int panelW = 200;
+        final int maxBottom = height - 26;
+        final int accent = PixelTheme.ALPHA_COLOR;
 
-        // class label on the left
-        String classLabel = loadout.className().isEmpty() ? "" : loadout.className() + "  ";
-        int labelW = font.width(classLabel);
-        if (!classLabel.isEmpty()) {
-            gg.drawString(font, classLabel, x + 8, y + 8, 0xFFFFFFFF, false);
-        }
+        int rows = Math.min(loadout.slotNames().size(), 10);
+        int contentH = 32 + rows * 14;
+        int panelH = Math.min(contentH, maxBottom - panelY);
 
-        // slot cards
-        int cx = x + 8 + labelW;
-        for (int i = 0; i < loadout.slotNames().size(); i++) {
+        gg.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xB3101418);
+
+        int border = 0x663A3A3A;
+        gg.fill(panelX, panelY, panelX + panelW, panelY + 1, border);
+        gg.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, border);
+        gg.fill(panelX, panelY, panelX + 1, panelY + panelH, border);
+        gg.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, border);
+
+        gg.fill(panelX + 1, panelY + 1, panelX + panelW - 1, panelY + 3, accent);
+
+        int tx = panelX + 8;
+        String header = "配装 · " + (loadout.className().isEmpty() ? "-" : loadout.className());
+        gg.drawString(font, header, tx, panelY + 6, 0xFFB0B0B0, false);
+
+        gg.fill(panelX + 6, panelY + 20, panelX + panelW - 6, panelY + 21, 0x333A3A3A);
+
+        int lineH = 14;
+        int maxTextW = panelW - 16;
+        for (int i = 0; i < rows; i++) {
+            int sy = panelY + 24 + i * lineH;
+            if (sy + lineH > panelY + panelH - 4) break;
+
             String slot = loadout.slotNames().get(i);
             String item = loadout.itemNames().get(i);
-            String shortSlot = slot.length() > 4 ? slot.substring(0, 4) : slot;
-            String shortItem = item.length() > 10 ? item.substring(0, 9) + "." : item;
-
-            gg.fill(cx, y + 4, cx + cardW, y + 4 + cardH, 0x66000000);
-            gg.drawString(font, shortSlot, cx + 4, y + 6, 0xFFA0A8B0, false);
-            gg.drawString(font, shortItem, cx + 4, y + 15, 0xFFE0E0E0, false);
-            cx += cardW + gap;
+            String text = slot + ": " + item;
+            if (font.width(text) > maxTextW) {
+                text = font.plainSubstrByWidth(text, maxTextW);
+            }
+            gg.drawString(font, text, tx, sy, 0xFFE0E0E0, false);
         }
     }
 }

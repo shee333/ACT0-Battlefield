@@ -35,6 +35,7 @@ public final class BattlefieldHudOverlay {
     private static final int WHITE = 0xFFEEEEEE;
     private static final int TEXT_DIM = 0xFFA0A8B0;
     private static final int GREEN = 0xFF66CC66;
+    private static final int DANGER = 0xFFFF8C00;
 
     private static final ResourceLocation POINT_FRIENDLY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/allies.png");
     private static final ResourceLocation POINT_ENEMY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/axis.png");
@@ -75,6 +76,73 @@ public final class BattlefieldHudOverlay {
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
         renderCornerHud(gg, font, hud);
+        renderDeploySpawnFx(gg, font);
+        renderDownedSelfFeedback(gg, font);
+    }
+
+    /** 部署/重生传送落地反馈：全屏黑幕 ease-out 淡出 + 底部"已部署 · 据点名"提示。 */
+    private static void renderDeploySpawnFx(GuiGraphics gg, Font font) {
+        int fadeAlpha = ClientDeployFx.fadeAlpha();
+        if (fadeAlpha > 0) {
+            gg.fill(0, 0, gg.guiWidth(), gg.guiHeight(), fadeAlpha << 24);
+        }
+        float toast = ClientDeployFx.toastAlpha();
+        if (toast <= 0f) {
+            return;
+        }
+        String text = "已部署 · " + ClientDeployFx.label();
+        int textW = font.width(text);
+        int panelW = textW + 24;
+        int panelH = 16;
+        int centerX = gg.guiWidth() / 2;
+        int x = centerX - panelW / 2;
+        int y = gg.guiHeight() - 64;
+        gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, toast * 0.72f));
+        gg.fill(x, y, x + panelW, y + 1, withAlpha(WHITE, toast * 0.9f));
+        gg.drawString(font, text, centerX - textW / 2, y + 5, withAlpha(WHITE, toast), false);
+    }
+
+    /** 自身倒地反馈：四角低调 vignette（静止不闪烁）+ 顶部常驻横幅 + 被救起后的短暂提示。 */
+    private static void renderDownedSelfFeedback(GuiGraphics gg, Font font) {
+        float vignette = ClientDownedFeedback.vignetteAlpha();
+        if (vignette > 0f) {
+            int w = gg.guiWidth();
+            int h = gg.guiHeight();
+            int cw = Math.min(96, w / 5);
+            int ch = Math.min(64, h / 6);
+            int color = withAlpha(DANGER, vignette * 0.35f);
+            gg.fill(0, 0, cw, ch, color);
+            gg.fill(w - cw, 0, w, ch, color);
+            gg.fill(0, h - ch, cw, h, color);
+            gg.fill(w - cw, h - ch, w, h, color);
+        }
+
+        if (ClientDownedFeedback.isDowned()) {
+            String text = "倒地 · 等待救援";
+            int textW = font.width(text);
+            int panelW = textW + 24;
+            int panelH = 16;
+            int centerX = gg.guiWidth() / 2;
+            int x = centerX - panelW / 2;
+            int y = 120;
+            gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, 0.72f));
+            gg.fill(x, y, x + panelW, y + 1, DANGER);
+            gg.drawString(font, text, centerX - textW / 2, y + 5, WHITE, false);
+        }
+
+        float revivedToast = ClientDownedFeedback.revivedToastAlpha();
+        if (revivedToast > 0f) {
+            String text = "已被 " + ClientDownedFeedback.reviverName() + " 救起";
+            int textW = font.width(text);
+            int panelW = textW + 24;
+            int panelH = 16;
+            int centerX = gg.guiWidth() / 2;
+            int x = centerX - panelW / 2;
+            int y = 120;
+            gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, revivedToast * 0.72f));
+            gg.fill(x, y, x + panelW, y + 1, withAlpha(GREEN, revivedToast * 0.9f));
+            gg.drawString(font, text, centerX - textW / 2, y + 5, withAlpha(WHITE, revivedToast), false);
+        }
     }
 
     private static void renderHitFeedback(GuiGraphics gg, Font font) {

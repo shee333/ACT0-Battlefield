@@ -1382,6 +1382,7 @@ public final class ConquestMatch {
         String killerName = killerId != null ? nameOf(killerId) : "未知";
         p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 右键队友救你"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
+        BattlefieldNetwork.sendDownedFeedback(p);
         for (UUID mateId : factionOf.keySet()) {
             if (mateId.equals(id)) continue;
             if (factionOf.get(mateId) == f) {
@@ -1467,6 +1468,7 @@ public final class ConquestMatch {
                 target.setHealth(target.getMaxHealth() * 0.5f);
                 target.sendSystemMessage(Component.literal("§a" + reviver.getGameProfile().getName() + " §a救起了你！"));
                 target.displayClientMessage(Component.literal("§a已被救起"), true);
+                BattlefieldNetwork.sendRevivedFeedback(target, reviver.getGameProfile().getName());
                 reviver.sendSystemMessage(Component.literal("§a你救起了 " + target.getGameProfile().getName()));
                 reviver.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
                 target.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
