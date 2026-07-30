@@ -212,6 +212,7 @@ public final class ConquestMatch {
         factionOf.put(id, faction);
         kills.put(id, 0);
         deaths.put(id, 0);
+        RelativeTeamSync.reset(id); // 强制下次同步进行全量重建
         buildSquads();
         setupNameTagTeams();
         beginRedeploy(player, faction);
@@ -243,6 +244,7 @@ public final class ConquestMatch {
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
+        pendingDeaths.remove(id);
         cancelRevive(id);
         killStreak.remove(id);
         lastKilledBy.remove(id);
@@ -382,6 +384,10 @@ public final class ConquestMatch {
         if (ended) {
             return false;
         }
+        // 防止双倒：已倒地的玩家不再触发
+        if (downedUntil.containsKey(victimId)) {
+            return false;
+        }
         Faction f = factionOf.get(victimId);
         if (f == null) {
             return false;
@@ -394,10 +400,14 @@ public final class ConquestMatch {
             p.getFoodData().setFoodLevel(20);
             enterDowned(p, f, killerId);
         }
-        deaths.merge(victimId, 1, Integer::sum);
-        tickets.onDeath(f, rules);
+        // 延迟死亡判定：不在此扣票/计死亡/计击杀
+        // 将 PendingDeath 暂存，放血或放弃时 consumePendingDeath 消费
+        Faction killerFaction = killerId != null ? factionOf.get(killerId) : null;
+        pendingDeaths.put(victimId, new PendingDeath(killerId, killerFaction, f));
         lastHurtTick.remove(victimId);
-        handleKillCredit(victimId, killerId);
+        // 重置受害者连杀（在倒地时而不是放血时）
+        killStreak.put(victimId, 0);
+        lastKilledBy.put(victimId, killerId);
         Faction w = tickets.winner();
         if (w != null) {
             end(w);
@@ -405,6 +415,18 @@ public final class ConquestMatch {
             broadcastHud();
         }
         return true;
+    }
+
+    /** 消费一笔待处理死亡：扣票、计死亡、计击杀。在放血或放弃时调用。 */
+    private void consumePendingDeath(UUID victimId) {
+        PendingDeath pending = pendingDeaths.remove(victimId);
+        if (pending == null) {
+            return;
+        }
+        Faction victimFaction = pending.victimFaction();
+        deaths.merge(victimId, 1, Integer::sum);
+        tickets.onDeath(victimFaction, rules);
+        handleKillCredit(victimId, pending.killerId());
     }
 
     public void onHurt(UUID victimId, @Nullable UUID attackerId) {
@@ -1026,6 +1048,7 @@ public final class ConquestMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
         recentHits.clear();
@@ -1195,6 +1218,7 @@ public final class ConquestMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
         recentHits.clear();
@@ -1636,12 +1660,12 @@ public final class ConquestMatch {
             int ticks = escapeTicks.merge(id, 20, Integer::sum);
             int remain = Math.max(0, escapeBoundaryTicks - ticks);
             if (remain <= 0) {
-                p.kill();
-                p.sendSystemMessage(Component.literal("§c你已离开战斗区域过久，被击杀。"));
+                Faction faction = factionOf.get(id);
+                beginRedeploy(p, faction);
                 escapeTicks.remove(id);
             } else if (ticks % 60 == 0) {
                 p.displayClientMessage(Component.literal("§c⚠ 返回作战区域！" + (remain / 20) + " 秒后将被击杀"), true);
-                playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.6f);
+                p.playNotifySound(SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 0.6f, 1.0f);
             }
         }
     }
@@ -1727,6 +1751,7 @@ public final class ConquestMatch {
             }
         }
         for (UUID id : expired) {
+            consumePendingDeath(id);
             downedUntil.remove(id);
             ServerPlayer p = player(id);
             Faction f = factionOf.get(id);
@@ -1770,6 +1795,7 @@ public final class ConquestMatch {
             ServerPlayer reviver = player(reviverId);
             if (target != null && reviver != null) {
                 downedUntil.remove(targetId);
+                pendingDeaths.remove(targetId); // 扶起退款
                 target.removeAllEffects();
                 target.setPose(Pose.STANDING);
                 target.setHealth(target.getMaxHealth() * 0.5f);
@@ -1829,6 +1855,7 @@ public final class ConquestMatch {
             return;
         }
         if (action == org.shee33.act0.battlefield.network.DownedActionPacket.Action.GIVE_UP) {
+            consumePendingDeath(id);
             downedUntil.remove(id);
             player.removeAllEffects();
             player.setPose(Pose.STANDING);
