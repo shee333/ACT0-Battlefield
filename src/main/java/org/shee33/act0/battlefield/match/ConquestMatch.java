@@ -54,6 +54,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * 一场征服对局：驱动据点争夺、票数流失、死亡接管与据点前进出生，直到一方票数归零。
@@ -68,10 +69,6 @@ public final class ConquestMatch {
     private final int captureInterval;
     private final double captureDelta;
     private final int hudInterval;
-    private final int squadSize;
-    private final int redeployDelayTicks;
-    private final int spawnProtectionTicks;
-    private final double squadDeployEnemyBlockRadius;
     private final int iffSyncInterval;
     private static final int IFF_CHUNK_SIZE = 16;           // 16-block grid cells for spatial partitioning
     private static final int IFF_CHUNK_RADIUS = 6;          // ceil(ENEMY_MARK_DISTANCE / IFF_CHUNK_SIZE) = ceil(96/16)
@@ -90,15 +87,9 @@ public final class ConquestMatch {
     private final List<ControlPointDef> defs;
     private final List<CapturePoint> points;
     private final Map<UUID, Faction> factionOf = new LinkedHashMap<>();
-    private final Map<UUID, Integer> squadOf = new LinkedHashMap<>();
-    private final Map<Integer, LinkedHashSet<UUID>> squads = new LinkedHashMap<>();
-    private final Map<UUID, Long> redeployReadyTick = new LinkedHashMap<>();
-    private final Map<UUID, String> deploySelection = new LinkedHashMap<>();
-    private final Map<UUID, String> deployTarget = new LinkedHashMap<>();
-    private final Map<UUID, GameType> redeployOriginalMode = new LinkedHashMap<>();
-    private final Map<UUID, Integer> kills = new LinkedHashMap<>();
-    private final Map<UUID, Integer> deaths = new LinkedHashMap<>();
-    private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
+    private final SquadManager squadManager;
+    private final KillTracker killTracker;
+    private final RedeployService redeployService;
     private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
     private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
@@ -107,10 +98,6 @@ public final class ConquestMatch {
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
     private final Map<UUID, UUID> revivingTarget = new LinkedHashMap<>();
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
-    private final Map<UUID, Map<UUID, Long>> recentHits = new LinkedHashMap<>();
-    private final Map<UUID, Integer> killStreak = new LinkedHashMap<>();
-    private final Map<UUID, UUID> lastKilledBy = new LinkedHashMap<>();
-    private boolean firstBlood;
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
@@ -138,10 +125,10 @@ public final class ConquestMatch {
         this.captureInterval = BattlefieldConfig.CAPTURE_INTERVAL.get();
         this.captureDelta = this.captureInterval / 20.0;
         this.hudInterval = BattlefieldConfig.HUD_INTERVAL.get();
-        this.squadSize = BattlefieldConfig.SQUAD_SIZE.get();
-        this.redeployDelayTicks = BattlefieldConfig.REDEPLOY_DELAY_TICKS.get();
-        this.spawnProtectionTicks = BattlefieldConfig.SPAWN_PROTECTION_TICKS.get();
-        this.squadDeployEnemyBlockRadius = BattlefieldConfig.SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS.get();
+        int squadSize = BattlefieldConfig.SQUAD_SIZE.get();
+        int redeployDelayTicks = BattlefieldConfig.REDEPLOY_DELAY_TICKS.get();
+        int spawnProtectionTicks = BattlefieldConfig.SPAWN_PROTECTION_TICKS.get();
+        double squadDeployEnemyBlockRadius = BattlefieldConfig.SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS.get();
         this.iffSyncInterval = BattlefieldConfig.IFF_SYNC_INTERVAL.get();
         this.enemyMarkDistance = BattlefieldConfig.ENEMY_MARK_DISTANCE.get();
         this.enemyMarkDistanceSqr = this.enemyMarkDistance * this.enemyMarkDistance;
@@ -157,41 +144,17 @@ public final class ConquestMatch {
             this.points.add(new CapturePoint(def.pointId(), def.name()));
         }
         this.factionOf.putAll(roster);
+        this.killTracker = new KillTracker(this.factionOf, this.server, this.points, this.defs);
         for (UUID id : roster.keySet()) {
-            kills.put(id, 0);
-            deaths.put(id, 0);
+            killTracker.initPlayer(id);
         }
-        buildSquads();
+        this.squadManager = new SquadManager(squadSize, factionOf);
+        squadManager.buildSquads();
+        squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
+        this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
+                downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
+                spawnProtectionTicks, redeployDelayTicks);
     }
-
-    /** 按阵营自动分队：每个小队最多 4 人，北大西洋公约/无邦军团各自独立连续编号。 */
-    private void buildSquads() {
-        squadOf.clear();
-        squads.clear();
-        int alphaSquad = 1;
-        int bravoSquad = 101;
-        int alphaCount = 0;
-        int bravoCount = 0;
-        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
-            int squadId;
-            if (e.getValue() == Faction.ALPHA) {
-                if (alphaCount > 0 && alphaCount % squadSize == 0) {
-                    alphaSquad++;
-                }
-                squadId = alphaSquad;
-                alphaCount++;
-            } else {
-                if (bravoCount > 0 && bravoCount % squadSize == 0) {
-                    bravoSquad++;
-                }
-                squadId = bravoSquad;
-                bravoCount++;
-            }
-            squadOf.put(e.getKey(), squadId);
-            squads.computeIfAbsent(squadId, ignored -> new LinkedHashSet<>()).add(e.getKey());
-        }
-    }
-
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {
         startCountdownTicks = BattlefieldConfig.START_COUNTDOWN_TICKS.get();
@@ -216,10 +179,9 @@ public final class ConquestMatch {
             return false;
         }
         factionOf.put(id, faction);
-        kills.put(id, 0);
-        deaths.put(id, 0);
+        killTracker.initPlayer(id);
         RelativeTeamSync.reset(id); // 强制下次同步进行全量重建
-        buildSquads();
+        squadManager.buildSquads();
         setupNameTagTeams();
         beginRedeploy(player, faction);
         broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
@@ -244,20 +206,16 @@ public final class ConquestMatch {
         player.getInventory().clearContent();
         BattlefieldNetwork.clearHud(player);
         BattlefieldNetwork.sendFireLock(player, false);
-        kills.remove(id);
-        deaths.remove(id);
-        protectedUntil.remove(id);
+        killTracker.removePlayer(id);
+        redeployService.removeProtection(id);
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
         pendingDeaths.remove(id);
         cancelRevive(id);
-        killStreak.remove(id);
-        lastKilledBy.remove(id);
-        recentHits.remove(id);
         lastHudHash.remove(id);
         lastTabHash.remove(id);
-        buildSquads();
+        squadManager.buildSquads();
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
@@ -414,8 +372,7 @@ public final class ConquestMatch {
         pendingDeaths.put(victimId, new PendingDeath(killerId, killerFaction, f));
         lastHurtTick.remove(victimId);
         // 重置受害者连杀（在倒地时而不是放血时）
-        killStreak.put(victimId, 0);
-        lastKilledBy.put(victimId, killerId);
+        killTracker.onDowned(victimId, killerId);
         Faction w = tickets.winner();
         if (w != null) {
             end(w);
@@ -432,9 +389,9 @@ public final class ConquestMatch {
             return;
         }
         Faction victimFaction = pending.victimFaction();
-        deaths.merge(victimId, 1, Integer::sum);
+        killTracker.recordDeath(victimId);
         tickets.onDeath(victimFaction, rules);
-        handleKillCredit(victimId, pending.killerId());
+        killTracker.handleKillCredit(victimId, pending.killerId());
     }
 
     public void onHurt(UUID victimId, @Nullable UUID attackerId) {
@@ -448,8 +405,7 @@ public final class ConquestMatch {
         }
         if (attackerId != null && !attackerId.equals(victimId)
                 && !downedUntil.containsKey(victimId) && !downedUntil.containsKey(attackerId)) {
-            recentHits.computeIfAbsent(victimId, k -> new LinkedHashMap<>())
-                    .put(attackerId, (long) server.getTickCount());
+            killTracker.recordHit(victimId, attackerId, (long) server.getTickCount());
         }
     }
 
@@ -462,86 +418,6 @@ public final class ConquestMatch {
         return victimFaction != null && attackerFaction != null && victimFaction != attackerFaction;
     }
 
-    private void handleKillCredit(UUID victimId, @Nullable UUID killerId) {
-        if (killerId == null || killerId.equals(victimId)) {
-            return;
-        }
-        Faction victimFaction = factionOf.get(victimId);
-        Faction killerFaction = factionOf.get(killerId);
-        if (victimFaction == null || killerFaction == null || victimFaction == killerFaction) {
-            return;
-        }
-        kills.merge(killerId, 1, Integer::sum);
-        ServerPlayer killer = player(killerId);
-        ServerPlayer victim = player(victimId);
-        String killerName = killer != null ? killer.getGameProfile().getName() : "未知";
-        String victimName = victim != null ? victim.getGameProfile().getName() : "未知";
-        String weapon = "";
-        if (killer != null) {
-            var item = killer.getMainHandItem();
-            if (!item.isEmpty()) {
-                weapon = item.getHoverName().getString();
-            }
-        }
-        for (UUID id : factionOf.keySet()) {
-            ServerPlayer viewer = player(id);
-            if (viewer != null) {
-                BattlefieldNetwork.sendKillFeed(viewer, killerName, victimName,
-                        factionCode(killerFaction), factionCode(victimFaction), weapon);
-            }
-        }
-        if (killer != null) {
-            killer.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.6f, 1.35f);
-
-            // 连杀（仅个人 ActionBar）
-            killStreak.merge(killerId, 1, Integer::sum);
-            int streak = killStreak.get(killerId);
-            if (streak == 3 || streak == 5 || streak == 10 || streak == 15) {
-                killer.displayClientMessage(Component.literal("§7" + streak + " 连杀"), true);
-            }
-
-            // 首杀（仅 ActionBar）
-            if (!firstBlood) {
-                firstBlood = true;
-                killer.displayClientMessage(Component.literal("§e首杀"), true);
-            }
-
-            // 复仇
-            UUID prev = lastKilledBy.remove(killerId);
-            if (prev != null && prev.equals(victimId)) {
-                killer.displayClientMessage(Component.literal("§7复仇"), true);
-            }
-
-            // 守点击杀
-            for (int i = 0; i < points.size(); i++) {
-                if (points.get(i).owner() == killerFaction
-                        && defs.get(i).zone().contains(killer.getX(), killer.getY(), killer.getZ())) {
-                    killer.displayClientMessage(Component.literal("§b守点击杀 §e" + defs.get(i).name()), true);
-                    break;
-                }
-            }
-        }
-        killStreak.put(victimId, 0);
-        lastKilledBy.put(victimId, killerId);
-
-        // 助攻
-        Map<UUID, Long> hitsOnVictim = recentHits.remove(victimId);
-        if (hitsOnVictim != null) {
-            long now = server.getTickCount();
-            for (Map.Entry<UUID, Long> e : hitsOnVictim.entrySet()) {
-                if (e.getKey().equals(killerId)) {
-                    continue;
-                }
-                if (now - e.getValue() <= 200L) {
-                    ServerPlayer assister = player(e.getKey());
-                    if (assister != null) {
-                        assister.displayClientMessage(Component.literal("§e助攻 " + victimName), true);
-                        assister.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.4f, 1.1f);
-                    }
-                }
-            }
-        }
-    }
 
     /** 是否应取消某玩家受到的伤害：部署中/出生保护/友伤/倒地均取消。 */
     public boolean shouldCancelDamage(UUID victimId, @Nullable UUID attackerId) {
@@ -551,7 +427,7 @@ public final class ConquestMatch {
         if (startCountdownTicks > 0) {
             return true;
         }
-        if (redeployReadyTick.containsKey(victimId)) {
+        if (redeployService.isRedeploying(victimId)) {
             return true;
         }
         if (downedUntil.containsKey(victimId)) {
@@ -561,12 +437,8 @@ public final class ConquestMatch {
         if (victim != null && victim.isSpectator()) {
             return true;
         }
-        Long until = protectedUntil.get(victimId);
-        if (until != null) {
-            if (server.getTickCount() < until) {
-                return true;
-            }
-            protectedUntil.remove(victimId);
+        if (redeployService.consumeProtection(victimId)) {
+            return true;
         }
         if (attackerId != null && !attackerId.equals(victimId)) {
             Faction vf = factionOf.get(victimId);
@@ -589,14 +461,8 @@ public final class ConquestMatch {
             beginRedeploy(player, faction);
             return;
         }
-        if (redeployReadyTick.containsKey(id)) {
-            redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
-            player.setGameMode(GameType.SPECTATOR);
-            player.setInvulnerable(true);
-            player.setDeltaMovement(0.0, 0.0, 0.0);
-            teleportToDeployOverview(player, faction);
-            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        } else {
+        redeployService.onPlayerLogin(player, faction);
+        if (!redeployService.isRedeploying(id)) {
             player.setInvulnerable(false);
             BattlefieldNetwork.sendBattleHud(player, buildHudFor(player));
             BattlefieldNetwork.sendBattleTab(player, buildTabFor(player));
@@ -604,390 +470,37 @@ public final class ConquestMatch {
     }
 
     private void beginRedeploy(ServerPlayer player, Faction faction) {
-        UUID id = player.getUUID();
-        long readyTick = server.getTickCount() + redeployDelayTicks;
-        redeployReadyTick.put(id, readyTick);
-        String kind = bestDeployKind(id, faction);
-        deploySelection.put(id, kind);
-        deployTarget.put(id, bestDeployTarget(id, faction, kind));
-        redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
-        player.setGameMode(GameType.SPECTATOR);
-        player.setInvulnerable(true);
-        player.setDeltaMovement(0.0, 0.0, 0.0);
-        teleportToDeployOverview(player, faction);
-        BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
+        redeployService.beginRedeploy(player, faction);
     }
 
     private void processRedeployTick() {
-        if (redeployReadyTick.isEmpty()) {
-            return;
-        }
-        if (server.getTickCount() % 20L != 0L) {
-            return;
-        }
-        for (UUID id : new ArrayList<>(redeployReadyTick.keySet())) {
-            ServerPlayer p = player(id);
-            Faction faction = factionOf.get(id);
-            if (p != null && faction != null) {
-                teleportToDeployOverview(p, faction);
-                BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
-            }
-        }
+        redeployService.processRedeployTick();
     }
 
     public void handleDeployAction(ServerPlayer player, String kind) {
-        UUID id = player.getUUID();
-        Faction faction = factionOf.get(id);
-        handleDeployAction(player, kind, faction != null ? bestDeployTarget(id, faction, normalizeDeployKind(kind)) : "");
+        redeployService.handleDeployAction(player, kind);
     }
 
     public void refreshDeployStatus(ServerPlayer player) {
-        UUID id = player.getUUID();
-        Faction faction = factionOf.get(id);
-        if (faction != null && redeployReadyTick.containsKey(id)) {
-            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        } else {
-            BattlefieldNetwork.sendDeploy(player, false, DeployStatusDto.inactive());
-        }
+        redeployService.refreshDeployStatus(player);
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
-        UUID id = player.getUUID();
-        Faction faction = factionOf.get(id);
-        if (faction == null || !redeployReadyTick.containsKey(id)) {
-            return;
-        }
-        String normalized = normalizeDeployKind(kind);
-        String target = targetId != null ? targetId : "";
-        if (!canDeployTo(id, faction, normalized, target)) {
-            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-            return;
-        }
-        deploySelection.put(id, normalized);
-        deployTarget.put(id, target);
-        if (server.getTickCount() >= redeployReadyTick.getOrDefault(id, 0L)) {
-            deploy(player, faction, normalized, target);
-        } else {
-            BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        }
-    }
-
-    private DeployStatusDto deployStatus(ServerPlayer player) {
-        UUID id = player.getUUID();
-        Faction faction = factionOf.get(id);
-        if (faction == null || !redeployReadyTick.containsKey(id)) {
-            return DeployStatusDto.inactive();
-        }
-        BattlefieldData.BaseSpawn squad = bestSquadSpawn(id, faction);
-        BattlefieldData.BaseSpawn base = data.base(faction);
-        List<DeployPointDto> pointDtos = deployPointDtos(faction);
-        List<DeploySquadMateDto> squadDtos = deploySquadMateDtos(id, faction);
-        boolean canSquad = squadDtos.stream().anyMatch(DeploySquadMateDto::deployable);
-        boolean canPoint = pointDtos.stream().anyMatch(DeployPointDto::deployable);
-        boolean canBase = base != null;
-        long readyTick = redeployReadyTick.getOrDefault(id, (long) server.getTickCount());
-        int remain = (int) Math.max(0L, readyTick - server.getTickCount());
-        String selected = deploySelection.getOrDefault(id, bestDeployKind(id, faction));
-        String target = deployTarget.getOrDefault(id, bestDeployTarget(id, faction, selected));
-        if (!canDeployTo(id, faction, selected, target)) {
-            selected = bestDeployKind(id, faction);
-            target = bestDeployTarget(id, faction, selected);
-            deploySelection.put(id, selected);
-            deployTarget.put(id, target);
-        }
-        org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
-        boolean areaExplicit = data.areaOverride().isSet();
-        return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
-                base != null ? base.x() : 0, base != null ? base.y() + 1.0 : 0, base != null ? base.z() : 0,
-                squad != null ? squad.x() : 0, squad != null ? squad.y() + 1.0 : 0, squad != null ? squad.z() : 0,
-                pointDtos, squadDtos,
-                area.isSet(),
-                area.minX(), area.minY(), area.minZ(),
-                area.maxX(), area.maxY(), area.maxZ(),
-                areaExplicit);
-    }
-
-    private List<DeploySquadMateDto> deploySquadMateDtos(UUID self, Faction faction) {
-        List<DeploySquadMateDto> list = new ArrayList<>();
-        Integer squadId = squadOf.get(self);
-        if (squadId == null) {
-            return list;
-        }
-        LinkedHashSet<UUID> members = squads.get(squadId);
-        if (members == null) {
-            return list;
-        }
-        for (UUID mateId : members) {
-            if (mateId.equals(self)) {
-                continue;
-            }
-            ServerPlayer mate = player(mateId);
-            if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
-                continue;
-            }
-            boolean deployable = !enemyNear(mate, faction, squadDeployEnemyBlockRadius)
-                    && !downedUntil.containsKey(mateId);
-                list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(), mate.getId(),
-                    deployable, mate.getX(), mate.getY() + 1.0, mate.getZ()));
-        }
-        return list;
-    }
-
-    private List<DeployPointDto> deployPointDtos(Faction faction) {
-        List<DeployPointDto> list = new ArrayList<>();
-        for (int i = 0; i < defs.size(); i++) {
-            ControlPointDef def = defs.get(i);
-            CapturePoint point = points.get(i);
-            boolean deployable = point.owner() == faction;
-            list.add(new DeployPointDto(Integer.toString(def.pointId()), def.name(), factionCode(point.owner()),
-                    deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5));
-        }
-        return list;
-    }
-
-    private String bestDeployKind(UUID id, Faction faction) {
-        if (firstDeployableSquadMate(id, faction) != null) {
-            return "squad";
-        }
-        if (firstDeployablePointId(faction) != null) {
-            return "point";
-        }
-        return "base";
-    }
-
-    private String bestDeployTarget(UUID id, Faction faction, String kind) {
-        if ("point".equals(kind)) {
-            String point = firstDeployablePointId(faction);
-            return point != null ? point : "";
-        }
-        if ("squad".equals(kind)) {
-            DeploySquadMateDto mate = firstDeployableSquadMate(id, faction);
-            return mate != null ? mate.id() : "";
-        }
-        return "";
-    }
-
-    private boolean canDeployTo(UUID id, Faction faction, String kind, String targetId) {
-        return switch (kind) {
-            case "squad" -> squadMateSpawn(id, faction, targetId) != null;
-            case "point" -> pointSpawn(faction, targetId) != null;
-            case "base" -> data.base(faction) != null;
-            default -> false;
-        };
-    }
-
-    private static String normalizeDeployKind(String kind) {
-        if ("squad".equals(kind) || "point".equals(kind) || "base".equals(kind)) {
-            return kind;
-        }
-        return "base";
-    }
-
-    private String firstDeployablePointId(Faction faction) {
-        for (int i = 0; i < points.size(); i++) {
-            if (points.get(i).owner() == faction) {
-                return Integer.toString(defs.get(i).pointId());
-            }
-        }
-        return null;
-    }
-
-    @Nullable
-    private DeploySquadMateDto firstDeployableSquadMate(UUID self, Faction faction) {
-        for (DeploySquadMateDto mate : deploySquadMateDtos(self, faction)) {
-            if (mate.deployable()) {
-                return mate;
-            }
-        }
-        return null;
-    }
-
-    @Nullable
-    private BattlefieldData.BaseSpawn bestSquadSpawn(UUID self, Faction faction) {
-        DeploySquadMateDto first = firstDeployableSquadMate(self, faction);
-        return first != null ? squadMateSpawn(self, faction, first.id()) : null;
-    }
-
-    @Nullable
-    private BattlefieldData.BaseSpawn squadMateSpawn(UUID self, Faction faction, String targetId) {
-        if (targetId == null || targetId.isBlank()) {
-            return bestSquadSpawn(self, faction);
-        }
-        UUID mateUuid;
-        try {
-            mateUuid = UUID.fromString(targetId);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-        Integer squadId = squadOf.get(self);
-        LinkedHashSet<UUID> members = squadId == null ? null : squads.get(squadId);
-        if (members == null || !members.contains(mateUuid)) {
-            return null;
-        }
-        ServerPlayer mate = player(mateUuid);
-        if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()
-                || downedUntil.containsKey(mateUuid)) {
-            return null;
-        }
-        if (enemyNear(mate, faction, squadDeployEnemyBlockRadius)) {
-            return null;
-        }
-        return new BattlefieldData.BaseSpawn(mate.getX(), mate.getY(), mate.getZ(), mate.getYRot(), mate.getXRot());
-    }
-
-    private boolean enemyNear(ServerPlayer origin, Faction faction, double radius) {
-        double r2 = radius * radius;
-        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
-            if (e.getValue() == faction) {
-                continue;
-            }
-            ServerPlayer enemy = player(e.getKey());
-            if (enemy == null || enemy.level() != level || !enemy.isAlive() || enemy.isSpectator()
-                    || downedUntil.containsKey(e.getKey())) {
-                continue;
-            }
-            double dx = enemy.getX() - origin.getX();
-            double dz = enemy.getZ() - origin.getZ();
-            if (dx * dx + dz * dz <= r2) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    @Nullable
-    private BattlefieldData.BaseSpawn pointSpawn(Faction faction, String targetId) {
-        for (int i = 0; i < defs.size(); i++) {
-            ControlPointDef def = defs.get(i);
-            if (!Integer.toString(def.pointId()).equals(targetId)) {
-                continue;
-            }
-            if (points.get(i).owner() != faction) {
-                return null;
-            }
-            return new BattlefieldData.BaseSpawn(def.pos().getX() + 0.5, def.pos().getY() + 1,
-                    def.pos().getZ() + 0.5, 0f, 0f);
-        }
-        return null;
-    }
-
-    private void teleportToDeployOverview(ServerPlayer player, Faction faction) {
-        BattlefieldData.BaseSpawn view = deployOverviewSpawn(faction);
-        player.teleportTo(level, view.x(), view.y(), view.z(), view.yaw(), view.pitch());
-        player.setDeltaMovement(0.0, 0.0, 0.0);
-    }
-
-    private BattlefieldData.BaseSpawn deployOverviewSpawn(Faction faction) {
-        double minX = Double.MAX_VALUE;
-        double maxX = -Double.MAX_VALUE;
-        double minZ = Double.MAX_VALUE;
-        double maxZ = -Double.MAX_VALUE;
-        double maxY = level.getMinBuildHeight() + 64;
-        for (ControlPointDef def : defs) {
-            minX = Math.min(minX, def.pos().getX());
-            maxX = Math.max(maxX, def.pos().getX());
-            minZ = Math.min(minZ, def.pos().getZ());
-            maxZ = Math.max(maxZ, def.pos().getZ());
-            maxY = Math.max(maxY, def.pos().getY());
-        }
-        BattlefieldData.BaseSpawn a = data.base(Faction.ALPHA);
-        BattlefieldData.BaseSpawn b = data.base(Faction.BRAVO);
-        for (BattlefieldData.BaseSpawn spawn : new BattlefieldData.BaseSpawn[]{a, b}) {
-            if (spawn == null) {
-                continue;
-            }
-            minX = Math.min(minX, spawn.x());
-            maxX = Math.max(maxX, spawn.x());
-            minZ = Math.min(minZ, spawn.z());
-            maxZ = Math.max(maxZ, spawn.z());
-            maxY = Math.max(maxY, spawn.y());
-        }
-        if (minX == Double.MAX_VALUE) {
-            BattlefieldData.BaseSpawn fallback = data.base(faction);
-            if (fallback != null) {
-                return new BattlefieldData.BaseSpawn(fallback.x(), fallback.y() + 64.0, fallback.z(), 0f, 90f);
-            }
-            return new BattlefieldData.BaseSpawn(0.5, maxY + 64.0, 0.5, 0f, 90f);
-        }
-        double cx = (minX + maxX) * 0.5;
-        double cz = (minZ + maxZ) * 0.5;
-        double span = Math.max(maxX - minX, maxZ - minZ);
-        double height = Math.max(48.0, Math.min(140.0, span * 0.65 + 32.0));
-        return new BattlefieldData.BaseSpawn(cx + 0.5, maxY + height, cz + 0.5, 0f, 90f);
+        redeployService.handleDeployAction(player, kind, targetId);
     }
 
     private void deploy(ServerPlayer p, Faction f) {
-        String kind = bestDeployKind(p.getUUID(), f);
-        deploy(p, f, kind, bestDeployTarget(p.getUUID(), f, kind));
-    }
-
-    private void deploy(ServerPlayer p, Faction f, String kind, String targetId) {
-        UUID id = p.getUUID();
-        BattlefieldData.BaseSpawn spawn = switch (kind) {
-            case "squad" -> squadMateSpawn(id, f, targetId);
-            case "point" -> pointSpawn(f, targetId);
-            default -> data.base(f);
-        };
-        if (spawn == null) {
-            spawn = data.base(f);
-        }
-        p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
-        if (spawn != null) {
-            p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
-        }
-        clearRedeployState(p, false);
-        escapeTicks.remove(id);
-        downedUntil.remove(id);
-        cancelRevive(id);
-        p.setPose(Pose.STANDING);
-        ArcadeLoadoutBridge.apply(p);
-        p.setHealth(p.getMaxHealth());
-        p.getFoodData().setFoodLevel(20);
-        lastHurtTick.remove(id);
-        p.removeEffect(MobEffects.REGENERATION);
-        protectedUntil.put(id, (long) server.getTickCount() + spawnProtectionTicks);
-        p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
-        BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
-        BattlefieldNetwork.sendFireLock(p, startCountdownTicks > 0);
+        redeployService.deployDirect(p, f);
     }
 
     private void clearRedeployState(ServerPlayer player, boolean restoreOriginalMode) {
-        UUID id = player.getUUID();
-        redeployReadyTick.remove(id);
-        deploySelection.remove(id);
-        deployTarget.remove(id);
-        GameType original = redeployOriginalMode.remove(id);
-        GameType targetMode = restoreOriginalMode && original != null ? original : GameType.ADVENTURE;
-        if (targetMode == GameType.SPECTATOR) {
-            targetMode = GameType.ADVENTURE;
-        }
-        player.setGameMode(targetMode);
-        player.setInvulnerable(false);
-        player.setDeltaMovement(0.0, 0.0, 0.0);
+        redeployService.clearRedeployState(player, restoreOriginalMode);
     }
 
     /** Squad respawn point: living squadmate if available. */
     @Nullable
     private BattlefieldData.BaseSpawn livingSquadmateSpawn(UUID self) {
-        Integer squadId = squadOf.get(self);
-        if (squadId == null) {
-            return null;
-        }
-        LinkedHashSet<UUID> members = squads.get(squadId);
-        if (members == null) {
-            return null;
-        }
-        for (UUID mateId : members) {
-            if (mateId.equals(self)) {
-                continue;
-            }
-            ServerPlayer mate = player(mateId);
-            if (mate != null && mate.level() == level && mate.isAlive() && !mate.isSpectator()) {
-                return new BattlefieldData.BaseSpawn(mate.getX(), mate.getY(), mate.getZ(), mate.getYRot(), mate.getXRot());
-            }
-        }
-        return null;
+        return squadManager.livingSquadmateSpawn(self);
     }
 
     /**
@@ -995,31 +508,7 @@ public final class ConquestMatch {
      */
     @Nullable
     private BattlefieldData.BaseSpawn forwardSpawn(Faction f) {
-        BattlefieldData.BaseSpawn enemyBase = data.base(f.opponent());
-        ControlPointDef best = null;
-        double bestDist = Double.MAX_VALUE;
-        for (int i = 0; i < points.size(); i++) {
-            if (points.get(i).owner() != f) {
-                continue;
-            }
-            ControlPointDef def = defs.get(i);
-            if (enemyBase == null) {
-                best = def;
-                break;
-            }
-            double dx = def.pos().getX() - enemyBase.x();
-            double dz = def.pos().getZ() - enemyBase.z();
-            double d = dx * dx + dz * dz;
-            if (d < bestDist) {
-                bestDist = d;
-                best = def;
-            }
-        }
-        if (best == null) {
-            return null;
-        }
-        return new BattlefieldData.BaseSpawn(
-                best.pos().getX() + 0.5, best.pos().getY() + 1, best.pos().getZ() + 0.5, 0f, 0f);
+        return redeployService.forwardSpawn(f);
     }
 
     // ---- 结束 ----
@@ -1033,7 +522,7 @@ public final class ConquestMatch {
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
-                if (redeployReadyTick.containsKey(e.getKey())) {
+                if (redeployService.isRedeploying(e.getKey())) {
                     clearRedeployState(p, true);
                 } else {
                     p.setInvulnerable(false);
@@ -1048,21 +537,14 @@ public final class ConquestMatch {
                 BattlefieldNetwork.clearHud(p);
             }
         }
-        redeployReadyTick.clear();
-        deploySelection.clear();
-        deployTarget.clear();
-        redeployOriginalMode.clear();
-        protectedUntil.clear();
+        redeployService.clearAll();
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
-        recentHits.clear();
-        killStreak.clear();
-        lastKilledBy.clear();
-        firstBlood = false;
+        killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
         clearAllEnemyGlows();
@@ -1079,7 +561,7 @@ public final class ConquestMatch {
         player.sendSystemMessage(Component.literal("§6战报 §8| " + (won ? "§a胜利" : "§c失败")
                 + " §8| §7剩余票数 §9北大西洋公约 §f" + tickets.displayTickets(Faction.ALPHA)
                 + " §8/ §c无邦军团 §f" + tickets.displayTickets(Faction.BRAVO)
-            + " §8| §7你的 K/D §e" + kills.getOrDefault(id, 0) + "§7/§c" + deaths.getOrDefault(id, 0)));
+            + " §8| §7你的 K/D §e" + killTracker.killsOf(id) + "§7/§c" + killTracker.deathsOf(id)));
     }
 
     private void broadcastServerResult(Faction winner) {
@@ -1094,8 +576,8 @@ public final class ConquestMatch {
         String cp = capTime > 0 ? " §8| §7占点王 §e" + cap + " §7(" + (capTime / 20) + "秒)" : "";
 
         int bestK = 0, bestId = 0;
-        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squads.entrySet()) {
-            int t = e.getValue().stream().mapToInt(uid -> kills.getOrDefault(uid, 0)).sum();
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squadManager.getSquads().entrySet()) {
+            int t = e.getValue().stream().mapToInt(uid -> killTracker.killsOf(uid)).sum();
             if (t > bestK) { bestK = t; bestId = e.getKey(); }
         }
         String sq = bestK > 0 ? " §8| §7最佳小队 §e第" + displaySquad(bestId) + "小队 §7(" + bestK + "杀)" : "";
@@ -1130,7 +612,7 @@ public final class ConquestMatch {
     private TopKiller topKiller() {
         UUID topId = null;
         int topKills = -1;
-        for (Map.Entry<UUID, Integer> e : kills.entrySet()) {
+        for (Map.Entry<UUID, Integer> e : killTracker.getKills().entrySet()) {
             int value = e.getValue() == null ? 0 : e.getValue();
             if (topId == null || value > topKills
                     || (value == topKills && nameOf(e.getKey()).compareToIgnoreCase(nameOf(topId)) < 0)) {
@@ -1167,8 +649,8 @@ public final class ConquestMatch {
             String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
             int ping = p != null ? p.latency : -1;
             entries.add(new TabEntryDto(name, factionCode(e.getValue()),
-                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, p == null ? 2 : (downedUntil.containsKey(id) ? 3 : 0),
-                    displaySquad(squadOf.getOrDefault(id, 0))));
+                    killTracker.killsOf(id), killTracker.deathsOf(id), ping, p == null ? 2 : (downedUntil.containsKey(id) ? 3 : 0),
+                    displaySquad(squadManager.getSquadOf().getOrDefault(id, 0))));
         }
         entries.sort(Comparator
                 .comparingInt(TabEntryDto::kills).reversed()
@@ -1188,15 +670,15 @@ public final class ConquestMatch {
 
         int bestSquadKills = 0;
         int bestSquadId = 0;
-        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squads.entrySet()) {
-            int total = e.getValue().stream().mapToInt(id -> kills.getOrDefault(id, 0)).sum();
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> e : squadManager.getSquads().entrySet()) {
+            int total = e.getValue().stream().mapToInt(id -> killTracker.killsOf(id)).sum();
             if (total > bestSquadKills) { bestSquadKills = total; bestSquadId = e.getKey(); }
         }
         String bestSquad = bestSquadId > 0 ? "第" + displaySquad(bestSquadId) + "小队" : "";
 
         return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
                 tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
-                kills.getOrDefault(viewerId, 0), deaths.getOrDefault(viewerId, 0), entries,
+                killTracker.killsOf(viewerId), killTracker.deathsOf(viewerId), entries,
                 topCapturer, topCapturerTime / 20, bestSquad, bestSquadKills);
     }
 
@@ -1209,7 +691,7 @@ public final class ConquestMatch {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p != null) {
-                if (redeployReadyTick.containsKey(id)) {
+                if (redeployService.isRedeploying(id)) {
                     clearRedeployState(p, true);
                 } else {
                     p.setInvulnerable(false);
@@ -1218,21 +700,14 @@ public final class ConquestMatch {
                 BattlefieldNetwork.clearHud(p);
             }
         }
-        redeployReadyTick.clear();
-        deploySelection.clear();
-        deployTarget.clear();
-        redeployOriginalMode.clear();
-        protectedUntil.clear();
+        redeployService.clearAll();
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
-        recentHits.clear();
-        killStreak.clear();
-        lastKilledBy.clear();
-        firstBlood = false;
+        killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
         clearAllEnemyGlows();
@@ -1401,7 +876,7 @@ public final class ConquestMatch {
         if (viewer == null || viewer.level() != level || !viewer.isAlive() || viewer.isSpectator()) {
             return false;
         }
-        return !redeployReadyTick.containsKey(viewer.getUUID());
+        return !redeployService.isRedeploying(viewer.getUUID());
     }
 
     private boolean shouldShowEnemyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
@@ -1415,7 +890,7 @@ public final class ConquestMatch {
         if (viewerFaction == null || targetFaction == null || viewerFaction == targetFaction) {
             return false;
         }
-        if (redeployReadyTick.containsKey(targetId)) {
+        if (redeployService.isRedeploying(targetId)) {
             return false;
         }
         if (viewer.distanceToSqr(target) > enemyMarkDistanceSqr) {
@@ -1435,7 +910,7 @@ public final class ConquestMatch {
         UUID targetId = target.getUUID();
         Faction viewerFaction = factionOf.get(viewerId);
         Faction targetFaction = factionOf.get(targetId);
-        return viewerFaction != null && viewerFaction == targetFaction && !redeployReadyTick.containsKey(targetId);
+        return viewerFaction != null && viewerFaction == targetFaction && !redeployService.isRedeploying(targetId);
     }
 
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
@@ -1525,7 +1000,7 @@ public final class ConquestMatch {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
-                    || redeployReadyTick.containsKey(id)) {
+                    || redeployService.isRedeploying(id)) {
                 continue;
             }
             if (p.getHealth() >= p.getMaxHealth()) {
@@ -1581,11 +1056,11 @@ public final class ConquestMatch {
             ServerPlayer p = player(id);
             String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
             int state = p == null ? 2 : (downedUntil.containsKey(id) ? 3 :
-                    (p.isSpectator() || redeployReadyTick.containsKey(id) ? 1 : 0));
+                    (p.isSpectator() || redeployService.isRedeploying(id) ? 1 : 0));
             int ping = p != null ? p.latency : -1;
-            int sq = displaySquad(squadOf.getOrDefault(id, 0));
+            int sq = displaySquad(squadManager.getSquadOf().getOrDefault(id, 0));
             TabEntryDto dto = new TabEntryDto(name, factionCode(e.getValue()),
-                    kills.getOrDefault(id, 0), deaths.getOrDefault(id, 0), ping, state, sq);
+                    killTracker.killsOf(id), killTracker.deathsOf(id), ping, state, sq);
             if (e.getValue() == Faction.ALPHA) {
                 alpha.add(dto);
             } else {
@@ -1633,13 +1108,13 @@ public final class ConquestMatch {
                 squad,
                 focus.name(), focus.state(), focus.progress(), focus.faction(),
                 downedMates, revivingName != null ? revivingName : "", revivingProgress,
-                killStreak.getOrDefault(viewer.getUUID(), 0));
+                killTracker.killStreakOf(viewer.getUUID()));
     }
 
     private List<SquadMateHudDto> squadHudFor(ServerPlayer viewer) {
         List<SquadMateHudDto> squad = new ArrayList<>();
-        Integer squadId = squadOf.get(viewer.getUUID());
-        LinkedHashSet<UUID> members = squadId == null ? null : squads.get(squadId);
+        Integer squadId = squadManager.getSquadOf().get(viewer.getUUID());
+        LinkedHashSet<UUID> members = squadId == null ? null : squadManager.getSquads().get(squadId);
         if (members == null || members.isEmpty()) {
             addSquadMate(squad, viewer, true);
             return squad;
@@ -1647,7 +1122,7 @@ public final class ConquestMatch {
         // 自己固定排第一。
         addSquadMate(squad, viewer, true);
         for (UUID mateId : members) {
-            if (squad.size() >= squadSize) {
+            if (squad.size() >= squadManager.getSquadSize()) {
                 break;
             }
             if (mateId.equals(viewer.getUUID())) {
@@ -1718,7 +1193,7 @@ public final class ConquestMatch {
                 player.isAlive() || downed, self, downed));
     }
 
-    private static int factionCode(@Nullable Faction faction) {
+    static int factionCode(@Nullable Faction faction) {
         if (faction == Faction.ALPHA) {
             return 1;
         }
@@ -1738,7 +1213,7 @@ public final class ConquestMatch {
         }
         for (Map.Entry<UUID, Faction> e : new ArrayList<>(factionOf.entrySet())) {
             UUID id = e.getKey();
-            if (redeployReadyTick.containsKey(id)) {
+            if (redeployService.isRedeploying(id)) {
                 continue;
             }
             ServerPlayer p = player(id);
@@ -2196,7 +1671,7 @@ public final class ConquestMatch {
     }
 
     public boolean canChangeLoadout(UUID id) {
-        return factionOf.containsKey(id) && redeployReadyTick.containsKey(id);
+        return factionOf.containsKey(id) && redeployService.isRedeploying(id);
     }
 
     @Nullable
@@ -2232,24 +1707,24 @@ public final class ConquestMatch {
 
     /** 玩家所属小队编号；不在对局/未分队则返回 0。 */
     public int squadIdOf(UUID id) {
-        return squadOf.getOrDefault(id, 0);
+        return squadManager.getSquadOf().getOrDefault(id, 0);
     }
 
     /** 玩家所属小队人数；不在小队则返回 0。 */
     public int squadSizeOf(UUID id) {
-        Integer squadId = squadOf.get(id);
+        Integer squadId = squadManager.getSquadOf().get(id);
         if (squadId == null) {
             return 0;
         }
-        LinkedHashSet<UUID> members = squads.get(squadId);
+        LinkedHashSet<UUID> members = squadManager.getSquads().get(squadId);
         return members == null ? 0 : members.size();
     }
 
     public int killsOf(UUID id) {
-        return kills.getOrDefault(id, 0);
+        return killTracker.killsOf(id);
     }
 
     public int deathsOf(UUID id) {
-        return deaths.getOrDefault(id, 0);
+        return killTracker.deathsOf(id);
     }
 }
