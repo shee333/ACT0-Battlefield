@@ -10,6 +10,9 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -104,6 +107,7 @@ public final class BattlefieldCommand {
                                 StringArgumentType.getString(c, "name"))))))
                 .then(buildAreaBranch())
                 .then(buildTemplateBranch())
+                .then(buildPresetBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop))
                 .then(Commands.literal("kick").requires(s -> s.hasPermission(2))
@@ -576,6 +580,125 @@ public final class BattlefieldCommand {
             feedback(c, "§c读取模板信息失败: " + e.getMessage());
             return 0;
         }
+    }
+
+    // ---- 预设管理 ----
+
+    /** /battlefield preset {save|load|list|delete}：把据点+基地+区域另存为命名预设，省去重启后重新布场。 */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildPresetBranch() {
+        return Commands.literal("preset")
+            .requires(s -> s.hasPermission(2))
+            .then(Commands.literal("save")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::presetSave)))
+            .then(Commands.literal("load")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::presetLoad)))
+            .then(Commands.literal("list")
+                .executes(BattlefieldCommand::presetList))
+            .then(Commands.literal("delete")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::presetDelete)));
+    }
+
+    private static int presetSave(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        String name = StringArgumentType.getString(c, "name");
+        if (name.isBlank()) {
+            feedback(c, "§c预设名不能为空。");
+            return 0;
+        }
+        data.savePreset(name, buildCurrentSetupTag(data));
+        feedback(c, "§a预设 §e" + name + " §a已保存。");
+        return 1;
+    }
+
+    private static int presetLoad(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        String name = StringArgumentType.getString(c, "name");
+        CompoundTag tag = data.loadPreset(name);
+        if (tag == null) {
+            feedback(c, "§c未找到预设 §e" + name + "§c。");
+            return 0;
+        }
+        data.clearAll();
+        ListTag pointsList = tag.getList("points", Tag.TAG_COMPOUND);
+        for (int i = 0; i < pointsList.size(); i++) {
+            data.importPoint(ControlPointDef.load(pointsList.getCompound(i)));
+        }
+        if (tag.contains("alphaBase")) {
+            data.setBase(Faction.ALPHA, BattlefieldData.BaseSpawn.load(tag.getCompound("alphaBase")));
+        }
+        if (tag.contains("bravoBase")) {
+            data.setBase(Faction.BRAVO, BattlefieldData.BaseSpawn.load(tag.getCompound("bravoBase")));
+        }
+        if (tag.contains("area")) {
+            CompoundTag a = tag.getCompound("area");
+            data.setArea(new BattleArea(
+                    a.getDouble("minX"), a.getDouble("minY"), a.getDouble("minZ"),
+                    a.getDouble("maxX"), a.getDouble("maxY"), a.getDouble("maxZ")));
+        }
+        feedback(c, "§a预设 §e" + name + " §a已加载（" + pointsList.size() + " 个据点）。");
+        return 1;
+    }
+
+    private static int presetList(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        List<String> names = BattlefieldData.get(level).listPresets();
+        if (names.isEmpty()) {
+            feedback(c, "§7没有已保存的预设。");
+            return 1;
+        }
+        feedback(c, "§e已保存的预设（" + names.size() + "）：");
+        for (String n : names) {
+            feedback(c, "§7- §f" + n);
+        }
+        return 1;
+    }
+
+    private static int presetDelete(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        String name = StringArgumentType.getString(c, "name");
+        if (!data.listPresets().contains(name)) {
+            feedback(c, "§c未找到预设 §e" + name + "§c。");
+            return 0;
+        }
+        data.deletePreset(name);
+        feedback(c, "§a预设 §e" + name + " §a已删除。");
+        return 1;
+    }
+
+    /** 把当前 {@link BattlefieldData} 的据点+基地+区域序列化为预设 NBT。 */
+    private static CompoundTag buildCurrentSetupTag(BattlefieldData data) {
+        CompoundTag tag = new CompoundTag();
+        ListTag pointsList = new ListTag();
+        for (ControlPointDef def : data.points()) {
+            pointsList.add(def.save());
+        }
+        tag.put("points", pointsList);
+        BattlefieldData.BaseSpawn alpha = data.base(Faction.ALPHA);
+        if (alpha != null) {
+            tag.put("alphaBase", alpha.save());
+        }
+        BattlefieldData.BaseSpawn bravo = data.base(Faction.BRAVO);
+        if (bravo != null) {
+            tag.put("bravoBase", bravo.save());
+        }
+        BattleArea area = data.areaOverride();
+        if (area.isSet()) {
+            CompoundTag a = new CompoundTag();
+            a.putDouble("minX", area.minX());
+            a.putDouble("minY", area.minY());
+            a.putDouble("minZ", area.minZ());
+            a.putDouble("maxX", area.maxX());
+            a.putDouble("maxY", area.maxY());
+            a.putDouble("maxZ", area.maxZ());
+            tag.put("area", a);
+        }
+        return tag;
     }
 
     private static String fmt(double v) {

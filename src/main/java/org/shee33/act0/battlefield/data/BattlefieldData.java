@@ -41,6 +41,9 @@ public final class BattlefieldData extends SavedData {
     /** 显式录入的战斗区域边界；为空时按基地+据点推导。 */
     private BattleArea area = BattleArea.EMPTY;
 
+    /** 命名预设：当前布场（据点+基地+区域）的快照，存于主 NBT 的 {@code presets} 子节点下。 */
+    private final Map<String, CompoundTag> presets = new LinkedHashMap<>();
+
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
                 BattlefieldData::load, BattlefieldData::new, NAME);
@@ -173,6 +176,54 @@ public final class BattlefieldData extends SavedData {
         return BattleArea.derive(pts, 16.0);
     }
 
+    // ---- 预设 ----
+
+    /**
+     * 把当前布场（据点+基地+区域）的快照以给定的 NBT 存入命名预设；同名覆盖。
+     * <p>调用方负责按 {@code points}/{@code alphaBase}/{@code bravoBase}/{@code area} 键结构组装 tag。
+     */
+    public void savePreset(String name, CompoundTag tag) {
+        if (name == null || name.isBlank() || tag == null) {
+            return;
+        }
+        presets.put(name, tag.copy());
+        setDirty();
+    }
+
+    /** 取出命名预设的副本；不存在返回 {@code null}，由调用方自行解析与应用。 */
+    @Nullable
+    public CompoundTag loadPreset(String name) {
+        CompoundTag t = presets.get(name);
+        return t == null ? null : t.copy();
+    }
+
+    /** 列出所有已保存预设的名字。 */
+    public List<String> listPresets() {
+        return new ArrayList<>(presets.keySet());
+    }
+
+    /** 删除一个预设；不存在则 no-op。 */
+    public void deletePreset(String name) {
+        if (presets.remove(name) != null) {
+            setDirty();
+        }
+    }
+
+    /** 清空所有据点、两个阵营基地与显式战斗区域，供 {@code /battlefield preset load} 使用。 */
+    public void clearAll() {
+        points.clear();
+        alphaBase = null;
+        bravoBase = null;
+        area = BattleArea.EMPTY;
+        setDirty();
+    }
+
+    /** 用给定的完整定义登记一个据点（覆盖同位置）；用于预设加载以保留原配置（半径/高度/浮标等）。 */
+    public void importPoint(ControlPointDef def) {
+        points.put(def.pos().asLong(), def);
+        setDirty();
+    }
+
     // ---- 持久化 ----
 
     @Override
@@ -207,6 +258,13 @@ public final class BattlefieldData extends SavedData {
             a.putDouble("maxZ", area.maxZ());
             tag.put("area", a);
         }
+        if (!presets.isEmpty()) {
+            CompoundTag pt = new CompoundTag();
+            for (Map.Entry<String, CompoundTag> e : presets.entrySet()) {
+                pt.put(e.getKey(), e.getValue().copy());
+            }
+            tag.put("presets", pt);
+        }
         return tag;
     }
 
@@ -238,6 +296,12 @@ public final class BattlefieldData extends SavedData {
             data.area = new BattleArea(
                     a.getDouble("minX"), a.getDouble("minY"), a.getDouble("minZ"),
                     a.getDouble("maxX"), a.getDouble("maxY"), a.getDouble("maxZ"));
+        }
+        if (tag.contains("presets")) {
+            CompoundTag pt = tag.getCompound("presets");
+            for (String key : pt.getAllKeys()) {
+                data.presets.put(key, pt.getCompound(key).copy());
+            }
         }
         return data;
     }

@@ -74,6 +74,7 @@ public final class BattlefieldHudOverlay {
         renderKillFeed(gg, font, hud.myFaction());
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
+        renderCornerHud(gg, font, hud);
     }
 
     private static void renderHitFeedback(GuiGraphics gg, Font font) {
@@ -426,5 +427,58 @@ public final class BattlefieldHudOverlay {
         int cy = gg.guiHeight() / 2;
         String text = String.valueOf(streak);
         gg.drawString(font, text, cx - font.width(text) / 2, cy + 28, 0xFFFFFFFF, false);
+    }
+
+    /** 左下角常驻 HUD 组件：票数 + 小队状态，无需按 Tab 即可看到。 */
+    private static void renderCornerHud(GuiGraphics gg, Font font, BattleHudDto hud) {
+        List<SquadMateHudDto> squad = hud.squad();
+
+        final int panelW = 160;
+        final int panelH = 32;
+        final int margin = 4;
+        final int borderColor = 0x443A3A3A;
+        final int bg60 = 0x99101418;
+        int x = margin;
+        int y = gg.guiHeight() - panelH - margin;
+
+        gg.fill(x, y, x + panelW, y + panelH, bg60);
+        int accent = factionColor(hud.myFaction(), hud.myFaction());
+        gg.fill(x, y, x + panelW, y + 1, accent);
+        gg.fill(x, y + 1, x + 1, y + panelH, borderColor);
+        gg.fill(x + panelW - 1, y + 1, x + panelW, y + panelH, borderColor);
+        gg.fill(x, y + panelH - 1, x + panelW, y + panelH, borderColor);
+
+        int alphaColor = factionColor(1, hud.myFaction());
+        int bravoColor = factionColor(2, hud.myFaction());
+
+        int cx = x + 6;
+        gg.drawString(font, "ALPHA ", cx, y + 4, TEXT_DIM, false);
+        cx += font.width("ALPHA ");
+        gg.drawString(font, String.valueOf(hud.alphaTickets()), cx, y + 4, alphaColor, false);
+        cx += font.width(String.valueOf(hud.alphaTickets()));
+        gg.drawString(font, " | ", cx, y + 4, TEXT_DIM, false);
+        cx += font.width(" | ");
+        gg.drawString(font, String.valueOf(hud.bravoTickets()), cx, y + 4, bravoColor, false);
+        cx += font.width(String.valueOf(hud.bravoTickets()));
+        gg.drawString(font, " BRAVO", cx, y + 4, TEXT_DIM, false);
+
+        if (!squad.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            int maxSquad = Math.min(5, squad.size());
+            for (int i = 0; i < maxSquad; i++) {
+                SquadMateHudDto mate = squad.get(i);
+                if (i > 0) {
+                    sb.append(" · ");
+                }
+                if (mate.isSquadLeader()) {
+                    sb.append("★");
+                }
+                if (mate.downed()) {
+                    sb.append("[倒地]");
+                }
+                sb.append(mate.self() ? "你" : mate.name());
+            }
+            drawScaledText(gg, font, sb.toString(), x + 6, y + 19, TEXT_DIM, 0.85f);
+        }
     }
 }
