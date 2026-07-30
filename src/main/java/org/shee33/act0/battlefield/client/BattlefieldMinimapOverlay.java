@@ -92,6 +92,10 @@ public final class BattlefieldMinimapOverlay {
             }
 
             int color = pointColor(point.owner(), point.pressure(), hud.myFaction());
+            float pulse = ClientCapturePointEvent.minimapPulse(point.pointId());
+            if (pulse > 0f) {
+                drawDiamondGlow(gg, sx, sy, withAlpha(0xFFFFFFFF, pulse * 0.55f));
+            }
             drawDiamond(gg, sx, sy, color);
 
             // Label (first char of point name)
@@ -118,6 +122,23 @@ public final class BattlefieldMinimapOverlay {
         gg.fill(cx - 2, cy, cx + 3, cy + 1, color);
         gg.fill(cx - 1, cy - 1, cx + 2, cy + 2, color);
         gg.fill(cx, cy - 2, cx + 1, cy + 3, color);
+    }
+
+    /**
+     * 6-pixel 光晕菱形（据点事件一次性提亮反馈）：绘制在基础 4px 菱形之下，比其大一圈作为
+     * 描边光晕，强度随 {@link ClientCapturePointEvent#minimapPulse(int)} 在 600ms 内线性衰减，
+     * 不循环闪烁。
+     */
+    private static void drawDiamondGlow(GuiGraphics gg, int cx, int cy, int color) {
+        gg.fill(cx - 3, cy, cx + 4, cy + 1, color);
+        gg.fill(cx - 2, cy - 1, cx + 3, cy + 2, color);
+        gg.fill(cx - 1, cy - 2, cx + 2, cy + 3, color);
+        gg.fill(cx, cy - 3, cx + 1, cy + 4, color);
+    }
+
+    private static int withAlpha(int color, float alpha) {
+        int a = Math.max(0, Math.min(255, Math.round(255 * alpha)));
+        return (color & 0x00FFFFFF) | (a << 24);
     }
 
     /** Small upward-pointing triangle at (cx, cz). */

@@ -10,6 +10,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.BattleHudDto;
+import org.shee33.act0.battlefield.network.CapturePointEventPacket;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
 import org.shee33.act0.battlefield.network.DownedMateDto;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
@@ -71,6 +72,7 @@ public final class BattlefieldHudOverlay {
 
         renderTopHud(gg, font, hud);
         renderCaptureFocus(gg, font, hud);
+        renderCapturePointBanner(gg, font, hud);
         renderSquadPanel(gg, font, hud.squad());
         renderKillFeed(gg, font, hud.myFaction());
         renderReviveProgress(gg, font, hud);
@@ -389,6 +391,75 @@ public final class BattlefieldHudOverlay {
         ResourceLocation capTex = focusState == 3 ? null :
                 (factionColor(focusFaction, hud.myFaction()) == BLUE ? CAPTURE_BAR_BLUE : CAPTURE_BAR_RED);
         drawCaptureProgressBar(gg, barX, barY, focusProgress, capTex);
+    }
+
+    /**
+     * 据点状态边沿事件横幅：位于 {@link #renderCaptureFocus} 面板下方（该面板最深延伸到 y=108），
+     * 220ms 滑入淡入 + 停留（按事件类型区分）+ 280ms 淡出，避免与 focus 面板重叠遮挡。
+     */
+    private static void renderCapturePointBanner(GuiGraphics gg, Font font, BattleHudDto hud) {
+        ClientCapturePointEvent.Active active = ClientCapturePointEvent.poll();
+        if (active == null) {
+            return;
+        }
+        long age = active.age();
+        long holdMs = active.holdMs();
+        float in = easeOut(Math.min(1.0f, age / (float) ClientCapturePointEvent.BANNER_IN_MS));
+        long inOutBoundary = ClientCapturePointEvent.BANNER_IN_MS + holdMs;
+        float out = age < inOutBoundary
+                ? 1.0f
+                : 1.0f - Math.min(1.0f, (age - inOutBoundary) / (float) ClientCapturePointEvent.BANNER_OUT_MS);
+        float alpha = Math.max(0.0f, Math.min(1.0f, in * out));
+        if (alpha <= 0.0f) {
+            return;
+        }
+
+        String text = pointNameFor(hud, active.pointId()) + " · " + capturePointVerb(active.kind());
+        int color = capturePointBannerColor(active.kind(), active.factionCode(), hud.myFaction());
+        int aColor = withAlpha(color, alpha);
+
+        int textW = font.width(text);
+        int panelW = textW + 24;
+        int panelH = 16;
+        int centerX = gg.guiWidth() / 2;
+        int x = centerX - panelW / 2;
+        int baseY = 112; // 8px 网格；renderCaptureFocus 面板最深至 y=108，此处留 4px 间距
+        int y = baseY + Math.round(4 * (1.0f - in)); // 220ms 内从下方 4px 上移到位
+
+        gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, alpha * 0.72f));
+        int borderH = active.kind() == CapturePointEventPacket.Kind.CAPTURED_RECOVERED ? 2 : 1;
+        gg.fill(x, y, x + panelW, y + borderH, aColor);
+        gg.drawString(font, text, centerX - textW / 2, y + 5, aColor, false);
+    }
+
+    private static String capturePointVerb(CapturePointEventPacket.Kind kind) {
+        return switch (kind) {
+            case STARTED -> "争夺中";
+            case CAPTURED_NEW -> "已占领";
+            case CAPTURED_RECOVERED -> "已夺回";
+            case LOST -> "已失守";
+        };
+    }
+
+    private static int capturePointBannerColor(CapturePointEventPacket.Kind kind, int factionCode, int myFaction) {
+        if (kind == CapturePointEventPacket.Kind.LOST && myFaction != 0) {
+            if (factionCode == myFaction) {
+                return DANGER;
+            }
+            if (factionCode != 0) {
+                return GREEN;
+            }
+        }
+        return factionColor(factionCode, myFaction);
+    }
+
+    private static String pointNameFor(BattleHudDto hud, int pointId) {
+        for (ControlPointHudDto p : hud.points()) {
+            if (p.pointId() == pointId) {
+                return p.name();
+            }
+        }
+        return "";
     }
 
     private static void updateFocusState(BattleHudDto hud) {

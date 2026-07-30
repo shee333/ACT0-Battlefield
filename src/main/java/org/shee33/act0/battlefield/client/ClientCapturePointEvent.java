@@ -1,0 +1,95 @@
+package org.shee33.act0.battlefield.client;
+
+import org.shee33.act0.battlefield.network.CapturePointEventPacket;
+
+import javax.annotation.Nullable;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * 客户端据点状态边沿事件缓存：驱动 HUD 顶部横幅（220ms 滑入淡入 + 停留 + 280ms 淡出）
+ * 与小地图据点图标的一次性 600ms 提亮反馈。
+ *
+ * <p>用 {@link Deque} 缓存多个据点同一时刻触发事件的情况（参照 {@link ClientKillFeed}）；
+ * 横幅同一时刻只展示队首一条，其余排队依次淡入展示。每次 {@link #poll()} 由渲染帧调用一次，
+ * 渡染层负责用 age/holdMs 自行做 ease-out 计算（不在此处重复实现，复用
+ * {@code BattlefieldHudOverlay} 已有的 {@code easeOut}/{@code withAlpha}）。
+ */
+public final class ClientCapturePointEvent {
+
+    public static final long BANNER_IN_MS = 220L;
+    public static final long BANNER_OUT_MS = 280L;
+    private static final long MINIMAP_PULSE_MS = 600L;
+    private static final int MAX_QUEUE = 4;
+
+    private static final Deque<Entry> QUEUE = new ArrayDeque<>();
+    private static final Map<Integer, Long> pointPulseAt = new LinkedHashMap<>();
+
+    @Nullable
+    private static Entry active;
+    private static long activeStartedMs;
+
+    private ClientCapturePointEvent() {
+    }
+
+    /** 服务端事件包到达时调用。 */
+    public static void trigger(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
+        pointPulseAt.put(pointId, System.currentTimeMillis());
+        QUEUE.addLast(new Entry(pointId, kind, factionCode));
+        while (QUEUE.size() > MAX_QUEUE) {
+            QUEUE.removeFirst();
+        }
+    }
+
+    /** 每帧调用一次：推进队首横幅生命周期，过期后自动弹出下一条。可能返回 {@code null}。 */
+    @Nullable
+    public static Active poll() {
+        long now = System.currentTimeMillis();
+        if (active == null) {
+            active = QUEUE.pollFirst();
+            if (active == null) {
+                return null;
+            }
+            activeStartedMs = now;
+        }
+        long age = now - activeStartedMs;
+        long holdMs = holdMsFor(active.kind());
+        if (age >= BANNER_IN_MS + holdMs + BANNER_OUT_MS) {
+            active = null;
+            return null;
+        }
+        return new Active(active.pointId(), active.kind(), active.factionCode(), age, holdMs);
+    }
+
+    /** 小地图某据点的一次性提亮强度 [0,1]：600ms 内线性衰减到 0，不循环。 */
+    public static float minimapPulse(int pointId) {
+        Long at = pointPulseAt.get(pointId);
+        if (at == null) {
+            return 0f;
+        }
+        long age = System.currentTimeMillis() - at;
+        if (age >= MINIMAP_PULSE_MS) {
+            return 0f;
+        }
+        return 1.0f - (age / (float) MINIMAP_PULSE_MS);
+    }
+
+    /** 停留时长：夺回 &gt; 失守 &gt; 首占 &gt; 争夺开始，夺回视觉上最强烈。 */
+    private static long holdMsFor(CapturePointEventPacket.Kind kind) {
+        return switch (kind) {
+            case STARTED -> 900L;
+            case CAPTURED_NEW -> 1400L;
+            case CAPTURED_RECOVERED -> 1800L;
+            case LOST -> 1500L;
+        };
+    }
+
+    private record Entry(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
+    }
+
+    /** 当前应渲染的横幅快照：{@code age} 为距开始的毫秒数，{@code holdMs} 为纯停留时长（不含 in/out）。 */
+    public record Active(int pointId, CapturePointEventPacket.Kind kind, int factionCode, long age, long holdMs) {
+    }
+}

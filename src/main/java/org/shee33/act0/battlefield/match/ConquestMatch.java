@@ -34,6 +34,7 @@ import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BattleResultDto;
 import org.shee33.act0.battlefield.network.BattleTabDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
+import org.shee33.act0.battlefield.network.CapturePointEventPacket;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
@@ -105,6 +106,7 @@ public final class ConquestMatch {
     private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastTabHash = new LinkedHashMap<>();
     private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
+    private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
 
     private boolean ended;
     private boolean paused;
@@ -306,7 +308,14 @@ public final class ConquestMatch {
             if (tickets.tickets(Faction.BRAVO) / maxTickets < 0.7) {
                 bravoEffective = (int) Math.ceil(bravo * 1.5);
             }
+            int pointId = defs.get(i).pointId();
+            Faction ownerBeforeTick = point.owner();
+            CapturePoint.CaptureStatus prevStatus = lastCaptureStatus.getOrDefault(
+                    pointId, CapturePoint.CaptureStatus.IDLE);
+            boolean wasActiveContest = prevStatus == CapturePoint.CaptureStatus.CONTESTED
+                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING;
             CapturePoint.CaptureStatus st = point.tick(alphaEffective, bravoEffective, rules, captureDelta);
+            lastCaptureStatus.put(pointId, st);
             if (st == CapturePoint.CaptureStatus.CAPTURED) {
                 Faction owner = point.owner();
                 if (owner != null) {
@@ -314,17 +323,28 @@ public final class ConquestMatch {
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
                     actionBarNear(point.displayName(), zone, owner.coloredName() + " §a已控制 " + point.displayName());
                     rewardAttackOrder(defs.get(i).pointId(), owner);
+                    CapturePointEventPacket.Kind kind = ownerBeforeTick == null
+                            ? CapturePointEventPacket.Kind.CAPTURED_NEW
+                            : CapturePointEventPacket.Kind.CAPTURED_RECOVERED;
+                    sendCapturePointEvent(pointId, kind, factionCode(owner));
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 broadcast("§7据点 §e" + point.displayName() + " §7已被中立化");
                 playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.7f);
                 clearDefendOrder(defs.get(i).pointId());
+                sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.LOST, factionCode(ownerBeforeTick));
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
                 playNear(point.displayName(), zone, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
                 notifyDefendOrder(point, defs.get(i).pointId());
+                if (!wasActiveContest) {
+                    sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
+                }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
                 actionBarNear(point.displayName(), zone, pushing.coloredName() + " §7正在占领 " + point.displayName());
+                if (!wasActiveContest) {
+                    sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
+                }
             }
         }
 
@@ -1707,6 +1727,19 @@ public final class ConquestMatch {
             ServerPlayer p = player(id);
             if (p != null) {
                 p.playNotifySound(sound, SoundSource.MASTER, 0.7f, pitch);
+            }
+        }
+    }
+
+    /**
+     * 向双方阵营的每个玩家单独下发一次据点状态边沿事件（HUD 横幅 + 小地图提亮），
+     * 与 {@link #broadcast(String)}/{@link #playToAll} 的全局聊天/音效广播并列、不替代。
+     */
+    private void sendCapturePointEvent(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                BattlefieldNetwork.sendCapturePointEvent(p, pointId, kind, factionCode);
             }
         }
     }

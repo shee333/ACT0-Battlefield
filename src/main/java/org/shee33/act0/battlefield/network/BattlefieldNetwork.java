@@ -65,6 +65,8 @@ public final class BattlefieldNetwork {
             DeploySpawnFxPacket::encode, DeploySpawnFxPacket::decode, DeploySpawnFxPacket::handle);
         CHANNEL.registerMessage(id++, DownedFeedbackPacket.class,
             DownedFeedbackPacket::encode, DownedFeedbackPacket::decode, DownedFeedbackPacket::handle);
+        CHANNEL.registerMessage(id++, CapturePointEventPacket.class,
+            CapturePointEventPacket::encode, CapturePointEventPacket::decode, CapturePointEventPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -132,6 +134,13 @@ public final class BattlefieldNetwork {
     /** 向被救起玩家推送救援成功反馈。 */
     public static void sendRevivedFeedback(ServerPlayer player, String reviverName) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DownedFeedbackPacket((byte) 1, reviverName));
+    }
+
+    /** 向玩家推送据点状态边沿事件（HUD 顶部横幅 + 小地图据点图标一次性提亮反馈）。 */
+    public static void sendCapturePointEvent(ServerPlayer player, int pointId,
+                                              CapturePointEventPacket.Kind kind, int factionCode) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new CapturePointEventPacket(pointId, kind, factionCode));
     }
 
     /** 向玩家推送自定义 TAB 战绩面板。 */
