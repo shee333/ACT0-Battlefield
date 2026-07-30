@@ -16,9 +16,13 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import org.shee33.act0.battlefield.command.BattlefieldCommand;
+import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.MapTemplate;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.ActionPacket;
@@ -54,6 +58,8 @@ public final class ConquestManager {
     private final Map<ResourceKey<Level>, ServerLevel> lobbyWorlds = new LinkedHashMap<>();
     /** 地图模板根路径。 */
     private final Path templateBasePath = Path.of("config", "act0_battlefield", "templates");
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     // ---- 候选名单 ----
 
@@ -277,6 +283,9 @@ public final class ConquestManager {
         }
         if (data.base(Faction.ALPHA) == null || data.base(Faction.BRAVO) == null) {
             return "§c两个阵营的基地出生点都需先设置。";
+        }
+        if (templateName == null || templateName.isBlank()) {
+            tryAutoSaveDefaultTemplate(level, data);
         }
         ServerLevel matchLevel;
         if (templateName != null && !templateName.isBlank()) {
@@ -621,5 +630,36 @@ public final class ConquestManager {
         }
         String trimmed = name.trim();
         return trimmed.length() > 32 ? trimmed.substring(0, 32) : trimmed;
+    }
+
+    private void tryAutoSaveDefaultTemplate(ServerLevel level, BattlefieldData data) {
+        List<MapTemplate> templates;
+        try {
+            templates = MapTemplateManager.listTemplates(templateBasePath);
+        } catch (IOException e) {
+            LOGGER.warn("读取模板列表失败，跳过默认模板自动生成: {}", e.getMessage());
+            return;
+        }
+        if (!templates.isEmpty()) {
+            return;
+        }
+        BattleArea area = data.effectiveArea();
+        if (!area.isSet()) {
+            LOGGER.warn("当前世界战斗区域未设置，跳过默认模板自动生成。");
+            return;
+        }
+        try {
+            MapTemplateManager.saveTemplate("default", level, area, templateBasePath);
+            Component feedback = Component.literal("§e首次使用，已自动将当前世界战斗区域保存为默认模板。");
+            for (ServerPlayer player : level.players()) {
+                if (player.hasPermissions(2)) {
+                    player.sendSystemMessage(feedback);
+                }
+            }
+        } catch (IOException e) {
+            LOGGER.warn("自动保存默认模板失败: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            LOGGER.warn("默认模板参数无效: {}", e.getMessage());
+        }
     }
 }
