@@ -21,6 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
+import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
@@ -56,28 +57,28 @@ import java.util.UUID;
 /**
  * 一场征服对局：驱动据点争夺、票数流失、死亡接管与据点前进出生，直到一方票数归零。
  *
- * <p>每 {@link #CAPTURE_INTERVAL} 刻（0.5 秒）结算一次占点与流失：统计每个据点区域内双方人数推进
+ * <p>每 {@link #captureInterval} 刻结算一次占点与流失：统计每个据点区域内双方人数推进
  * 争夺进度，按双方控制据点数差流失败方票数。死亡<b>不走原版死亡流程</b>（接管后立即满血并在出生点重新部署，
  * 扣除本方 1 票），避免死亡画面与丢装备，并支持在己方控制的据点前进出生。
  */
 public final class ConquestMatch {
 
-    private static final int CAPTURE_INTERVAL = 10; // 0.5s
-    private static final double CAPTURE_DELTA = CAPTURE_INTERVAL / 20.0;
-    private static final int HUD_INTERVAL = 10;
-    private static final int SQUAD_SIZE = 4;
-    private static final int START_COUNTDOWN_TICKS = 5 * 20;
-    private static final int REDEPLOY_DELAY_TICKS = 5 * 20;
-    private static final int SPAWN_PROTECTION_TICKS = 3 * 20;
-    private static final double SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS = 12.0;
-    private static final int IFF_SYNC_INTERVAL = 2;
-    private static final double ENEMY_MARK_DISTANCE = 96.0;
-    private static final double ENEMY_MARK_DISTANCE_SQR = ENEMY_MARK_DISTANCE * ENEMY_MARK_DISTANCE;
-    private static final double ENEMY_MARK_VIEW_DOT = 0.30;
-    private static final int BREATH_HEAL_DELAY_TICKS = 5 * 20;
-    private static final int ESCAPE_BOUNDARY_TICKS = 10 * 20;
-    private static final int DOWNED_DURATION_TICKS = 15 * 20;
-    private static final int REVIVE_DURATION_TICKS = 3 * 20;
+    // Config-driven values (read from BattlefieldConfig at construction time).
+    private final int captureInterval;
+    private final double captureDelta;
+    private final int hudInterval;
+    private final int squadSize;
+    private final int redeployDelayTicks;
+    private final int spawnProtectionTicks;
+    private final double squadDeployEnemyBlockRadius;
+    private final int iffSyncInterval;
+    private final double enemyMarkDistance;
+    private final double enemyMarkDistanceSqr;
+    private final double enemyMarkViewDot;
+    private final int breathHealDelayTicks;
+    private final int escapeBoundaryTicks;
+    private final int downedDurationTicks;
+    private final int reviveDurationTicks;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -127,6 +128,21 @@ public final class ConquestMatch {
         this.level = level;
         this.rules = rules;
         this.data = data;
+        this.captureInterval = BattlefieldConfig.CAPTURE_INTERVAL.get();
+        this.captureDelta = this.captureInterval / 20.0;
+        this.hudInterval = BattlefieldConfig.HUD_INTERVAL.get();
+        this.squadSize = BattlefieldConfig.SQUAD_SIZE.get();
+        this.redeployDelayTicks = BattlefieldConfig.REDEPLOY_DELAY_TICKS.get();
+        this.spawnProtectionTicks = BattlefieldConfig.SPAWN_PROTECTION_TICKS.get();
+        this.squadDeployEnemyBlockRadius = BattlefieldConfig.SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS.get();
+        this.iffSyncInterval = BattlefieldConfig.IFF_SYNC_INTERVAL.get();
+        this.enemyMarkDistance = BattlefieldConfig.ENEMY_MARK_DISTANCE.get();
+        this.enemyMarkDistanceSqr = this.enemyMarkDistance * this.enemyMarkDistance;
+        this.enemyMarkViewDot = BattlefieldConfig.ENEMY_MARK_VIEW_DOT.get();
+        this.breathHealDelayTicks = BattlefieldConfig.BREATH_HEAL_DELAY_TICKS.get();
+        this.escapeBoundaryTicks = BattlefieldConfig.ESCAPE_BOUNDARY_TICKS.get();
+        this.downedDurationTicks = BattlefieldConfig.DOWNED_DURATION_TICKS.get();
+        this.reviveDurationTicks = BattlefieldConfig.REVIVE_DURATION_TICKS.get();
         this.tickets = new TicketPool(rules.startingTickets());
         this.defs = new ArrayList<>(defs);
         this.points = new ArrayList<>(defs.size());
@@ -152,13 +168,13 @@ public final class ConquestMatch {
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             int squadId;
             if (e.getValue() == Faction.ALPHA) {
-                if (alphaCount > 0 && alphaCount % SQUAD_SIZE == 0) {
+                if (alphaCount > 0 && alphaCount % squadSize == 0) {
                     alphaSquad++;
                 }
                 squadId = alphaSquad;
                 alphaCount++;
             } else {
-                if (bravoCount > 0 && bravoCount % SQUAD_SIZE == 0) {
+                if (bravoCount > 0 && bravoCount % squadSize == 0) {
                     bravoSquad++;
                 }
                 squadId = bravoSquad;
@@ -171,7 +187,7 @@ public final class ConquestMatch {
 
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {
-        startCountdownTicks = START_COUNTDOWN_TICKS;
+        startCountdownTicks = BattlefieldConfig.START_COUNTDOWN_TICKS.get();
         startCountdownLastSecond = -1;
         setupNameTagTeams();
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
@@ -253,18 +269,18 @@ public final class ConquestMatch {
         }
         if (startCountdownTicks > 0) {
             tickStartCountdown();
-            if (++hudAccum >= HUD_INTERVAL) {
+            if (++hudAccum >= hudInterval) {
                 hudAccum = 0;
                 broadcastHud();
             }
             return;
         }
-        if (++captureAccum >= CAPTURE_INTERVAL) {
+        if (++captureAccum >= captureInterval) {
             captureAccum = 0;
             resolveCaptureAndBleed();
         }
         processRedeployTick();
-        if (++iffAccum >= IFF_SYNC_INTERVAL) {
+        if (++iffAccum >= iffSyncInterval) {
             iffAccum = 0;
             syncEnemyIdentification();
         }
@@ -276,7 +292,7 @@ public final class ConquestMatch {
         if (ended) {
             return;
         }
-        if (++hudAccum >= HUD_INTERVAL) {
+        if (++hudAccum >= hudInterval) {
             hudAccum = 0;
             broadcastHud();
         }
@@ -300,11 +316,11 @@ public final class ConquestMatch {
                         bravo++;
                     }
                     if (point.owner() == e.getValue()) {
-                        captureTime.merge(e.getKey(), CAPTURE_INTERVAL, Integer::sum);
+                        captureTime.merge(e.getKey(), captureInterval, Integer::sum);
                     }
                 }
             }
-            CapturePoint.CaptureStatus st = point.tick(alpha, bravo, rules, CAPTURE_DELTA);
+            CapturePoint.CaptureStatus st = point.tick(alpha, bravo, rules, captureDelta);
             if (st == CapturePoint.CaptureStatus.CAPTURED) {
                 Faction owner = point.owner();
                 if (owner != null) {
@@ -325,7 +341,7 @@ public final class ConquestMatch {
 
         int alphaPoints = ownedCount(Faction.ALPHA);
         int bravoPoints = ownedCount(Faction.BRAVO);
-        tickets.bleed(alphaPoints, bravoPoints, rules, CAPTURE_DELTA);
+        tickets.bleed(alphaPoints, bravoPoints, rules, captureDelta);
 
         Faction w = tickets.winner();
         if (w != null) {
@@ -557,7 +573,7 @@ public final class ConquestMatch {
 
     private void beginRedeploy(ServerPlayer player, Faction faction) {
         UUID id = player.getUUID();
-        long readyTick = server.getTickCount() + REDEPLOY_DELAY_TICKS;
+        long readyTick = server.getTickCount() + redeployDelayTicks;
         redeployReadyTick.put(id, readyTick);
         String kind = bestDeployKind(id, faction);
         deploySelection.put(id, kind);
@@ -678,7 +694,7 @@ public final class ConquestMatch {
             if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
                 continue;
             }
-            boolean deployable = !enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS);
+            boolean deployable = !enemyNear(mate, faction, squadDeployEnemyBlockRadius);
                 list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(), mate.getId(),
                     deployable, mate.getX(), mate.getY() + 1.0, mate.getZ()));
         }
@@ -780,7 +796,7 @@ public final class ConquestMatch {
         if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
             return null;
         }
-        if (enemyNear(mate, faction, SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS)) {
+        if (enemyNear(mate, faction, squadDeployEnemyBlockRadius)) {
             return null;
         }
         return new BattlefieldData.BaseSpawn(mate.getX(), mate.getY(), mate.getZ(), mate.getYRot(), mate.getXRot());
@@ -895,7 +911,7 @@ public final class ConquestMatch {
         p.getFoodData().setFoodLevel(20);
         lastHurtTick.remove(id);
         p.removeEffect(MobEffects.REGENERATION);
-        protectedUntil.put(id, (long) server.getTickCount() + SPAWN_PROTECTION_TICKS);
+        protectedUntil.put(id, (long) server.getTickCount() + spawnProtectionTicks);
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
         BattlefieldNetwork.sendFireLock(p, startCountdownTicks > 0);
@@ -1298,7 +1314,7 @@ public final class ConquestMatch {
         if (redeployReadyTick.containsKey(targetId)) {
             return false;
         }
-        if (viewer.distanceToSqr(target) > ENEMY_MARK_DISTANCE_SQR) {
+        if (viewer.distanceToSqr(target) > enemyMarkDistanceSqr) {
             return false;
         }
         if (!isInFrontOf(viewer, target)) {
@@ -1324,7 +1340,7 @@ public final class ConquestMatch {
         if (toTarget.lengthSqr() < 0.0001D) {
             return true;
         }
-        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= ENEMY_MARK_VIEW_DOT;
+        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= enemyMarkViewDot;
     }
 
     private boolean hasClearSight(ServerPlayer viewer, ServerPlayer target) {
@@ -1414,7 +1430,7 @@ public final class ConquestMatch {
                 continue;
             }
             long last = lastHurtTick.getOrDefault(id, now);
-            if (now - last >= BREATH_HEAL_DELAY_TICKS) {
+            if (now - last >= breathHealDelayTicks) {
                 p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 1, false, false, true));
             }
         }
@@ -1506,7 +1522,7 @@ public final class ConquestMatch {
         // 自己固定排第一。
         addSquadMate(squad, viewer, true);
         for (UUID mateId : members) {
-            if (squad.size() >= SQUAD_SIZE) {
+            if (squad.size() >= squadSize) {
                 break;
             }
             if (mateId.equals(viewer.getUUID())) {
@@ -1610,7 +1626,7 @@ public final class ConquestMatch {
                 continue;
             }
             int ticks = escapeTicks.merge(id, 20, Integer::sum);
-            int remain = Math.max(0, ESCAPE_BOUNDARY_TICKS - ticks);
+            int remain = Math.max(0, escapeBoundaryTicks - ticks);
             if (remain <= 0) {
                 p.kill();
                 p.sendSystemMessage(Component.literal("§c你已离开战斗区域过久，被击杀。"));
@@ -1644,12 +1660,12 @@ public final class ConquestMatch {
 
     private void enterDowned(ServerPlayer p, Faction f, @Nullable UUID killerId) {
         UUID id = p.getUUID();
-        long until = server.getTickCount() + DOWNED_DURATION_TICKS;
+        long until = server.getTickCount() + downedDurationTicks;
         downedUntil.put(id, until);
         p.setHealth(1.0f);
         p.setPose(Pose.SWIMMING);
-        p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, DOWNED_DURATION_TICKS, 5, false, false));
-        p.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, DOWNED_DURATION_TICKS, 5, false, false));
+        p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, downedDurationTicks, 5, false, false));
+        p.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, downedDurationTicks, 5, false, false));
         p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 20, 0, false, false));
         if (killerId != null) {
             ServerPlayer killer = player(killerId);
@@ -1732,7 +1748,7 @@ public final class ConquestMatch {
                 toCancel.add(reviverId);
                 continue;
             }
-            if (now >= e.getValue() + REVIVE_DURATION_TICKS) {
+            if (now >= e.getValue() + reviveDurationTicks) {
                 toComplete.add(reviverId);
             }
         }
@@ -1910,7 +1926,7 @@ public final class ConquestMatch {
             return 0;
         }
         long elapsed = server.getTickCount() - started;
-        return (int) Math.min(100, Math.round((double) elapsed / REVIVE_DURATION_TICKS * 100.0));
+        return (int) Math.min(100, Math.round((double) elapsed / reviveDurationTicks * 100.0));
     }
 
     @Nullable

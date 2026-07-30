@@ -3,7 +3,9 @@ package org.shee33.act0.battlefield;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestManager;
@@ -39,6 +41,8 @@ public final class Act0Battlefield {
 
         BattlefieldRegistry.register(modEventBus);
         BattlefieldNetwork.register();
+
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, BattlefieldConfig.SPEC);
 
         MinecraftForge.EVENT_BUS.register(MANAGER);
         MinecraftForge.EVENT_BUS.register(BattlefieldEntranceHolograms.INSTANCE);
