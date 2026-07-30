@@ -62,6 +62,16 @@ public final class TicketPool {
         }
     }
 
+    /**
+     * 退还一名玩家的票数（救援成功时调用），简单归还 1 票，与 {@link #onDeath} 配对回滚。
+     */
+    public void refund(Faction faction) {
+        switch (faction) {
+            case ALPHA -> alpha++;
+            case BRAVO -> bravo++;
+        }
+    }
+
     /** 是否已有一方票数归零。 */
     public boolean hasLoser() {
         return alpha <= 0.0 || bravo <= 0.0;

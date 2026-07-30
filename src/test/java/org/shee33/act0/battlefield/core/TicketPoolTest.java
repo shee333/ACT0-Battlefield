@@ -53,4 +53,31 @@ class TicketPoolTest {
         pool.bleed(5, 0, RULES, 10.0);
         assertEquals(0, pool.displayTickets(Faction.BRAVO));
     }
+
+    @Test
+    void refundRestoresTicket() {
+        TicketPool pool = new TicketPool(RULES.startingTickets());
+        pool.onDeath(Faction.ALPHA, RULES);
+        assertEquals(99, pool.tickets(Faction.ALPHA), 1e-9);
+        pool.refund(Faction.ALPHA);
+        assertEquals(100, pool.tickets(Faction.ALPHA), 1e-9);
+    }
+
+    @Test
+    void bleedConfirmedOneSided() {
+        ConquestRules rules = ConquestRules.builder()
+                .startingTickets(300).bleedPerPointPerSecond(1.0).build();
+        TicketPool pool = new TicketPool(300);
+        pool.bleed(3, 2, rules, 1.0);
+        assertEquals(300, pool.tickets(Faction.ALPHA), 1e-9);
+        assertEquals(299, pool.tickets(Faction.BRAVO), 1e-9);
+    }
+
+    @Test
+    void bleedNoChangeWhenTied() {
+        TicketPool pool = new TicketPool(100);
+        pool.bleed(3, 3, RULES, 5.0);
+        assertEquals(100, pool.tickets(Faction.ALPHA), 1e-9);
+        assertEquals(100, pool.tickets(Faction.BRAVO), 1e-9);
+    }
 }
