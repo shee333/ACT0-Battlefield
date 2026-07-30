@@ -129,6 +129,7 @@ public final class RedeployService {
         player.setDeltaMovement(0.0, 0.0, 0.0);
         teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
+        BattlefieldNetwork.sendDeployLoadout(player, ArcadeLoadoutBridge.readDeployLoadout(player));
         player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
     }
 

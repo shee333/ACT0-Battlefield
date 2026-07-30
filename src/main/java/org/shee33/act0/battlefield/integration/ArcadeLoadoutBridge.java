@@ -3,9 +3,13 @@ package org.shee33.act0.battlefield.integration;
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -99,7 +103,50 @@ public final class ArcadeLoadoutBridge {
                     selectionClass, apparelRegistryClass, Set.class);
             applyApparel.invoke(applier, player, selection, apparel, unlocked);
         } catch (ReflectiveOperationException | RuntimeException ignored) {
-            // 兼容旧版 ACT0-Arcade：没有服饰系统时只发放普通配装。
+        }
+    }
+
+    /**
+     * 反射读取玩家当前配装，用于部署界面显示。若 Arcade 未安装则返回空 DTO。
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static DeployLoadoutDto readDeployLoadout(ServerPlayer player) {
+        try {
+            MinecraftServer server = player.server;
+            Object services = Class.forName("org.shee33.act0.arcade.Act0Arcade").getMethod("services").invoke(null);
+            Object registry = services.getClass().getMethod("registry").invoke(services);
+
+            Class<?> storeClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeLoadoutStore");
+            Object store = storeClass.getMethod("get", MinecraftServer.class).invoke(null, server);
+            Class<?> loadoutClass = Class.forName("org.shee33.act0.arcade.loadout.Loadout");
+            Class<?> setClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutSet");
+            Object set = storeClass.getMethod("getOrCreate", UUID.class, loadoutClass).invoke(store, player.getUUID(),
+                    Class.forName("org.shee33.act0.arcade.loadout.DefaultLoadoutCatalog")
+                            .getMethod("defaultLoadout", Class.forName("org.shee33.act0.arcade.loadout.LoadoutRegistry"))
+                            .invoke(null, registry));
+            Object active = setClass.getMethod("active").invoke(set);
+            if (active == null) return DeployLoadoutDto.empty();
+
+            Class<?> playerClassTypeClass = Class.forName("org.shee33.act0.arcade.loadout.PlayerClassType");
+            Object classType = active.getClass().getMethod("classType").invoke(active);
+            String className = classType != null ? classType.toString() : "";
+
+            Class<?> slotEnumClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutSlot");
+            Object[] allSlots = slotEnumClass.getEnumConstants();
+            Map slots = (Map) active.getClass().getMethod("slots").invoke(active);
+
+            List<String> slotNames = new ArrayList<>();
+            List<String> itemNames = new ArrayList<>();
+            for (Object slot : allSlots) {
+                String key = (String) slots.get(slot);
+                if (key != null && !key.isBlank()) {
+                    slotNames.add(slot.toString());
+                    itemNames.add(key);
+                }
+            }
+            return new DeployLoadoutDto(className, slotNames, itemNames);
+        } catch (Exception e) {
+            return DeployLoadoutDto.empty();
         }
     }
 }

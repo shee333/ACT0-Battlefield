@@ -5,13 +5,17 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
+import org.shee33.act0.battlefield.client.ClientDeployLoadout;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
+import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
+
+import java.util.List;
 
 /**
  * 战地式无缝部署界面：不再渲染独立窗口，直接在上帝视角真实战场上叠加极简 HUD。
@@ -56,6 +60,8 @@ public final class BattlefieldDeployScreen extends Screen {
         renderHoverTip(gg, mouseX, mouseY, ready);
 
         renderSpectateFade(gg);
+
+        renderLoadoutPanel(gg);
     }
 
     private void renderPointStrip(GuiGraphics gg, DeployStatusDto st) {
@@ -218,5 +224,44 @@ public final class BattlefieldDeployScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    private void renderLoadoutPanel(GuiGraphics gg) {
+        DeployLoadoutDto loadout = ClientDeployLoadout.get();
+        if (loadout == null || loadout.slotNames().isEmpty()) {
+            return;
+        }
+        final int cardW = 90;
+        final int cardH = 24;
+        final int gap = 4;
+        final int panelH = cardH + 12;
+        int totalW = loadout.slotNames().size() * cardW + (loadout.slotNames().size() - 1) * gap + 16;
+        int x = width / 2 - totalW / 2;
+        int y = height - 26 - panelH - 4;
+
+        // background
+        gg.fill(x, y, x + totalW, y + panelH, 0x99101418);
+        gg.fill(x, y, x + totalW, y + 1, PixelTheme.ALPHA_COLOR);
+
+        // class label on the left
+        String classLabel = loadout.className().isEmpty() ? "" : loadout.className() + "  ";
+        int labelW = font.width(classLabel);
+        if (!classLabel.isEmpty()) {
+            gg.drawString(font, classLabel, x + 8, y + 8, 0xFFFFFFFF, false);
+        }
+
+        // slot cards
+        int cx = x + 8 + labelW;
+        for (int i = 0; i < loadout.slotNames().size(); i++) {
+            String slot = loadout.slotNames().get(i);
+            String item = loadout.itemNames().get(i);
+            String shortSlot = slot.length() > 4 ? slot.substring(0, 4) : slot;
+            String shortItem = item.length() > 10 ? item.substring(0, 9) + "." : item;
+
+            gg.fill(cx, y + 4, cx + cardW, y + 4 + cardH, 0x66000000);
+            gg.drawString(font, shortSlot, cx + 4, y + 6, 0xFFA0A8B0, false);
+            gg.drawString(font, shortItem, cx + 4, y + 15, 0xFFE0E0E0, false);
+            cx += cardW + gap;
+        }
     }
 }

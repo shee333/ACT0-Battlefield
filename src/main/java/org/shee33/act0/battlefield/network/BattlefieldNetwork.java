@@ -59,6 +59,8 @@ public final class BattlefieldNetwork {
             DownedActionPacket::encode, DownedActionPacket::decode, DownedActionPacket::handle);
         CHANNEL.registerMessage(id++, SyncBreakthroughHudPacket.class,
             SyncBreakthroughHudPacket::encode, SyncBreakthroughHudPacket::decode, SyncBreakthroughHudPacket::handle);
+        CHANNEL.registerMessage(id++, SyncDeployLoadoutPacket.class,
+            SyncDeployLoadoutPacket::encode, SyncDeployLoadoutPacket::decode, SyncDeployLoadoutPacket::handle);
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -82,6 +84,10 @@ public final class BattlefieldNetwork {
 
     public static void sendBreakthroughHud(ServerPlayer player, BreakthroughHudDto hud) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBreakthroughHudPacket(hud));
+    }
+
+    public static void sendDeployLoadout(ServerPlayer player, DeployLoadoutDto loadout) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncDeployLoadoutPacket(loadout));
     }
 
     public static void clearBreakthroughHud(ServerPlayer player) {
