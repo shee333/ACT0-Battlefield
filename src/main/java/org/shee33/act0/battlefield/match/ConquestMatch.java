@@ -118,6 +118,7 @@ public final class ConquestMatch {
     private final Map<UUID, Integer> lastTabHash = new LinkedHashMap<>();
 
     private boolean ended;
+    private boolean paused;
     @Nullable
     private Faction winner;
     private int captureAccum;
@@ -274,7 +275,7 @@ public final class ConquestMatch {
     // ---- 每刻 ----
 
     public void tick() {
-        if (ended) {
+        if (ended || paused) {
             return;
         }
         if (startCountdownTicks > 0) {
@@ -1299,7 +1300,6 @@ public final class ConquestMatch {
      * unlimited-range squad/faction identification.
      */
     private void syncEnemyIdentification() {
-        // Build spatial index: bucket all alive, in-dimension participants by 16-block chunks.
         Map<IffChunkKey, List<UUID>> spatialIndex = buildIffSpatialIndex();
 
         for (UUID viewerId : new ArrayList<>(factionOf.keySet())) {
@@ -1314,7 +1314,6 @@ public final class ConquestMatch {
 
             IffChunkKey viewerChunk = iffChunkKey(viewer);
 
-            // Pass 1: nearby chunks — full enemy glow check with ray trace, plus friendly glow.
             int minCx = viewerChunk.cx() - IFF_CHUNK_RADIUS;
             int maxCx = viewerChunk.cx() + IFF_CHUNK_RADIUS;
             int minCz = viewerChunk.cz() - IFF_CHUNK_RADIUS;
@@ -1344,7 +1343,6 @@ public final class ConquestMatch {
                 }
             }
 
-            // Pass 2: far-away targets — friendly glow only (cheap, no ray trace).
             for (UUID targetId : factionOf.keySet()) {
                 if (targetId.equals(viewerId) || shouldKeep.contains(targetId)) {
                     continue;
@@ -1360,7 +1358,6 @@ public final class ConquestMatch {
                 }
             }
 
-            // Remove stale glows for targets no longer visible.
             for (UUID stale : new HashSet<>(active)) {
                 if (!shouldKeep.contains(stale)) {
                     ServerPlayer target = player(stale);
@@ -1373,7 +1370,6 @@ public final class ConquestMatch {
         }
     }
 
-    /** Builds a spatial index mapping 16-block chunk keys to lists of active player UUIDs. */
     private Map<IffChunkKey, List<UUID>> buildIffSpatialIndex() {
         Map<IffChunkKey, List<UUID>> index = new LinkedHashMap<>();
         for (UUID id : factionOf.keySet()) {
@@ -1387,14 +1383,12 @@ public final class ConquestMatch {
         return index;
     }
 
-    /** Returns the 16-block chunk coordinate for a player's current position. */
     private static IffChunkKey iffChunkKey(ServerPlayer p) {
         return new IffChunkKey(
                 (int) Math.floor(p.getX() / IFF_CHUNK_SIZE),
                 (int) Math.floor(p.getZ() / IFF_CHUNK_SIZE));
     }
 
-    /** 16-block chunk coordinate key for spatial indexing (record = value-based equality + hash). */
     private record IffChunkKey(int cx, int cz) {}
 
     private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
@@ -2144,6 +2138,30 @@ public final class ConquestMatch {
 
     public boolean isEnded() {
         return ended;
+    }
+
+    public void pause() {
+        this.paused = true;
+    }
+
+    public void resume() {
+        this.paused = false;
+    }
+
+    public boolean isPaused() {
+        return paused;
+    }
+
+    public void setTickets(Faction faction, int amount) {
+        tickets.setTickets(faction, amount);
+    }
+
+    public void addTickets(Faction faction, int amount) {
+        tickets.addTickets(faction, amount);
+    }
+
+    public void subTickets(Faction faction, int amount) {
+        tickets.subTickets(faction, amount);
     }
 
     public boolean contains(UUID id) {

@@ -36,18 +36,13 @@ public final class BattlefieldHudOverlay {
     private static final int TEXT_DIM = 0xFFA0A8B0;
     private static final int GREEN = 0xFF66CC66;
 
-    // 扁平化不再需要 BlockFront 贴图资产；保留字段引用以兼容编译但不再使用。
-    private static final ResourceLocation SCORE_BG = texture("scores/progress.png");
-    private static final ResourceLocation SCORE_BLUE = texture("scores/progress_allies.png");
-    private static final ResourceLocation SCORE_RED = texture("scores/progress_axis.png");
-    private static final ResourceLocation POINT_FRIENDLY = texture("capturepoint/allies.png");
-    private static final ResourceLocation POINT_ENEMY = texture("capturepoint/axis.png");
-    private static final ResourceLocation POINT_NEUTRAL = texture("misc/capturepoint.png");
-    private static final ResourceLocation POINT_OVERRUN = texture("misc/capturepoint_overrun.png");
-    private static final ResourceLocation SQUAD_DOT = texture("compass/waypoint_pp_player.png");
-    private static final ResourceLocation CAPTURE_BAR_BG = texture("capturepoint/progress.png");
-    private static final ResourceLocation CAPTURE_BAR_BLUE = texture("capturepoint/progress_allies.png");
-    private static final ResourceLocation CAPTURE_BAR_RED = texture("capturepoint/progress_axis.png");
+    private static final ResourceLocation POINT_FRIENDLY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/allies.png");
+    private static final ResourceLocation POINT_ENEMY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/axis.png");
+    private static final ResourceLocation POINT_NEUTRAL = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint.png");
+    private static final ResourceLocation POINT_OVERRUN = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint_overrun.png");
+    private static final ResourceLocation SQUAD_DOT = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/compass/waypoint_pp_player.png");
+    private static final ResourceLocation CAPTURE_BAR_BLUE = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_allies.png");
+    private static final ResourceLocation CAPTURE_BAR_RED = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_axis.png");
 
     private static String focusName = "";
     private static int focusState;
@@ -89,40 +84,23 @@ public final class BattlefieldHudOverlay {
         float lifeMs = ClientHitFeedback.isKill() ? 880.0f : 650.0f;
         float t = Math.max(0f, Math.min(1f, age / lifeMs));
         float fade = 1.0f - t;
-        float elastic = (float) (1.0f + Math.sin(t * Math.PI * 4.0f) * (1.0f - t) * (ClientHitFeedback.isKill() ? 0.46f : 0.34f));
-        float intro = Math.min(1.0f, age / 80.0f);
-        float scale = (ClientHitFeedback.isKill() ? 1.18f : 0.90f) * (0.72f + 0.28f * intro) * elastic;
 
         int centerX = gg.guiWidth() / 2;
         int centerY = gg.guiHeight() / 2;
         int x = centerX - 42;
         int y = centerY + 20;
-        int phase = (int) (age / 38L);
-        int jitterX = ((phase * 7) % 5) - 2;
-        int jitterY = ((phase * 11) % 3) - 1;
 
         boolean kill = ClientHitFeedback.isKill();
         String marker = kill ? "KILL +100" : "HIT";
         int main = withAlpha(kill ? RED : BLUE, fade);
-        int ghostA = withAlpha(0xFF00E5FF, fade * 0.48f);
-        int ghostB = withAlpha(0xFFFF2A8A, fade * 0.36f);
 
         gg.pose().pushPose();
-        gg.pose().translate(x + jitterX, y + jitterY, 420);
-        gg.pose().scale(scale, scale, 1.0f);
-
-        // 赛博故障双重色偏：青/品红幽灵偏移 + 主标记。
-        gg.drawString(font, "<", -10 + (phase % 2), 0, ghostA, false);
-        gg.drawString(font, marker, 1 + ((phase % 3) - 1), -1, ghostB, false);
+        gg.pose().translate(x, y, 420);
         gg.drawString(font, marker, 0, 0, main, false);
-        gg.drawString(font, ">", font.width(marker) + 4 - (phase % 2), 0, ghostA, false);
 
         int barW = Math.max(18, font.width(marker) + 6);
         int bar = Math.max(1, Math.round(barW * fade));
         gg.fill(0, 11, bar, 12, main);
-        if ((phase & 1) == 0) {
-            gg.fill(3, -3, Math.min(barW, 3 + bar / 2), -2, ghostA);
-        }
         gg.pose().popPose();
     }
 
@@ -164,11 +142,6 @@ public final class BattlefieldHudOverlay {
         gg.pose().popPose();
     }
 
-    private static void drawTexturedScoreBar(GuiGraphics gg, int x, int y, int value, int max,
-                                             boolean fromRight, ResourceLocation fillTex) {
-        drawFlatScoreBar(gg, x, y, value, max, GREY);
-    }
-
     /** 扁平化票数进度条：背景深色 + 纯色填充。 */
     private static void drawFlatScoreBar(GuiGraphics gg, int x, int y, int value, int max, int color) {
         int w = 74;
@@ -197,7 +170,13 @@ public final class BattlefieldHudOverlay {
             int dx = focused ? x - 3 : x;
             int dy = focused ? y - 3 : y;
 
-            gg.blit(pointTexture(p, myFaction), dx, dy, 0, 0, drawIcon, drawIcon, icon, icon);
+            ResourceLocation ptTex;
+            if (p.owner() == 0) {
+                ptTex = p.pressure() == 0 ? POINT_NEUTRAL : POINT_OVERRUN;
+            } else {
+                ptTex = factionColor(p.owner(), myFaction) == BLUE ? POINT_FRIENDLY : POINT_ENEMY;
+            }
+            gg.blit(ptTex, dx, dy, 0, 0, drawIcon, drawIcon, icon, icon);
             String label = p.name();
             if (label.length() > 1) {
                 label = label.substring(0, 1);
@@ -316,11 +295,9 @@ public final class BattlefieldHudOverlay {
         gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, alpha * 0.72f));
         gg.fill(x, y, x + panelW, y + 2, aColor);
 
-        float scale = 1.0f + 0.55f * in;
         String label = focusName.length() > 1 ? focusName.substring(0, 1) : focusName;
         gg.pose().pushPose();
-        gg.pose().translate(center - 5 * scale, y + 6, 300);
-        gg.pose().scale(scale, scale, 1.0f);
+        gg.pose().translate(center - 5, y + 6 - 4.0f * in, 300);
         gg.drawString(font, label, 0, 0, aColor, true);
         gg.pose().popPose();
 
@@ -329,8 +306,9 @@ public final class BattlefieldHudOverlay {
 
         int barX = center - 59;
         int barY = y + 37;
-        drawCaptureProgressBar(gg, barX, barY, focusProgress,
-                focusState == 3 ? null : captureBarTexture(focusFaction, hud.myFaction()));
+        ResourceLocation capTex = focusState == 3 ? null :
+                (factionColor(focusFaction, hud.myFaction()) == BLUE ? CAPTURE_BAR_BLUE : CAPTURE_BAR_RED);
+        drawCaptureProgressBar(gg, barX, barY, focusProgress, capTex);
     }
 
     private static void updateFocusState(BattleHudDto hud) {
@@ -381,19 +359,6 @@ public final class BattlefieldHudOverlay {
         return faction == 1 ? BLUE : RED;
     }
 
-    private static int alphaDim(int mine, int faction) {
-        int color = factionColor(faction, mine);
-        return color == BLUE ? BLUE_DIM : RED_DIM;
-    }
-
-    private static ResourceLocation scoreTexture(int faction, int mine) {
-        return factionColor(faction, mine) == BLUE ? SCORE_BLUE : SCORE_RED;
-    }
-
-    private static ResourceLocation captureBarTexture(int faction, int mine) {
-        return factionColor(faction, mine) == BLUE ? CAPTURE_BAR_BLUE : CAPTURE_BAR_RED;
-    }
-
     private static String focusTitle(int state) {
         return switch (state) {
             case 1 -> "正在占领";
@@ -401,18 +366,6 @@ public final class BattlefieldHudOverlay {
             case 3 -> "争夺中";
             default -> "";
         };
-    }
-
-    private static ResourceLocation pointTexture(ControlPointHudDto point, int mine) {
-        if (point.owner() == 0) {
-            return point.pressure() == 0 ? POINT_NEUTRAL : POINT_OVERRUN;
-        }
-        return factionColor(point.owner(), mine) == BLUE ? POINT_FRIENDLY : POINT_ENEMY;
-    }
-
-    @SuppressWarnings("removal")
-    private static ResourceLocation texture(String path) {
-        return new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/" + path);
     }
 
     /** 救援进度条：正在救援倒地队友时显示。 */

@@ -76,7 +76,7 @@ public final class BattlefieldConfig {
 
         builder.push("performance");
         IFF_SYNC_INTERVAL = builder
-                .comment("Tick interval for IFF (Identify Friend/Foe) glow updates")
+                .comment("Tick interval for IFF (Identify Friend/Foe) glow updates. Recommendation: 10 ticks (0.5s) provides a good balance of responsiveness and server load when combined with spatial-indexed ray tracing.")
                 .defineInRange("iffSyncIntervalTicks", 2, 1, 40);
         HUD_INTERVAL = builder
                 .comment("Tick interval for HUD scoreboard broadcast")

@@ -72,6 +72,40 @@ public final class TicketPool {
         }
     }
 
+    /** 管理员直接设置某方票数。 */
+    public void setTickets(Faction faction, int amount) {
+        double clamped = Math.max(0, amount);
+        if (faction == Faction.ALPHA) {
+            alpha = clamped;
+        } else {
+            bravo = clamped;
+        }
+    }
+
+    /** 管理员增加某方票数。 */
+    public void addTickets(Faction faction, int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        if (faction == Faction.ALPHA) {
+            alpha += amount;
+        } else {
+            bravo += amount;
+        }
+    }
+
+    /** 管理员扣除某方票数。 */
+    public void subTickets(Faction faction, int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        if (faction == Faction.ALPHA) {
+            alpha = Math.max(0.0, alpha - amount);
+        } else {
+            bravo = Math.max(0.0, bravo - amount);
+        }
+    }
+
     /** 是否已有一方票数归零。 */
     public boolean hasLoser() {
         return alpha <= 0.0 || bravo <= 0.0;

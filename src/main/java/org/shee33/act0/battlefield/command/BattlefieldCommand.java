@@ -9,6 +9,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -99,7 +100,40 @@ public final class BattlefieldCommand {
                                 StringArgumentType.getString(c, "name"))))))
                 .then(buildAreaBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
-                        .executes(BattlefieldCommand::stop)));
+                        .executes(BattlefieldCommand::stop))
+                .then(Commands.literal("kick").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("target", EntityArgument.player())
+                                .executes(BattlefieldCommand::kick)))
+                .then(Commands.literal("force").requires(s -> s.hasPermission(2))
+                        .then(Commands.argument("target", EntityArgument.player())
+                                .then(Commands.literal("alpha").executes(c -> force(c, Faction.ALPHA)))
+                                .then(Commands.literal("bravo").executes(c -> force(c, Faction.BRAVO)))))
+                .then(Commands.literal("pause").requires(s -> s.hasPermission(2))
+                        .executes(BattlefieldCommand::pauseCmd))
+                .then(Commands.literal("resume").requires(s -> s.hasPermission(2))
+                        .executes(BattlefieldCommand::resumeCmd))
+                .then(Commands.literal("tickets").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("set")
+                                .then(Commands.literal("alpha")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(0, 100000))
+                                                .executes(c -> ticketsOp(c, "set", Faction.ALPHA))))
+                                .then(Commands.literal("bravo")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(0, 100000))
+                                                .executes(c -> ticketsOp(c, "set", Faction.BRAVO)))))
+                        .then(Commands.literal("add")
+                                .then(Commands.literal("alpha")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 100000))
+                                                .executes(c -> ticketsOp(c, "add", Faction.ALPHA))))
+                                .then(Commands.literal("bravo")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 100000))
+                                                .executes(c -> ticketsOp(c, "add", Faction.BRAVO)))))
+                        .then(Commands.literal("sub")
+                                .then(Commands.literal("alpha")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 100000))
+                                                .executes(c -> ticketsOp(c, "sub", Faction.ALPHA))))
+                                .then(Commands.literal("bravo")
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1, 100000))
+                                                .executes(c -> ticketsOp(c, "sub", Faction.BRAVO)))))));
         dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
     }
 
@@ -440,5 +474,86 @@ public final class BattlefieldCommand {
 
     private static void feedback(CommandContext<CommandSourceStack> c, String msg) {
         c.getSource().sendSystemMessage(Component.literal(msg));
+    }
+
+    // ---- 管理员命令 (OP 2) ----
+
+    private static int kick(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer target = EntityArgument.getPlayer(c, "target");
+        ConquestMatch match = Act0Battlefield.manager().activeContaining(target.getUUID());
+        if (match == null) {
+            feedback(c, "§c该玩家不在任何进行中的对局中。");
+            return 0;
+        }
+        match.quitPlayer(target);
+        feedback(c, "§a已将 " + target.getGameProfile().getName() + " 移出对局。");
+        return 1;
+    }
+
+    private static int force(CommandContext<CommandSourceStack> c, Faction faction) throws CommandSyntaxException {
+        ServerPlayer target = EntityArgument.getPlayer(c, "target");
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        ConquestMatch match = Act0Battlefield.manager().activeFor(level);
+        if (match == null) {
+            feedback(c, "§c当前世界没有进行中的对局。");
+            return 0;
+        }
+        if (match.contains(target.getUUID())) {
+            match.quitPlayer(target);
+        } else {
+            Act0Battlefield.manager().leaveMatch(target);
+        }
+        if (!match.addLatecomer(target, faction)) {
+            feedback(c, "§c无法将 " + target.getGameProfile().getName() + " 分配到 " + faction.coloredName() + "。");
+            return 0;
+        }
+        feedback(c, "§a已将 " + target.getGameProfile().getName() + " 强制分配至 " + faction.coloredName() + "。");
+        return 1;
+    }
+
+    private static int pauseCmd(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ConquestMatch match = Act0Battlefield.manager().activeFor(c.getSource().getPlayerOrException().serverLevel());
+        if (match == null) {
+            feedback(c, "§c当前世界没有进行中的对局。");
+            return 0;
+        }
+        if (match.isPaused()) {
+            feedback(c, "§7对局已经处于暂停状态。");
+            return 1;
+        }
+        match.pause();
+        feedback(c, "§e大战场对局已暂停。");
+        return 1;
+    }
+
+    private static int resumeCmd(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ConquestMatch match = Act0Battlefield.manager().activeFor(c.getSource().getPlayerOrException().serverLevel());
+        if (match == null) {
+            feedback(c, "§c当前世界没有进行中的对局。");
+            return 0;
+        }
+        if (!match.isPaused()) {
+            feedback(c, "§7对局未处于暂停状态。");
+            return 1;
+        }
+        match.resume();
+        feedback(c, "§a大战场对局已恢复。");
+        return 1;
+    }
+
+    private static int ticketsOp(CommandContext<CommandSourceStack> c, String op, Faction faction) throws CommandSyntaxException {
+        ConquestMatch match = Act0Battlefield.manager().activeFor(c.getSource().getPlayerOrException().serverLevel());
+        if (match == null) {
+            feedback(c, "§c当前世界没有进行中的对局。");
+            return 0;
+        }
+        int amount = IntegerArgumentType.getInteger(c, "amount");
+        switch (op) {
+            case "set" -> match.setTickets(faction, amount);
+            case "add" -> match.addTickets(faction, amount);
+            case "sub" -> match.subTickets(faction, amount);
+        }
+        feedback(c, "§a已修改 " + faction.coloredName() + " §a票数（当前：" + match.displayTickets(faction) + "）。");
+        return 1;
     }
 }
