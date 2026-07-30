@@ -1,0 +1,11 @@
+{
+  "type": "act0_battlefield:battlefield",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "minecraft:plains",
+      "layers": [],
+      "structure_overrides": "minecraft:empty"
+    }
+  }
+}
