@@ -17,13 +17,16 @@ import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.MapTemplate;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestMatch;
 import org.shee33.act0.battlefield.match.ConquestManager;
+import org.shee33.act0.battlefield.match.MapTemplateManager;
 
 import java.util.List;
+import java.io.IOException;
 
 /**
  * {@code /battlefield} 命令：布场（基地/据点参数）、开局/停止、加入/离开候选名单、查看状态。
@@ -100,6 +103,7 @@ public final class BattlefieldCommand {
                             .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets"),
                                 StringArgumentType.getString(c, "name"))))))
                 .then(buildAreaBranch())
+                .then(buildTemplateBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                         .executes(BattlefieldCommand::stop))
                 .then(Commands.literal("kick").requires(s -> s.hasPermission(2))
@@ -475,6 +479,103 @@ public final class BattlefieldCommand {
         BattlefieldData.get(p.serverLevel()).setArea(area);
         feedback(c, "§a战斗区域已设为以你为中心、半径 §e" + r + " §a格（高度自动 32~96）。");
         return 1;
+    }
+
+    // ---- 模板管理 ----
+
+    /** /battlefield template {save|list|delete|info}：管理地图模板。 */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildTemplateBranch() {
+        return Commands.literal("template")
+            .requires(s -> s.hasPermission(2))
+            .then(Commands.literal("save")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::templateSave)))
+            .then(Commands.literal("list")
+                .executes(BattlefieldCommand::templateList))
+            .then(Commands.literal("delete")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::templateDelete)))
+            .then(Commands.literal("info")
+                .then(Commands.argument("name", StringArgumentType.string())
+                    .executes(BattlefieldCommand::templateInfo)));
+    }
+
+    private static int templateSave(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        BattleArea area = data.effectiveArea();
+        if (!area.isSet()) {
+            feedback(c, "§c当前世界没有设置战斗区域，无法保存模板。请先使用 /battlefield area 设置区域。");
+            return 0;
+        }
+        String name = StringArgumentType.getString(c, "name");
+        try {
+            MapTemplateManager.saveTemplate(name, level, area, MapTemplateManager.DEFAULT_BASE_PATH);
+            feedback(c, "§a模板 §e" + name + " §a已保存。");
+            return 1;
+        } catch (IOException e) {
+            feedback(c, "§c保存模板失败: " + e.getMessage());
+            return 0;
+        } catch (IllegalArgumentException e) {
+            feedback(c, "§c参数无效: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    private static int templateList(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        try {
+            List<MapTemplate> templates = MapTemplateManager.listTemplates(MapTemplateManager.DEFAULT_BASE_PATH);
+            if (templates.isEmpty()) {
+                feedback(c, "§7没有已保存的模板。");
+                return 1;
+            }
+            feedback(c, "§e已保存的模板（" + templates.size() + "）：");
+            for (MapTemplate t : templates) {
+                feedback(c, "§7- §f" + t.name() + " §7创建于 " + t.createdAt());
+            }
+            return 1;
+        } catch (IOException e) {
+            feedback(c, "§c读取模板列表失败: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    private static int templateDelete(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(c, "name");
+        try {
+            MapTemplateManager.deleteTemplate(name, MapTemplateManager.DEFAULT_BASE_PATH);
+            feedback(c, "§a模板 §e" + name + " §a已删除。");
+            return 1;
+        } catch (IOException e) {
+            feedback(c, "§c删除模板失败: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    private static int templateInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(c, "name");
+        try {
+            List<MapTemplate> templates = MapTemplateManager.listTemplates(MapTemplateManager.DEFAULT_BASE_PATH);
+            MapTemplate found = null;
+            for (MapTemplate t : templates) {
+                if (t.name().equals(name)) {
+                    found = t;
+                    break;
+                }
+            }
+            if (found == null) {
+                feedback(c, "§c未找到模板 §e" + name + "§c。");
+                return 0;
+            }
+            feedback(c, "§b模板信息：");
+            feedback(c, "§7名称: §f" + found.name());
+            feedback(c, "§7创建时间: §f" + found.createdAt());
+            feedback(c, "§7路径: §f" + found.regionPath());
+            return 1;
+        } catch (IOException e) {
+            feedback(c, "§c读取模板信息失败: " + e.getMessage());
+            return 0;
+        }
     }
 
     private static String fmt(double v) {

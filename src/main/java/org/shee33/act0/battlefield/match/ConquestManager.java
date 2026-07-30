@@ -27,6 +27,8 @@ import org.shee33.act0.battlefield.network.BattlefieldStatusDto;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,6 +50,10 @@ public final class ConquestManager {
     private final Map<ResourceKey<Level>, ConquestMatch> activeByWorld = new LinkedHashMap<>();
     /** 进行中大战场名称：世界 → 战役名。 */
     private final Map<ResourceKey<Level>, String> battleNames = new LinkedHashMap<>();
+    /** 将每个对局的世界映射回其大厅世界，用于赛后传送。 */
+    private final Map<ResourceKey<Level>, ServerLevel> lobbyWorlds = new LinkedHashMap<>();
+    /** 地图模板根路径。 */
+    private final Path templateBasePath = Path.of("config", "act0_battlefield", "templates");
 
     // ---- 候选名单 ----
 
@@ -106,6 +112,8 @@ public final class ConquestManager {
         boolean ok = match.quitPlayer(player);
         if (match.isEnded()) {
             activeByWorld.values().removeIf(ConquestMatch::isEnded);
+            lobbyWorlds.keySet().removeIf(key -> !activeByWorld.containsKey(key)
+                    || activeByWorld.get(key).isEnded());
         }
         broadcastStatus(player.getServer());
         return ok;
@@ -235,12 +243,26 @@ public final class ConquestManager {
      */
     @Nullable
     public String start(ServerLevel level, ConquestRules rules) {
-        return start(level, rules, defaultBattleName(level.dimension()));
+        return start(level, rules, defaultBattleName(level.dimension()), null);
     }
 
     /** 用当前候选名单开局并命名战役。 */
     @Nullable
     public String start(ServerLevel level, ConquestRules rules, String battleName) {
+        return start(level, rules, battleName, null);
+    }
+
+    /**
+     * 用当前候选名单开局，可选加载地图模板。
+     *
+     * @param level        大厅世界（候选名单所在世界）
+     * @param rules        对局规则
+     * @param battleName   战役名称
+     * @param templateName 模板名称；{@code null} 则在大厅世界中直接开局
+     * @return 失败原因；{@code null} 表示成功
+     */
+    @Nullable
+    public String start(ServerLevel level, ConquestRules rules, String battleName, @Nullable String templateName) {
         if (activeFor(level) != null) {
             return "§c该世界已有进行中的大战场对局。";
         }
@@ -256,9 +278,26 @@ public final class ConquestManager {
         if (data.base(Faction.ALPHA) == null || data.base(Faction.BRAVO) == null) {
             return "§c两个阵营的基地出生点都需先设置。";
         }
-        ConquestMatch active = new ConquestMatch(level, rules, defs, new LinkedHashMap<>(lobby), data);
-        activeByWorld.put(level.dimension(), active);
-        battleNames.put(level.dimension(), normalizeBattleName(battleName, level.dimension()));
+        ServerLevel matchLevel;
+        if (templateName != null && !templateName.isBlank()) {
+            Path regionDir = MapTemplateManager.templateRegionPath(templateName, templateBasePath);
+            try {
+                MatchDimensionHelper.prepareMatchDimension(level.getServer(), regionDir);
+            } catch (IOException e) {
+                return "§c模板加载失败：" + e.getMessage();
+            }
+            matchLevel = MatchDimensionHelper.getMatchLevel(level.getServer());
+            if (matchLevel == null) {
+                return "§c战场维度尚未创建，请先进入一次该维度。";
+            }
+            MatchDimensionHelper.configureMatchLevel(matchLevel);
+        } else {
+            matchLevel = level;
+        }
+        ConquestMatch active = new ConquestMatch(matchLevel, level, rules, defs, new LinkedHashMap<>(lobby), data);
+        activeByWorld.put(matchLevel.dimension(), active);
+        battleNames.put(matchLevel.dimension(), normalizeBattleName(battleName, matchLevel.dimension()));
+        lobbyWorlds.put(matchLevel.dimension(), level);
         lobby.clear();
         active.begin();
         return null;
@@ -271,6 +310,7 @@ public final class ConquestManager {
             active.abort();
             activeByWorld.remove(level.dimension());
             battleNames.remove(level.dimension());
+            lobbyWorlds.remove(level.dimension());
             return true;
         }
         return false;
@@ -436,11 +476,27 @@ public final class ConquestManager {
             }
         }
         if (!ended.isEmpty()) {
+            net.minecraft.server.MinecraftServer server = event.getServer();
             for (ResourceKey<Level> key : ended) {
+                ServerLevel lobbyLevel = lobbyWorlds.get(key);
+                if (lobbyLevel != null) {
+                    for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                        ConquestMatch match = activeByWorld.get(key);
+                        if (match != null && match.contains(player.getUUID())) {
+                            player.teleportTo(lobbyLevel, player.getX(), player.getY(), player.getZ(),
+                                    player.getYRot(), player.getXRot());
+                        }
+                    }
+                }
+                try {
+                    MatchDimensionHelper.cleanupMatchDimension(server);
+                } catch (IOException ignored) {
+                }
                 activeByWorld.remove(key);
                 battleNames.remove(key);
+                lobbyWorlds.remove(key);
             }
-            broadcastStatus(event.getServer());
+            broadcastStatus(server);
         }
     }
 
@@ -551,6 +607,7 @@ public final class ConquestManager {
         }
         activeByWorld.clear();
         battleNames.clear();
+        lobbyWorlds.clear();
         lobbies.clear();
     }
 

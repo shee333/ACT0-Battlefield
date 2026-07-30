@@ -82,6 +82,7 @@ public final class ConquestMatch {
 
     private final MinecraftServer server;
     private final ServerLevel level;
+    private final ServerLevel lobbyLevel;
     private final ConquestRules rules;
     private final TicketPool tickets;
     private final List<ControlPointDef> defs;
@@ -116,11 +117,12 @@ public final class ConquestMatch {
     private int startCountdownTicks;
     private int startCountdownLastSecond = -1;
 
-    public ConquestMatch(ServerLevel level, ConquestRules rules,
+    public ConquestMatch(ServerLevel level, ServerLevel lobbyLevel, ConquestRules rules,
                          List<ControlPointDef> defs, Map<UUID, Faction> roster,
                          BattlefieldData data) {
         this.server = level.getServer();
         this.level = level;
+        this.lobbyLevel = lobbyLevel;
         this.rules = rules;
         this.data = data;
         this.captureInterval = BattlefieldConfig.CAPTURE_INTERVAL.get();
@@ -202,7 +204,7 @@ public final class ConquestMatch {
         clearRedeployState(player, true);
         BattlefieldData.BaseSpawn base = data.base(faction);
         if (base != null) {
-            player.teleportTo(level, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
+            player.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
         }
         player.getInventory().clearContent();
         BattlefieldNetwork.clearHud(player);
@@ -593,7 +595,7 @@ public final class ConquestMatch {
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
                 BattlefieldData.BaseSpawn base = data.base(e.getValue());
                 if (base != null) {
-                    p.teleportTo(level, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
+                    p.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
                 }
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
@@ -757,6 +759,10 @@ public final class ConquestMatch {
                     clearRedeployState(p, true);
                 } else {
                     p.setInvulnerable(false);
+                }
+                BattlefieldData.BaseSpawn base = data.base(factionOf.get(id));
+                if (base != null) {
+                    p.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
                 }
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
