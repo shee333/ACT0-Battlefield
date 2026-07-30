@@ -8,9 +8,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.Sector;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +29,9 @@ public final class BattlefieldData extends SavedData {
 
     /** posLong → 据点定义。 */
     private final Map<Long, ControlPointDef> points = new LinkedHashMap<>();
+
+    /** id → 突破模式区域。 */
+    private final Map<Integer, Sector> sectors = new LinkedHashMap<>();
 
     @Nullable
     private BaseSpawn alphaBase;
@@ -90,6 +96,33 @@ public final class BattlefieldData extends SavedData {
         return id;
     }
 
+    // ---- 区域 ----
+
+    /** 注册一个突破模式区域，按 id 索引。 */
+    public void addSector(Sector sector) {
+        sectors.put(sector.id(), sector);
+        setDirty();
+    }
+
+    /** 移除指定 id 的区域。 */
+    public void removeSector(int id) {
+        if (sectors.remove(id) != null) {
+            setDirty();
+        }
+    }
+
+    /** 按 id 升序返回所有已注册区域。 */
+    public List<Sector> sectors() {
+        return sectors.values().stream()
+                .sorted(Comparator.comparingInt(Sector::id))
+                .toList();
+    }
+
+    @Nullable
+    public Sector sectorById(int id) {
+        return sectors.get(id);
+    }
+
     // ---- 基地 ----
 
     public void setBase(Faction faction, BaseSpawn spawn) {
@@ -149,6 +182,15 @@ public final class BattlefieldData extends SavedData {
             list.add(def.save());
         }
         tag.put("points", list);
+        ListTag sectorList = new ListTag();
+        for (Sector s : sectors.values()) {
+            CompoundTag st = new CompoundTag();
+            st.putInt("id", s.id());
+            st.putString("name", s.displayName());
+            st.putIntArray("pointIds", s.pointIds().stream().mapToInt(Integer::intValue).toArray());
+            sectorList.add(st);
+        }
+        tag.put("sectors", sectorList);
         if (alphaBase != null) {
             tag.put("alphaBase", alphaBase.save());
         }
@@ -174,6 +216,16 @@ public final class BattlefieldData extends SavedData {
         for (int i = 0; i < list.size(); i++) {
             ControlPointDef def = ControlPointDef.load(list.getCompound(i));
             data.points.put(def.pos().asLong(), def);
+        }
+        ListTag sectorList = tag.getList("sectors", Tag.TAG_COMPOUND);
+        for (int i = 0; i < sectorList.size(); i++) {
+            CompoundTag st = sectorList.getCompound(i);
+            int[] arr = st.getIntArray("pointIds");
+            Sector sector = new Sector(
+                    st.getInt("id"),
+                    Arrays.stream(arr).boxed().toList(),
+                    st.getString("name"));
+            data.sectors.put(sector.id(), sector);
         }
         if (tag.contains("alphaBase")) {
             data.alphaBase = BaseSpawn.load(tag.getCompound("alphaBase"));
