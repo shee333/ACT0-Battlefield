@@ -110,6 +110,7 @@ public final class ConquestMatch {
     private boolean firstBlood;
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
+    private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
 
     private boolean ended;
     @Nullable
@@ -306,7 +307,8 @@ public final class ConquestMatch {
             int bravo = 0;
             for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
                 ServerPlayer p = player(e.getKey());
-                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
+                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
+                        || downedUntil.containsKey(e.getKey())) {
                     continue;
                 }
                 if (zone.contains(p.getX(), p.getY(), p.getZ())) {
@@ -694,7 +696,8 @@ public final class ConquestMatch {
             if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
                 continue;
             }
-            boolean deployable = !enemyNear(mate, faction, squadDeployEnemyBlockRadius);
+            boolean deployable = !enemyNear(mate, faction, squadDeployEnemyBlockRadius)
+                    && !downedUntil.containsKey(mateId);
                 list.add(new DeploySquadMateDto(mateId.toString(), mate.getGameProfile().getName(), mate.getId(),
                     deployable, mate.getX(), mate.getY() + 1.0, mate.getZ()));
         }
@@ -793,7 +796,8 @@ public final class ConquestMatch {
             return null;
         }
         ServerPlayer mate = player(mateUuid);
-        if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()) {
+        if (mate == null || mate.level() != level || !mate.isAlive() || mate.isSpectator()
+                || downedUntil.containsKey(mateUuid)) {
             return null;
         }
         if (enemyNear(mate, faction, squadDeployEnemyBlockRadius)) {
@@ -809,7 +813,8 @@ public final class ConquestMatch {
                 continue;
             }
             ServerPlayer enemy = player(e.getKey());
-            if (enemy == null || enemy.level() != level || !enemy.isAlive() || enemy.isSpectator()) {
+            if (enemy == null || enemy.level() != level || !enemy.isAlive() || enemy.isSpectator()
+                    || downedUntil.containsKey(e.getKey())) {
                 continue;
             }
             double dx = enemy.getX() - origin.getX();
@@ -1118,6 +1123,9 @@ public final class ConquestMatch {
     }
 
     private record TopKiller(String name, int kills) {
+    }
+
+    private record PendingDeath(UUID killerId, Faction killerFaction, Faction victimFaction) {
     }
 
     private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
