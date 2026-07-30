@@ -11,8 +11,16 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.data.BattlefieldData;
+import org.shee33.act0.battlefield.match.BreakthroughMatch;
+
+import java.util.Arrays;
+import java.util.List;
+
+import static org.shee33.act0.battlefield.Act0Battlefield.BREAKTHROUGH_MANAGER;
 
 /**
  * {@code /breakthrough} 命令树：突破模式（Breakthrough）的布场、开局、入队与状态查询。
@@ -20,8 +28,8 @@ import org.shee33.act0.battlefield.data.BattlefieldData;
  * <p>所有布场/开局/停止操作均为 OP（权限等级 2）；{@code join}、{@code leave}、{@code status}
  * 对所有玩家开放。
  *
- * <p>当前为骨架阶段（T7 之前）：{@code BreakthroughManager} 尚未交付，多数 handler 仅返回占位
- * 反馈；{@code base set} 已直接复用 {@link BattlefieldData} 的基地存储。
+ * <p>{@code base set} 与 {@code sector} 直接维护 {@link BattlefieldData}；对局操作委托给全局
+ * {@code BreakthroughManager}。
  */
 public final class BreakthroughCommand {
 
@@ -72,21 +80,21 @@ public final class BreakthroughCommand {
     private static LiteralArgumentBuilder<CommandSourceStack> buildSectorBranch() {
         return Commands.literal("sector").requires(s -> s.hasPermission(2))
             .then(Commands.literal("add")
-                .then(Commands.argument("id", StringArgumentType.string())
+                .then(Commands.argument("id", IntegerArgumentType.integer(0))
                     .then(Commands.argument("name", StringArgumentType.string())
                         .then(Commands.argument("pointIds", StringArgumentType.greedyString())
                             .executes(BreakthroughCommand::sectorAdd)))))
             .then(Commands.literal("list")
                 .executes(BreakthroughCommand::sectorList))
             .then(Commands.literal("remove")
-                .then(Commands.argument("id", StringArgumentType.string())
+                .then(Commands.argument("id", IntegerArgumentType.integer(0))
                     .executes(BreakthroughCommand::sectorRemove)));
     }
 
     // ---- 布场 ----
 
     private static int setup(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e突破模式命令已注册。等待 BreakthroughManager 集成。");
+        feedback(c, "§a突破模式已就绪。");
         return 1;
     }
 
@@ -100,52 +108,120 @@ public final class BreakthroughCommand {
     }
 
     private static int sectorAdd(CommandContext<CommandSourceStack> c) {
-        String id = StringArgumentType.getString(c, "id");
+        int id = IntegerArgumentType.getInteger(c, "id");
         String name = StringArgumentType.getString(c, "name");
-        String pointIds = StringArgumentType.getString(c, "pointIds");
-        feedback(c, "§e收到 sector add 占位：id=§a" + id + "§e, name=§a" + name
-                + "§e, pointIds=§a" + pointIds + "§e。等待 BreakthroughManager 集成。");
+        String rawPointIds = StringArgumentType.getString(c, "pointIds");
+        List<Integer> pointIds;
+        try {
+            pointIds = Arrays.stream(rawPointIds.trim().split("\\s+"))
+                    .map(Integer::parseInt)
+                    .toList();
+        } catch (NumberFormatException e) {
+            feedback(c, "§c据点编号必须是以空格分隔的整数。");
+            return 0;
+        }
+
+        BattlefieldData.get(c.getSource().getLevel()).addSector(new Sector(id, pointIds, name));
+        feedback(c, "§a已登记区域 §e#" + id + " " + name + " §a（据点 " + pointIds + "）。");
         return 1;
     }
 
     private static int sectorList(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e突破模式 sector 列表占位。等待 BreakthroughManager 集成。");
+        List<Sector> sectors = BattlefieldData.get(c.getSource().getLevel()).sectors();
+        if (sectors.isEmpty()) {
+            feedback(c, "§7当前世界没有突破模式区域。");
+            return 1;
+        }
+
+        feedback(c, "§e突破模式区域（" + sectors.size() + "）：");
+        for (Sector sector : sectors) {
+            feedback(c, "§7- §f#" + sector.id() + " §e" + sector.displayName()
+                    + " §7据点 " + sector.pointIds());
+        }
         return 1;
     }
 
     private static int sectorRemove(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e收到 sector remove 占位：id=§a"
-                + StringArgumentType.getString(c, "id") + "§e。等待 BreakthroughManager 集成。");
+        int id = IntegerArgumentType.getInteger(c, "id");
+        BattlefieldData data = BattlefieldData.get(c.getSource().getLevel());
+        if (data.sectorById(id) == null) {
+            feedback(c, "§c找不到编号为 " + id + " 的区域。");
+            return 0;
+        }
+
+        data.removeSector(id);
+        feedback(c, "§a已移除区域 §e#" + id + "§a。");
         return 1;
     }
 
     // ---- 开局 / 停止 ----
 
     private static int start(CommandContext<CommandSourceStack> c, int tickets, String name, String template) {
-        feedback(c, "§e突破模式开局占位（tickets=" + tickets + ", name=" + name
-                + ", template=" + template + "）。等待 BreakthroughManager 集成。");
+        BreakthroughRules rules = tickets < 0
+                ? BreakthroughRules.standard()
+                : new BreakthroughRules.Builder().startingTickets(tickets).build();
+        String error = BREAKTHROUGH_MANAGER.start(c.getSource().getLevel(), rules, name, template);
+        if (error != null) {
+            feedback(c, error);
+            return 0;
+        }
+
+        feedback(c, "§6突破对局已开始（进攻方 " + rules.startingTickets() + " 票"
+                + (name == null ? "" : "，战役 " + name)
+                + (template == null ? "" : "，模板 " + template) + "）。");
         return 1;
     }
 
     private static int stop(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e突破模式停止占位。等待 BreakthroughManager 集成。");
-        return 1;
+        boolean stopped = BREAKTHROUGH_MANAGER.stop(c.getSource().getLevel());
+        feedback(c, stopped ? "§7已停止当前突破对局。" : "§7当前世界没有进行中的突破对局。");
+        return stopped ? 1 : 0;
     }
 
     // ---- 公共 ----
 
-    private static int join(CommandContext<CommandSourceStack> c, Faction faction) {
-        feedback(c, "§e突破模式入队占位：" + faction.coloredName() + "§e。等待 BreakthroughManager 集成。");
+    private static int join(CommandContext<CommandSourceStack> c, Faction faction) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        BREAKTHROUGH_MANAGER.join(player.serverLevel(), player, faction);
+        feedback(c, "§a已加入 " + faction.coloredName() + "§a，等待开局。");
         return 1;
     }
 
-    private static int leave(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e突破模式离队占位。等待 BreakthroughManager 集成。");
+    private static int leave(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        if (BREAKTHROUGH_MANAGER.leave(player)) {
+            feedback(c, "§7已退出当前突破对局。");
+            return 1;
+        }
+
+        BREAKTHROUGH_MANAGER.leaveLobby(player.getUUID());
+        BREAKTHROUGH_MANAGER.broadcastStatus(player.getServer());
+        feedback(c, "§7已退出突破模式候选名单。");
         return 1;
     }
 
     private static int status(CommandContext<CommandSourceStack> c) {
-        feedback(c, "§e突破模式状态占位。等待 BreakthroughManager 集成。");
+        BreakthroughMatch active = BREAKTHROUGH_MANAGER.activeFor(c.getSource().getLevel());
+        if (active != null) {
+            feedback(c, "§a当前世界突破对局进行中 §8| §e" + active.attackerTickets()
+                    + " §7票 §8| §7区域 §f" + (active.currentSectorIndex() + 1)
+                    + "§7/§f" + active.totalSectors() + " §8| §7玩家 §f" + active.totalMembers());
+        } else if (BREAKTHROUGH_MANAGER.hasActive()) {
+            feedback(c, "§7当前世界空闲；其他世界有突破对局进行中。");
+        } else {
+            feedback(c, "§7当前没有进行中的突破对局。");
+        }
+
+        int attackers = 0;
+        int defenders = 0;
+        for (Faction faction : BREAKTHROUGH_MANAGER.lobby().values()) {
+            if (faction == Faction.ALPHA) {
+                attackers++;
+            } else {
+                defenders++;
+            }
+        }
+        feedback(c, "§7候选名单 §9进攻 §f" + attackers + " §8/ §c防守 §f" + defenders);
         return 1;
     }
 
