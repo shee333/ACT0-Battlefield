@@ -55,7 +55,7 @@ class DtoRoundTripTest {
         DeployStatusDto dto = new DeployStatusDto(true, true, true, true, "point", "0", 60,
                 100.0, 64.0, 200.0, 105.0, 64.0, 210.0,
                 List.of(dp), List.of(sm),
-                true, -50.0, 0.0, -50.0, 150.0, 128.0, 150.0, false);
+                true, -50.0, 0.0, -50.0, 150.0, 128.0, 150.0, false, 42);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         DeployStatusDto decoded = DeployStatusDto.decode(buf);
@@ -66,5 +66,6 @@ class DtoRoundTripTest {
         assertEquals(dto.areaExplicit(), decoded.areaExplicit());
         assertEquals(1, decoded.points().size());
         assertEquals(1, decoded.squadMates().size());
+        assertEquals(dto.spectateEntityId(), decoded.spectateEntityId());
     }
 }

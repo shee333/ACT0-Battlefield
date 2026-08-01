@@ -17,7 +17,8 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
                               boolean hasArea,
                               double areaMinX, double areaMinY, double areaMinZ,
                               double areaMaxX, double areaMaxY, double areaMaxZ,
-                              boolean areaExplicit) {
+                              boolean areaExplicit,
+                              int spectateEntityId) {
 
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(active);
@@ -49,6 +50,7 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         buf.writeDouble(areaMaxY);
         buf.writeDouble(areaMaxZ);
         buf.writeBoolean(areaExplicit);
+        buf.writeVarInt(spectateEntityId);
     }
 
     public static DeployStatusDto decode(FriendlyByteBuf buf) {
@@ -83,14 +85,15 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         double amaxY = buf.readDouble();
         double amaxZ = buf.readDouble();
         boolean areaExplicit = buf.readBoolean();
+        int spectateEntityId = buf.readVarInt();
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
                 baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates,
-                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit);
+                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit, spectateEntityId);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
             0, 0, 0, 0, 0, 0, List.of(), List.of(),
-            false, 0, 0, 0, 0, 0, 0, false);
+            false, 0, 0, 0, 0, 0, 0, false, -1);
     }
 }

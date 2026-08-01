@@ -3,5 +3,6 @@
   "item.act0_battlefield.battlefield_terminal": "战地终端",
   "itemGroup.act0_battlefield.main": "ACT0 大战场",
   "key.categories.act0_battlefield": "ACT0 大战场",
-  "key.act0_battlefield.open_menu": "打开大战场"
+  "key.act0_battlefield.open_menu": "打开大战场",
+  "key.act0_battlefield.spectate_next": "切换观战队友"
 }

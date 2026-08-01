@@ -58,6 +58,7 @@ public final class RedeployService {
     private final Map<UUID, String> deployTarget = new LinkedHashMap<>();
     private final Map<UUID, GameType> redeployOriginalMode = new LinkedHashMap<>();
     private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
+    private final Map<UUID, Integer> spectateTarget = new LinkedHashMap<>();
 
     private boolean fireLocked;
 
@@ -118,6 +119,10 @@ public final class RedeployService {
 
     public void beginRedeploy(ServerPlayer player, Faction faction) {
         UUID id = player.getUUID();
+        // Resolve the nearest living squadmate BEFORE teleporting the player away to the
+        // deploy overview, so the distance is measured from the player's actual death spot
+        // (post-teleport the player floats above the whole map, making distance meaningless).
+        spectateTarget.put(id, nearestSquadmateEntityId(player, id, faction));
         long readyTick = server.getTickCount() + redeployDelayTicks;
         redeployReadyTick.put(id, readyTick);
         String kind = bestDeployKind(id, faction);
@@ -207,6 +212,7 @@ public final class RedeployService {
         redeployReadyTick.remove(id);
         deploySelection.remove(id);
         deployTarget.remove(id);
+        spectateTarget.remove(id);
         GameType original = redeployOriginalMode.remove(id);
         GameType targetMode = restoreOriginalMode && original != null ? original : GameType.ADVENTURE;
         if (targetMode == GameType.SPECTATOR) {
@@ -228,6 +234,24 @@ public final class RedeployService {
         deployTarget.clear();
         redeployOriginalMode.clear();
         protectedUntil.clear();
+        spectateTarget.clear();
+    }
+
+    /** Entity id of the living squadmate closest to {@code player}, or -1 if none. */
+    private int nearestSquadmateEntityId(ServerPlayer player, UUID id, Faction faction) {
+        int best = -1;
+        double bestDist = Double.MAX_VALUE;
+        for (DeploySquadMateDto mate : squadManager.deploySquadMateDtos(id, faction)) {
+            double dx = mate.x() - player.getX();
+            double dy = mate.y() - player.getY();
+            double dz = mate.z() - player.getZ();
+            double dist = dx * dx + dy * dy + dz * dz;
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = mate.entityId();
+            }
+        }
+        return best;
     }
 
     // ---- Private: deploy status DTOs ----
@@ -264,7 +288,8 @@ public final class RedeployService {
                 area.isSet(),
                 area.minX(), area.minY(), area.minZ(),
                 area.maxX(), area.maxY(), area.maxZ(),
-                areaExplicit);
+                areaExplicit,
+                spectateTarget.getOrDefault(id, -1));
     }
 
     private List<DeployPointDto> deployPointDtos(Faction faction) {

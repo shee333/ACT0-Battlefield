@@ -5,6 +5,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
+import org.shee33.act0.battlefield.client.BattlefieldKeyMappings;
 import org.shee33.act0.battlefield.client.ClientDeployLoadout;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
@@ -143,19 +144,17 @@ public final class BattlefieldDeployScreen extends Screen {
         gg.drawString(font, text, x + 6, y + 4, 0xFFFFFFFF, false);
     }
 
-    /** 根据当前选中的具体小队成员，切换到越肩观战相机。 */
+    /**
+     * 死亡等待重生期间默认自动跟随最近的存活小队成员做越肩观战，与部署点选择（base/point/squad）
+     * 完全解耦：不论玩家在部署点上选中的是据点、基地还是队友，观战相机都独立跟随存活队友；仅在
+     * 小队没有任何存活成员时才回退为原版自由飞行。
+     */
     private void updateSquadSpectate(DeployStatusDto st) {
-        if (st == null || !"squad".equals(st.selectedKind()) || st.selectedTarget().isBlank()) {
+        if (st == null) {
             ClientSquadSpectate.clear();
             return;
         }
-        for (DeploySquadMateDto mate : st.squadMates()) {
-            if (mate.deployable() && mate.id().equals(st.selectedTarget())) {
-                ClientSquadSpectate.focus(mate.entityId());
-                return;
-            }
-        }
-        ClientSquadSpectate.clear();
+        ClientSquadSpectate.updateSpectate(st.squadMates(), st.spectateEntityId());
     }
 
     /** 渲染小队成员切换时的淡出淡入黑幕。 */
@@ -183,6 +182,13 @@ public final class BattlefieldDeployScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (BattlefieldKeyMappings.SPECTATE_NEXT.matches(keyCode, scanCode)) {
+            DeployStatusDto current = ClientDeployStatus.status();
+            if (current != null) {
+                ClientSquadSpectate.cycleNext(current.squadMates());
+            }
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_R) {
             BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(DeployActionPacket.DeployKind.REFRESH));
             return true;

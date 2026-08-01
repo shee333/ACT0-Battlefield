@@ -3,5 +3,6 @@
   "item.act0_battlefield.battlefield_terminal": "Battlefield Terminal",
   "itemGroup.act0_battlefield.main": "ACT0 Battlefield",
   "key.categories.act0_battlefield": "ACT0 Battlefield",
-  "key.act0_battlefield.open_menu": "Open Battlefield"
+  "key.act0_battlefield.open_menu": "Open Battlefield",
+  "key.act0_battlefield.spectate_next": "Spectate Next Squadmate"
 }

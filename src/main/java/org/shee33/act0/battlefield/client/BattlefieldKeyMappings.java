@@ -27,6 +27,12 @@ public final class BattlefieldKeyMappings {
             GLFW.GLFW_KEY_Q,
             "key.categories.act0_battlefield");
 
+    public static final KeyMapping SPECTATE_NEXT = new KeyMapping(
+            "key.act0_battlefield.spectate_next",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_V,
+            "key.categories.act0_battlefield");
+
     private BattlefieldKeyMappings() {
     }
 
@@ -34,5 +40,6 @@ public final class BattlefieldKeyMappings {
     public static void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(OPEN_MENU);
         event.register(SPOT_ENEMY);
+        event.register(SPECTATE_NEXT);
     }
 }
