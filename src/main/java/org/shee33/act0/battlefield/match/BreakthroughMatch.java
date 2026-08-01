@@ -207,6 +207,7 @@ public final class BreakthroughMatch {
             tickStartCountdown();
             if (++hudAccum >= hudInterval) {
                 hudAccum = 0;
+                broadcastHud();
             }
             return;
         }
@@ -225,6 +226,19 @@ public final class BreakthroughMatch {
         }
         if (++hudAccum >= hudInterval) {
             hudAccum = 0;
+            broadcastHud();
+        }
+    }
+
+    // ---- HUD ----
+
+    private void broadcastHud() {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null) {
+                continue;
+            }
+            BattlefieldNetwork.sendBreakthroughHud(p, buildHudFor(p));
         }
     }
 
@@ -578,6 +592,7 @@ public final class BreakthroughMatch {
                 }
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
+                BattlefieldNetwork.clearBreakthroughHud(p);
             }
         }
         redeployService.clearAll();
@@ -611,6 +626,7 @@ public final class BreakthroughMatch {
                 }
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
+                BattlefieldNetwork.clearBreakthroughHud(p);
             }
         }
         redeployService.clearAll();
@@ -680,6 +696,7 @@ public final class BreakthroughMatch {
             return;
         }
         redeployService.onPlayerLogin(player, faction);
+        BattlefieldNetwork.sendBreakthroughHud(player, buildHudFor(player));
     }
 
     // ---- HUD ----
