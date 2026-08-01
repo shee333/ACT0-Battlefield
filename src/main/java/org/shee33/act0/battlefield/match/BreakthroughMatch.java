@@ -349,18 +349,26 @@ public final class BreakthroughMatch {
                 if (owner != null) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.CAPTURED_NEW, factionCode(owner));
                     rewardAttackOrder(pointId, owner);
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.captureBurst(level, fxPos.x, fxPos.y, fxPos.z, owner);
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 clearDefendOrder(pointId);
+                Vec3 fxPos = zone.getCenter();
+                BattlefieldFx.lost(level, fxPos.x, fxPos.y, fxPos.z);
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
                 notifyDefendOrder(points.get(i), pointId);
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 if (!wasActiveContest) {
                     Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             }
         }
@@ -909,6 +917,7 @@ public final class BreakthroughMatch {
         p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 右键队友救你"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
         BattlefieldNetwork.sendDownedFeedback(p);
+        BattlefieldFx.downed(level, p.getX(), p.getY(), p.getZ());
     }
 
     private void tickDownedPlayers() {

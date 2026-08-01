@@ -433,6 +433,7 @@ public final class RedeployService {
         if (spawn != null) {
             p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
             BattlefieldNetwork.sendDeploySpawnFx(p, deployLocationLabel(kind, targetId, f));
+            BattlefieldFx.deployLanding(level, spawn.x(), spawn.y(), spawn.z(), f);
         }
         clearRedeployState(p, false);
         escapeTicks.remove(id);

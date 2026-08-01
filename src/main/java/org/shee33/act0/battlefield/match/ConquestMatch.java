@@ -327,23 +327,31 @@ public final class ConquestMatch {
                             ? CapturePointEventPacket.Kind.CAPTURED_NEW
                             : CapturePointEventPacket.Kind.CAPTURED_RECOVERED;
                     sendCapturePointEvent(pointId, kind, factionCode(owner));
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.captureBurst(level, fxPos.x, fxPos.y, fxPos.z, owner);
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 broadcast("§7据点 §e" + point.displayName() + " §7已被中立化");
                 playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.7f);
                 clearDefendOrder(defs.get(i).pointId());
                 sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.LOST, factionCode(ownerBeforeTick));
+                Vec3 fxPos = zone.getCenter();
+                BattlefieldFx.lost(level, fxPos.x, fxPos.y, fxPos.z);
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
                 playNear(point.displayName(), zone, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
                 notifyDefendOrder(point, defs.get(i).pointId());
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
                 actionBarNear(point.displayName(), zone, pushing.coloredName() + " §7正在占领 " + point.displayName());
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
+                    Vec3 fxPos = zone.getCenter();
+                    BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             }
         }
@@ -1404,6 +1412,7 @@ public final class ConquestMatch {
         p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 右键队友救你"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
         BattlefieldNetwork.sendDownedFeedback(p);
+        BattlefieldFx.downed(level, p.getX(), p.getY(), p.getZ());
         for (UUID mateId : factionOf.keySet()) {
             if (mateId.equals(id)) continue;
             if (factionOf.get(mateId) == f) {
