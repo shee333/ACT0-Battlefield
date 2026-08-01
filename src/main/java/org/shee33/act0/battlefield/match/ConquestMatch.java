@@ -774,7 +774,8 @@ public final class ConquestMatch {
         return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
                 tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
                 killTracker.killsOf(viewerId), killTracker.deathsOf(viewerId), entries,
-                topCapturer, topCapturerTime / 20, bestSquad, bestSquadKills);
+                topCapturer, topCapturerTime / 20, bestSquad, bestSquadKills,
+                elapsedSeconds(), 0, 0);
     }
 
     /** 强制中止（服务器关闭/管理员停止）。 */

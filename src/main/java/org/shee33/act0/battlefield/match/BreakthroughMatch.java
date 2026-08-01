@@ -30,15 +30,18 @@ import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
+import org.shee33.act0.battlefield.network.BattleResultDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
 import org.shee33.act0.battlefield.network.BreakthroughPointDto;
 import org.shee33.act0.battlefield.network.CapturePointEventPacket;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
+import org.shee33.act0.battlefield.network.TabEntryDto;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1067,6 +1070,7 @@ public final class BreakthroughMatch {
                     p.setInvulnerable(false);
                 }
                 sendPersonalResult(p, e.getValue(), w);
+                BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
                 BattlefieldData.BaseSpawn base = data.base(e.getValue());
                 if (base != null) {
                     p.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
@@ -1136,6 +1140,51 @@ public final class BreakthroughMatch {
                 + " §8| §7进攻方剩余票数 §f" + (int) attackerTickets
                 + " §8| §7你的 K/D §e" + killTracker.killsOf(id) + "§7/§c" + killTracker.deathsOf(id)
                 + " §8| §7推进至扇区 §e" + currentSectorIndex + "§7/§e" + sectors.size()));
+    }
+
+    /**
+     * 构建 FlatTheme 战报界面（{@code BattleResultScreen}）所需的数据快照。
+     *
+     * <p>与 {@code ConquestMatch#buildResultFor} 共用同一个 {@link BattleResultDto}：
+     * 可直接复用的字段（阵营/胜负/击杀死亡/用时）照填；{@code bravoTickets} 在突破模式
+     * 里没有真实含义——票数池只属于进攻方（见 {@link #attackerTickets}），防守方没有
+     * 对称的票数资源，因此传 0（而非编造一个数字）；{@code topCapturer}/{@code bestSquad}
+     * 是 Conquest 专属的"占点王/最佳小队"统计，突破模式没有对应追踪（未维护
+     * capture-time 或最佳小队榜单），传空字符串/0 由渲染端隐藏对应板块；
+     * {@code sectorsCaptured}/{@code totalSectors} 是突破模式独有的推进进度，
+     * Conquest 侧固定传 0/0。
+     */
+    private BattleResultDto buildResultFor(ServerPlayer viewer, Faction winner) {
+        List<TabEntryDto> entries = new ArrayList<>();
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            UUID id = e.getKey();
+            ServerPlayer p = player(id);
+            String name = p != null ? p.getGameProfile().getName() : id.toString().substring(0, 8);
+            int ping = p != null ? p.latency : -1;
+            entries.add(new TabEntryDto(name, factionCode(e.getValue()),
+                    killTracker.killsOf(id), killTracker.deathsOf(id), ping,
+                    p == null ? 2 : (downedUntil.containsKey(id) ? 3 : 0),
+                    displaySquad(squadManager.getSquadOf().getOrDefault(id, 0))));
+        }
+        entries.sort(Comparator
+                .comparingInt(TabEntryDto::kills).reversed()
+                .thenComparingInt(TabEntryDto::deaths)
+                .thenComparing(TabEntryDto::name));
+        UUID viewerId = viewer.getUUID();
+
+        return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
+                (int) attackerTickets, 0,
+                killTracker.killsOf(viewerId), killTracker.deathsOf(viewerId), entries,
+                "", 0, "", 0,
+                elapsedSeconds(), currentSectorIndex, sectors.size());
+    }
+
+    public int elapsedSeconds() {
+        return (int) Math.max(0L, (server.getTickCount() - startedTick) / 20L);
+    }
+
+    private static int displaySquad(int squadId) {
+        return squadId >= 101 ? squadId - 100 : Math.max(0, squadId);
     }
 
     // ---- 部署 ----

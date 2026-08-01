@@ -232,6 +232,19 @@ public final class BattleResultScreen extends Screen {
         gg.drawString(font, "最佳表现", x, y, TEXT_HEADER, false);
         y += 20;
 
+        // Match duration (both modes)
+        gg.drawString(font, "对局时长", x, y, TEXT_AWARD, false);
+        gg.drawString(font, formatDuration(result.matchSeconds()), x, y + 14, TEXT_PRIMARY, false);
+        y += 28;
+
+        // Sector advance (Breakthrough only; totalSectors == 0 for Conquest)
+        if (result.totalSectors() > 0) {
+            gg.drawString(font, "推进扇区", x, y, TEXT_AWARD, false);
+            gg.drawString(font, result.sectorsCaptured() + " / " + result.totalSectors(), x, y + 14,
+                    TEXT_PRIMARY, false);
+            y += 28;
+        }
+
         // Top capturer
         if (!result.topCapturer().isBlank()) {
             gg.drawString(font, "占点王", x, y, TEXT_AWARD, false);
@@ -258,6 +271,12 @@ public final class BattleResultScreen extends Screen {
 
     private void drawDivider(final GuiGraphics gg, final int y) {
         gg.fill(left + PAD, y, left + PANEL_W - PAD, y + 1, DIVIDER);
+    }
+
+    /** Format seconds as m:ss for the match-duration display. */
+    private static String formatDuration(final int totalSeconds) {
+        int s = Math.max(0, totalSeconds);
+        return (s / 60) + ":" + String.format("%02d", s % 60);
     }
 
     /** Trim text to fit within maxW pixels, appending "…" if truncated. */
