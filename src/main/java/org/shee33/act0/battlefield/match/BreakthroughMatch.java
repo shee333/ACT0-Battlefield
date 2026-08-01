@@ -13,8 +13,10 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
@@ -37,10 +39,12 @@ import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -50,6 +54,15 @@ import java.util.UUID;
  * 解锁推进。攻击方票数归零判负；攻占全部扇区判胜。死亡接管与 ConquestMatch 一致。
  */
 public final class BreakthroughMatch {
+
+    /** 小队完成攻击命令（占领指定据点）时，进攻方获得的票数奖励。
+     * 与 ConquestMatch 的 +5 票奖励保持同一数值：两模式默认起始票数（300）与每死亡扣票（1.0）
+     * 完全相同，因此奖励在两模式中的相对权重（约 5 次阵亡的容错量）也一致，无需按比例调整。 */
+    private static final int ATTACK_ORDER_TICKET_REWARD = 5;
+
+    // IFF (敌我识别) 空间分区常量：与 ConquestMatch 完全一致，保持相同的判定平衡性。
+    private static final int IFF_CHUNK_SIZE = 16;
+    private static final int IFF_CHUNK_RADIUS = 6;
 
     private final int captureInterval;
     private final double captureDelta;
@@ -62,6 +75,10 @@ public final class BreakthroughMatch {
     private final int escapeBoundaryTicks;
     private final int downedDurationTicks;
     private final int reviveDurationTicks;
+    private final int iffSyncInterval;
+    private final double enemyMarkDistance;
+    private final double enemyMarkDistanceSqr;
+    private final double enemyMarkViewDot;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -85,6 +102,8 @@ public final class BreakthroughMatch {
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
     private final Map<UUID, Integer> escapeTicks = new LinkedHashMap<>();
     private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
+    private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
+    private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
 
     private double attackerTickets;
     private int currentSectorIndex;
@@ -96,6 +115,7 @@ public final class BreakthroughMatch {
     private Faction winner;
     private int captureAccum;
     private int hudAccum;
+    private int iffAccum;
 
     public BreakthroughMatch(ServerLevel level, ServerLevel lobbyLevel, BreakthroughRules rules,
                              List<ControlPointDef> defs, Map<UUID, Faction> roster,
@@ -116,6 +136,10 @@ public final class BreakthroughMatch {
         this.escapeBoundaryTicks = BattlefieldConfig.ESCAPE_BOUNDARY_TICKS.get();
         this.downedDurationTicks = BattlefieldConfig.DOWNED_DURATION_TICKS.get();
         this.reviveDurationTicks = BattlefieldConfig.REVIVE_DURATION_TICKS.get();
+        this.iffSyncInterval = BattlefieldConfig.IFF_SYNC_INTERVAL.get();
+        this.enemyMarkDistance = BattlefieldConfig.ENEMY_MARK_DISTANCE.get();
+        this.enemyMarkDistanceSqr = this.enemyMarkDistance * this.enemyMarkDistance;
+        this.enemyMarkViewDot = BattlefieldConfig.ENEMY_MARK_VIEW_DOT.get();
         this.attackerTickets = rules.startingTickets();
         this.currentSectorIndex = 0;
         this.defs = new ArrayList<>(defs);
@@ -169,6 +193,7 @@ public final class BreakthroughMatch {
         }
         factionOf.put(id, faction);
         killTracker.initPlayer(id);
+        RelativeTeamSync.reset(id); // 强制下次同步进行全量重建
         squadManager.buildSquads();
         setupNameTagTeams();
         beginRedeploy(player, faction);
@@ -182,6 +207,9 @@ public final class BreakthroughMatch {
         if (faction == null) {
             return false;
         }
+        clearEnemyGlowFor(player);
+        clearEnemyGlowTarget(player);
+        clearRelativeTeamsFor(player);
         clearRedeployState(player, true);
         BattlefieldData.BaseSpawn base = data.base(faction);
         if (base != null) {
@@ -229,6 +257,10 @@ public final class BreakthroughMatch {
         }
         processRedeployTick();
         squadManager.tick(server.getTickCount());
+        if (++iffAccum >= iffSyncInterval) {
+            iffAccum = 0;
+            syncEnemyIdentification();
+        }
         tickBreathHealing();
         tickEscapeBoundary();
         tickDownedPlayers();
@@ -313,8 +345,12 @@ public final class BreakthroughMatch {
                 Faction owner = points.get(i).owner();
                 if (owner != null) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.CAPTURED_NEW, factionCode(owner));
+                    rewardAttackOrder(pointId, owner);
                 }
+            } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
+                clearDefendOrder(pointId);
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
+                notifyDefendOrder(points.get(i), pointId);
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
                 }
@@ -386,6 +422,94 @@ public final class BreakthroughMatch {
         }
     }
 
+    // ---- 小队攻防指令 ----
+
+    /** 小队长下达攻击/防御命令；返回 {@code null} 表示成功，否则为失败原因。 */
+    @Nullable
+    public String setSquadOrder(UUID playerId, int pointId, boolean attack) {
+        Integer squadId = squadManager.getSquadOf().get(playerId);
+        if (squadId == null) {
+            return "§c未找到你的小队。";
+        }
+        if (!squadManager.isSquadLeader(playerId)) {
+            return "§c只有小队长可以下达命令。";
+        }
+        if (!isPointActive(pointId)) {
+            return "§c据点 " + pointId + " 当前不可指挥（未激活或不在当前突破区域内）。";
+        }
+        squadManager.setOrder(squadId, new SquadManager.SquadOrder(pointId, attack));
+        return null;
+    }
+
+    /**
+     * 小队完成攻击命令（占领了下令的据点）时发放奖励。
+     *
+     * <p>与 ConquestMatch 不同：突破模式的票数池（{@link #attackerTickets}）只属于进攻方（ALPHA），
+     * 防守方没有对称的票数池可供奖励，因此仅在 ALPHA 完成攻击命令时生效；
+     * 防守方的"防御命令"只在 {@link #notifyDefendOrder} 中获得战术提示，不发放票数奖励
+     * ——这与 ConquestMatch 本身的行为一致（ConquestMatch 同样只在 rewardAttackOrder 中发票，
+     * 防御命令只在 clearDefendOrder 中被清除，从未获得过奖励）。
+     */
+    private void rewardAttackOrder(int pointId, Faction capturer) {
+        if (capturer != Faction.ALPHA) {
+            return;
+        }
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (order.attack() && order.pointId() == pointId) {
+                LinkedHashSet<UUID> members = squadManager.getSquads().get(e.getKey());
+                if (members != null && !members.isEmpty()) {
+                    UUID first = members.iterator().next();
+                    if (factionOf.get(first) == capturer) {
+                        squadBroadcast(e.getKey(), "§6★ 小队完成了攻击命令！据点已占领。");
+                        attackerTickets += ATTACK_ORDER_TICKET_REWARD;
+                        squadBroadcast(e.getKey(), "§a" + capturer.coloredName()
+                                + " §7获得 +" + ATTACK_ORDER_TICKET_REWARD + " 票数奖励。");
+                        squadManager.clearOrder(e.getKey());
+                    }
+                }
+            }
+        }
+    }
+
+    private void clearDefendOrder(int pointId) {
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (!order.attack() && order.pointId() == pointId) {
+                squadManager.clearOrder(e.getKey());
+                squadBroadcast(e.getKey(), "§7据点已被中立化，防御命令已取消。");
+            }
+        }
+    }
+
+    private void notifyDefendOrder(CapturePoint point, int pointId) {
+        Faction owner = point.owner();
+        if (owner == null) return;
+        long now = server.getTickCount();
+        for (Map.Entry<Integer, SquadManager.SquadOrder> e : squadManager.getActiveOrders().entrySet()) {
+            SquadManager.SquadOrder order = e.getValue();
+            if (order.attack() || order.pointId() != pointId) continue;
+            LinkedHashSet<UUID> members = squadManager.getSquads().get(e.getKey());
+            if (members == null || members.isEmpty()) continue;
+            UUID first = members.iterator().next();
+            if (factionOf.get(first) != owner) continue;
+            Long last = defendNotificationCooldown.get(e.getKey());
+            if (last != null && now - last < 600L) continue;
+            defendNotificationCooldown.put(e.getKey(), now);
+            squadBroadcast(e.getKey(), "§e▣ 正在防守据点！保住这个位置。");
+        }
+    }
+
+    private void squadBroadcast(int squadId, String msg) {
+        LinkedHashSet<UUID> members = squadManager.getSquads().get(squadId);
+        if (members == null) return;
+        Component component = Component.literal(msg);
+        for (UUID uid : members) {
+            ServerPlayer p = player(uid);
+            if (p != null) p.sendSystemMessage(component);
+        }
+    }
+
     // ---- 敌我识别（阵营名牌颜色） ----
 
     private void setupNameTagTeams() {
@@ -435,6 +559,233 @@ public final class BreakthroughMatch {
         return base.length() <= 16 ? base : base.substring(0, 16);
     }
 
+    /**
+     * IFF (敌我识别) 同步：管理每名玩家视角下的敌方发光可见性。
+     *
+     * <p>与 ConquestMatch 完全等价的实现：使用 16 格区块空间索引降低 O(n²) 射线检测开销，
+     * 判定阈值（距离、视锥点积）与射线遮挡算法均保持一致，不调整任何平衡数值。
+     */
+    private void syncEnemyIdentification() {
+        Map<IffChunkKey, List<UUID>> spatialIndex = buildIffSpatialIndex();
+
+        for (UUID viewerId : new ArrayList<>(factionOf.keySet())) {
+            ServerPlayer viewer = player(viewerId);
+            if (!canViewerIdentify(viewer)) {
+                clearEnemyGlowFor(viewerId);
+                continue;
+            }
+            syncRelativeTeams(viewer, viewerId);
+            Set<UUID> active = visibleEnemyGlows.computeIfAbsent(viewerId, ignored -> new HashSet<>());
+            Set<UUID> shouldKeep = new HashSet<>();
+
+            IffChunkKey viewerChunk = iffChunkKey(viewer);
+
+            int minCx = viewerChunk.cx() - IFF_CHUNK_RADIUS;
+            int maxCx = viewerChunk.cx() + IFF_CHUNK_RADIUS;
+            int minCz = viewerChunk.cz() - IFF_CHUNK_RADIUS;
+            int maxCz = viewerChunk.cz() + IFF_CHUNK_RADIUS;
+            for (int cx = minCx; cx <= maxCx; cx++) {
+                for (int cz = minCz; cz <= maxCz; cz++) {
+                    List<UUID> chunk = spatialIndex.get(new IffChunkKey(cx, cz));
+                    if (chunk == null) {
+                        continue;
+                    }
+                    for (UUID targetId : chunk) {
+                        if (targetId.equals(viewerId)) {
+                            continue;
+                        }
+                        ServerPlayer target = player(targetId);
+                        boolean show = shouldShowFriendlyGlow(viewer, target)
+                                || shouldShowEnemyGlow(viewer, target);
+                        if (show) {
+                            shouldKeep.add(targetId);
+                            if (active.add(targetId)) {
+                                GlowSync.showGlowTo(viewer, target);
+                            }
+                        } else if (active.remove(targetId) && target != null) {
+                            GlowSync.hideGlowFrom(viewer, target);
+                        }
+                    }
+                }
+            }
+
+            for (UUID targetId : factionOf.keySet()) {
+                if (targetId.equals(viewerId) || shouldKeep.contains(targetId)) {
+                    continue;
+                }
+                ServerPlayer target = player(targetId);
+                if (shouldShowFriendlyGlow(viewer, target)) {
+                    shouldKeep.add(targetId);
+                    if (active.add(targetId)) {
+                        GlowSync.showGlowTo(viewer, target);
+                    }
+                } else if (active.remove(targetId) && target != null) {
+                    GlowSync.hideGlowFrom(viewer, target);
+                }
+            }
+
+            for (UUID stale : new HashSet<>(active)) {
+                if (!shouldKeep.contains(stale)) {
+                    ServerPlayer target = player(stale);
+                    if (target != null) {
+                        GlowSync.hideGlowFrom(viewer, target);
+                    }
+                    active.remove(stale);
+                }
+            }
+        }
+    }
+
+    private Map<IffChunkKey, List<UUID>> buildIffSpatialIndex() {
+        Map<IffChunkKey, List<UUID>> index = new LinkedHashMap<>();
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
+                continue;
+            }
+            IffChunkKey key = iffChunkKey(p);
+            index.computeIfAbsent(key, k -> new ArrayList<>()).add(id);
+        }
+        return index;
+    }
+
+    private static IffChunkKey iffChunkKey(ServerPlayer p) {
+        return new IffChunkKey(
+                (int) Math.floor(p.getX() / IFF_CHUNK_SIZE),
+                (int) Math.floor(p.getZ() / IFF_CHUNK_SIZE));
+    }
+
+    private record IffChunkKey(int cx, int cz) {}
+
+    private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
+        Faction mine = factionOf.get(viewerId);
+        RelativeTeamSync.sync(viewer, factionOf.keySet(), this::player,
+                id -> mine != null && mine == factionOf.get(id));
+    }
+
+    private boolean canViewerIdentify(@Nullable ServerPlayer viewer) {
+        if (viewer == null || viewer.level() != level || !viewer.isAlive() || viewer.isSpectator()) {
+            return false;
+        }
+        return !redeployService.isRedeploying(viewer.getUUID());
+    }
+
+    private boolean shouldShowEnemyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
+        if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
+            return false;
+        }
+        UUID viewerId = viewer.getUUID();
+        UUID targetId = target.getUUID();
+        Faction viewerFaction = factionOf.get(viewerId);
+        Faction targetFaction = factionOf.get(targetId);
+        if (viewerFaction == null || targetFaction == null || viewerFaction == targetFaction) {
+            return false;
+        }
+        if (redeployService.isRedeploying(targetId)) {
+            return false;
+        }
+        if (viewer.distanceToSqr(target) > enemyMarkDistanceSqr) {
+            return false;
+        }
+        if (!isInFrontOf(viewer, target)) {
+            return false;
+        }
+        return hasClearSight(viewer, target);
+    }
+
+    private boolean shouldShowFriendlyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
+        if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
+            return false;
+        }
+        UUID viewerId = viewer.getUUID();
+        UUID targetId = target.getUUID();
+        Faction viewerFaction = factionOf.get(viewerId);
+        Faction targetFaction = factionOf.get(targetId);
+        return viewerFaction != null && viewerFaction == targetFaction && !redeployService.isRedeploying(targetId);
+    }
+
+    private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
+        Vec3 eyes = viewer.getEyePosition();
+        Vec3 toTarget = target.getEyePosition().subtract(eyes);
+        if (toTarget.lengthSqr() < 0.0001D) {
+            return true;
+        }
+        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= enemyMarkViewDot;
+    }
+
+    private boolean hasClearSight(ServerPlayer viewer, ServerPlayer target) {
+        Vec3 from = viewer.getEyePosition();
+        Vec3 toEyes = target.getEyePosition();
+        Vec3 toBody = target.position().add(0.0D, target.getBbHeight() * 0.55D, 0.0D);
+        return clearBlockRay(viewer, from, toEyes) || clearBlockRay(viewer, from, toBody);
+    }
+
+    private boolean clearBlockRay(ServerPlayer viewer, Vec3 from, Vec3 to) {
+        HitResult hit = level.clip(new ClipContext(from, to,
+                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, viewer));
+        return hit.getType() == HitResult.Type.MISS;
+    }
+
+    private void clearEnemyGlowFor(ServerPlayer viewer) {
+        if (viewer != null) {
+            clearEnemyGlowFor(viewer.getUUID());
+            clearRelativeTeamsFor(viewer);
+        }
+    }
+
+    private void clearEnemyGlowFor(UUID viewerId) {
+        Set<UUID> active = visibleEnemyGlows.remove(viewerId);
+        if (active == null || active.isEmpty()) {
+            return;
+        }
+        ServerPlayer viewer = player(viewerId);
+        if (viewer == null) {
+            return;
+        }
+        for (UUID targetId : active) {
+            ServerPlayer target = player(targetId);
+            if (target != null) {
+                GlowSync.hideGlowFrom(viewer, target);
+            }
+        }
+    }
+
+    private void clearEnemyGlowTarget(ServerPlayer target) {
+        if (target == null) {
+            return;
+        }
+        UUID targetId = target.getUUID();
+        for (Map.Entry<UUID, Set<UUID>> e : new ArrayList<>(visibleEnemyGlows.entrySet())) {
+            if (e.getValue().remove(targetId)) {
+                ServerPlayer viewer = player(e.getKey());
+                if (viewer != null) {
+                    RelativeTeamSync.removeTarget(viewer, target);
+                    GlowSync.hideGlowFrom(viewer, target);
+                }
+            }
+        }
+    }
+
+    private void clearAllEnemyGlows() {
+        for (UUID viewerId : new ArrayList<>(visibleEnemyGlows.keySet())) {
+            clearEnemyGlowFor(viewerId);
+        }
+        visibleEnemyGlows.clear();
+    }
+
+    private void clearRelativeTeamsFor(ServerPlayer viewer) {
+        RelativeTeamSync.clear(viewer);
+    }
+
+    private void clearAllRelativeTeams() {
+        for (UUID viewerId : factionOf.keySet()) {
+            ServerPlayer viewer = player(viewerId);
+            if (viewer != null) {
+                clearRelativeTeamsFor(viewer);
+            }
+        }
+    }
+
     // ---- 死亡接管 ----
 
     public boolean onDeath(UUID victimId, @Nullable UUID killerId) {
@@ -450,6 +801,8 @@ public final class BreakthroughMatch {
         }
         ServerPlayer p = player(victimId);
         if (p != null) {
+            clearEnemyGlowFor(p);
+            clearEnemyGlowTarget(p);
             p.clearFire();
             p.getFoodData().setFoodLevel(20);
             enterDowned(p, f, killerId);
@@ -731,6 +1084,8 @@ public final class BreakthroughMatch {
         revivingTarget.clear();
         revivingStarted.clear();
         killTracker.clearTransient();
+        clearAllEnemyGlows();
+        clearAllRelativeTeams();
         clearNameTagTeams();
         sendFireLockToAll(false);
     }
@@ -766,6 +1121,8 @@ public final class BreakthroughMatch {
         revivingTarget.clear();
         revivingStarted.clear();
         killTracker.clearTransient();
+        clearAllEnemyGlows();
+        clearAllRelativeTeams();
         clearNameTagTeams();
         sendFireLockToAll(false);
     }

@@ -53,8 +53,37 @@ public final class BreakthroughCommand {
                     .then(Commands.literal("attacker").executes(c -> join(c, Faction.ALPHA)))
                     .then(Commands.literal("defender").executes(c -> join(c, Faction.BRAVO))))
                 .then(Commands.literal("leave").executes(BreakthroughCommand::leave))
+                .then(buildOrderBranch())
                 .then(Commands.literal("status").executes(BreakthroughCommand::status))
         );
+    }
+
+    /** /breakthrough order {attack|defend} <pointId>：小队长下达攻防命令。 */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildOrderBranch() {
+        return Commands.literal("order")
+                .then(Commands.literal("attack")
+                        .then(Commands.argument("pointId", IntegerArgumentType.integer(0))
+                                .executes(c -> setOrder(c, true))))
+                .then(Commands.literal("defend")
+                        .then(Commands.argument("pointId", IntegerArgumentType.integer(0))
+                                .executes(c -> setOrder(c, false))));
+    }
+
+    private static int setOrder(CommandContext<CommandSourceStack> c, boolean attack) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        BreakthroughMatch match = BREAKTHROUGH_MANAGER.activeContaining(player.getUUID());
+        if (match == null || !match.contains(player.getUUID())) {
+            feedback(c, "§7当前未加入任何对局。");
+            return 0;
+        }
+        if (!match.isSquadLeader(player.getUUID())) {
+            feedback(c, "§c只有小队长可以下达命令。");
+            return 0;
+        }
+        int pointId = IntegerArgumentType.getInteger(c, "pointId");
+        String result = match.setSquadOrder(player.getUUID(), pointId, attack);
+        feedback(c, result != null ? result : "§a命令已下达。");
+        return result != null ? 0 : 1;
     }
 
     /** /breakthrough start [tickets] [name] [template]：四档可选参数链。 */
