@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.match;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -15,6 +16,9 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.Team;
 import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.CapturePoint;
@@ -27,6 +31,8 @@ import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
 import org.shee33.act0.battlefield.network.BreakthroughPointDto;
+import org.shee33.act0.battlefield.network.CapturePointEventPacket;
+import org.shee33.act0.battlefield.network.DownedActionPacket;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import javax.annotation.Nullable;
@@ -70,6 +76,7 @@ public final class BreakthroughMatch {
     private final KillTracker killTracker;
     private final RedeployService redeployService;
     private final ConquestRules captureRules;
+    private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
 
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
     private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
@@ -77,6 +84,7 @@ public final class BreakthroughMatch {
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
     private final Map<UUID, Integer> escapeTicks = new LinkedHashMap<>();
+    private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
 
     private double attackerTickets;
     private int currentSectorIndex;
@@ -141,6 +149,7 @@ public final class BreakthroughMatch {
     public void begin() {
         startCountdownTicks = BattlefieldConfig.START_COUNTDOWN_TICKS.get();
         startCountdownLastSecond = -1;
+        setupNameTagTeams();
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
@@ -161,6 +170,7 @@ public final class BreakthroughMatch {
         factionOf.put(id, faction);
         killTracker.initPlayer(id);
         squadManager.buildSquads();
+        setupNameTagTeams();
         beginRedeploy(player, faction);
         broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
         return true;
@@ -189,10 +199,12 @@ public final class BreakthroughMatch {
         cancelRevive(id);
         squadManager.onPlayerLeave(id);
         squadManager.buildSquads();
+        setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
         if (factionOf.isEmpty()) {
             ended = true;
+            clearNameTagTeams();
         }
         return true;
     }
@@ -268,7 +280,8 @@ public final class BreakthroughMatch {
         }
         for (int i = 0; i < points.size(); i++) {
             ControlPointDef def = defs.get(i);
-            if (!isPointActive(def.pointId())) {
+            int pointId = def.pointId();
+            if (!isPointActive(pointId)) {
                 continue;
             }
             AABB zone = def.zone();
@@ -288,7 +301,29 @@ public final class BreakthroughMatch {
                     }
                 }
             }
-            points.get(i).tick(alpha, bravo, captureRules, captureDelta);
+            CapturePoint.CaptureStatus prevStatus = lastCaptureStatus.getOrDefault(
+                    pointId, CapturePoint.CaptureStatus.IDLE);
+            boolean wasActiveContest = prevStatus == CapturePoint.CaptureStatus.CONTESTED
+                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING;
+            CapturePoint.CaptureStatus st = points.get(i).tick(alpha, bravo, captureRules, captureDelta);
+            lastCaptureStatus.put(pointId, st);
+            // 突破模式单向推进，无需 LOST/CAPTURED_RECOVERED 语义：只发 STARTED（首次进入争夺/推进）
+            // 与 CAPTURED_NEW（首次占领确认），驱动 HUD 顶部横幅一次性反馈。
+            if (st == CapturePoint.CaptureStatus.CAPTURED) {
+                Faction owner = points.get(i).owner();
+                if (owner != null) {
+                    sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.CAPTURED_NEW, factionCode(owner));
+                }
+            } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
+                if (!wasActiveContest) {
+                    sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
+                }
+            } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
+                if (!wasActiveContest) {
+                    Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
+                    sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
+                }
+            }
         }
         checkSectorAdvance();
     }
@@ -336,6 +371,68 @@ public final class BreakthroughMatch {
             }
         }
         return null;
+    }
+
+    /**
+     * 向双方阵营的每个玩家单独下发一次据点状态边沿事件（HUD 顶部横幅一次性反馈），
+     * 与 {@link #broadcast(String)} 的全局聊天广播并列、不替代。
+     */
+    private void sendCapturePointEvent(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                BattlefieldNetwork.sendCapturePointEvent(p, pointId, kind, factionCode);
+            }
+        }
+    }
+
+    // ---- 敌我识别（阵营名牌颜色） ----
+
+    private void setupNameTagTeams() {
+        clearNameTagTeams();
+        Scoreboard scoreboard = server.getScoreboard();
+        PlayerTeam alpha = createNameTagTeam(scoreboard, Faction.ALPHA);
+        PlayerTeam bravo = createNameTagTeam(scoreboard, Faction.BRAVO);
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            ServerPlayer p = player(e.getKey());
+            if (p == null) {
+                continue;
+            }
+            scoreboard.addPlayerToTeam(p.getScoreboardName(), e.getValue() == Faction.ALPHA ? alpha : bravo);
+        }
+    }
+
+    private PlayerTeam createNameTagTeam(Scoreboard scoreboard, Faction faction) {
+        String teamName = scoreboardTeamName(faction);
+        PlayerTeam existing = scoreboard.getPlayerTeam(teamName);
+        if (existing != null) {
+            scoreboard.removePlayerTeam(existing);
+        }
+        PlayerTeam team = scoreboard.addPlayerTeam(teamName);
+        team.setNameTagVisibility(Team.Visibility.HIDE_FOR_OTHER_TEAMS);
+        team.setColor(faction == Faction.ALPHA ? ChatFormatting.BLUE : ChatFormatting.RED);
+        nameTagTeams.add(team);
+        return team;
+    }
+
+    private void clearNameTagTeams() {
+        if (nameTagTeams.isEmpty()) {
+            return;
+        }
+        Scoreboard scoreboard = server.getScoreboard();
+        for (PlayerTeam team : new ArrayList<>(nameTagTeams)) {
+            PlayerTeam live = scoreboard.getPlayerTeam(team.getName());
+            if (live != null) {
+                scoreboard.removePlayerTeam(live);
+            }
+        }
+        nameTagTeams.clear();
+    }
+
+    private String scoreboardTeamName(Faction faction) {
+        String suffix = faction == Faction.ALPHA ? "a" : "b";
+        String base = "bt" + Integer.toHexString(System.identityHashCode(this)) + suffix;
+        return base.length() <= 16 ? base : base.substring(0, 16);
     }
 
     // ---- 死亡接管 ----
@@ -568,6 +665,37 @@ public final class BreakthroughMatch {
         return downedUntil.containsKey(id);
     }
 
+    public void handleDownedAction(ServerPlayer player, DownedActionPacket.Action action) {
+        UUID id = player.getUUID();
+        if (!downedUntil.containsKey(id)) {
+            return;
+        }
+        Faction f = factionOf.get(id);
+        if (f == null) {
+            return;
+        }
+        if (action == DownedActionPacket.Action.GIVE_UP) {
+            consumePendingDeath(id);
+            downedUntil.remove(id);
+            player.removeAllEffects();
+            player.setPose(Pose.STANDING);
+            player.sendSystemMessage(Component.literal("§7你放弃了救援。"));
+            beginRedeploy(player, f);
+        } else if (action == DownedActionPacket.Action.CALL_HELP) {
+            player.displayClientMessage(Component.literal("§e已呼叫救援"), true);
+            player.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.6f, 1.5f);
+            for (UUID mateId : factionOf.keySet()) {
+                if (factionOf.get(mateId) == f && !mateId.equals(id)) {
+                    ServerPlayer mate = player(mateId);
+                    if (mate != null) {
+                        mate.displayClientMessage(Component.literal("§c§l" + player.getGameProfile().getName() + " §c呼叫救援！"), true);
+                        mate.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.4f, 1.8f);
+                    }
+                }
+            }
+        }
+    }
+
     // ---- 结束 ----
 
     private void end(Faction w) {
@@ -603,6 +731,7 @@ public final class BreakthroughMatch {
         revivingTarget.clear();
         revivingStarted.clear();
         killTracker.clearTransient();
+        clearNameTagTeams();
         sendFireLockToAll(false);
     }
 
@@ -637,6 +766,7 @@ public final class BreakthroughMatch {
         revivingTarget.clear();
         revivingStarted.clear();
         killTracker.clearTransient();
+        clearNameTagTeams();
         sendFireLockToAll(false);
     }
 
@@ -718,7 +848,7 @@ public final class BreakthroughMatch {
             int progress = Math.min(100, Math.max(0,
                     (int) Math.round(Math.abs(cp.level()) * 100.0)));
             pointDtos.add(new BreakthroughPointDto(
-                    cp.displayName(), owner, pressure, progress, locked));
+                    def.pointId(), cp.displayName(), owner, pressure, progress, locked));
         }
 
         List<SquadMateHudDto> squad = squadHudFor(viewer);

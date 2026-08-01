@@ -23,6 +23,7 @@ import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
+import org.shee33.act0.battlefield.network.DownedActionPacket;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -370,6 +371,13 @@ public final class BreakthroughManager {
             return shooter.getUUID();
         }
         return null;
+    }
+
+    public void handleDownedAction(ServerPlayer player, DownedActionPacket.Action action) {
+        BreakthroughMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.handleDownedAction(player, action);
+        }
     }
 
     @SubscribeEvent

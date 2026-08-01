@@ -96,7 +96,47 @@ public final class BreakthroughHudOverlay {
 
         renderTopBar(gg, font, hud);
         renderPoints(gg, font, hud);
+        renderCapturePointBanner(gg, font, hud);
         renderSquad(gg, font, hud.squad());
+    }
+
+    // ---- capture point banner (reuses BattlefieldHudOverlay's shared render core) ----
+
+    /**
+     * 据点状态边沿事件横幅：复用 {@link BattlefieldHudOverlay#renderCapturePointBannerCore}
+     * 的动效/位置/配色基线，仅替换文本与配色来源（攻防阵营色而非"我方/敌方"相对色，
+     * 因为突破模式 ALPHA 恒为进攻方、BRAVO 恒为防守方，无需按 viewer 阵营做相对着色）。
+     *
+     * <p>不含小地图脉冲反馈：突破模式没有世界坐标小地图 overlay（{@code BattlefieldMinimapOverlay}
+     * 专属 Conquest），补建一套小地图属独立工程，超出本次移植范围。
+     */
+    private static void renderCapturePointBanner(GuiGraphics gg, Font font, BreakthroughHudDto hud) {
+        ClientCapturePointEvent.Active active = ClientCapturePointEvent.poll();
+        if (active == null) {
+            return;
+        }
+        String text = pointNameFor(hud, active.pointId()) + " · " + BattlefieldHudOverlay.capturePointVerb(active.kind());
+        int color = bannerFactionColor(active.factionCode());
+        BattlefieldHudOverlay.renderCapturePointBannerCore(gg, font, active, text, color);
+    }
+
+    private static String pointNameFor(BreakthroughHudDto hud, int pointId) {
+        for (BreakthroughPointDto p : hud.points()) {
+            if (p.pointId() == pointId) {
+                return p.name();
+            }
+        }
+        return "";
+    }
+
+    private static int bannerFactionColor(int factionCode) {
+        if (factionCode == 1) {
+            return ATTACKER_BLUE;
+        }
+        if (factionCode == 2) {
+            return DEFENDER_RED;
+        }
+        return NEUTRAL_GREY;
     }
 
     // ---- top bar: attacker tickets + sector info ----

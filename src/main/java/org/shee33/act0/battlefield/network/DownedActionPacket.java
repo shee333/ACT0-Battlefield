@@ -32,6 +32,7 @@ public final class DownedActionPacket {
             ServerPlayer player = context.getSender();
             if (player != null) {
                 Act0Battlefield.manager().handleDownedAction(player, msg.action);
+                Act0Battlefield.BREAKTHROUGH_MANAGER.handleDownedAction(player, msg.action);
             }
         });
         context.setPacketHandled(true);

@@ -402,6 +402,17 @@ public final class BattlefieldHudOverlay {
         if (active == null) {
             return;
         }
+        String text = pointNameFor(hud, active.pointId()) + " · " + capturePointVerb(active.kind());
+        int color = capturePointBannerColor(active.kind(), active.factionCode(), hud.myFaction());
+        renderCapturePointBannerCore(gg, font, active, text, color);
+    }
+
+    /**
+     * 据点状态边沿事件横幅的共享渲染核心（动效/位置/配色基线），供 {@code BreakthroughHudOverlay}
+     * 复用，避免为突破模式重新发明一套据点横幅渲染。
+     */
+    static void renderCapturePointBannerCore(GuiGraphics gg, Font font,
+                                              ClientCapturePointEvent.Active active, String text, int color) {
         long age = active.age();
         long holdMs = active.holdMs();
         float in = easeOut(Math.min(1.0f, age / (float) ClientCapturePointEvent.BANNER_IN_MS));
@@ -413,9 +424,6 @@ public final class BattlefieldHudOverlay {
         if (alpha <= 0.0f) {
             return;
         }
-
-        String text = pointNameFor(hud, active.pointId()) + " · " + capturePointVerb(active.kind());
-        int color = capturePointBannerColor(active.kind(), active.factionCode(), hud.myFaction());
         int aColor = withAlpha(color, alpha);
 
         int textW = font.width(text);
@@ -432,7 +440,7 @@ public final class BattlefieldHudOverlay {
         gg.drawString(font, text, centerX - textW / 2, y + 5, aColor, false);
     }
 
-    private static String capturePointVerb(CapturePointEventPacket.Kind kind) {
+    static String capturePointVerb(CapturePointEventPacket.Kind kind) {
         return switch (kind) {
             case STARTED -> "争夺中";
             case CAPTURED_NEW -> "已占领";
