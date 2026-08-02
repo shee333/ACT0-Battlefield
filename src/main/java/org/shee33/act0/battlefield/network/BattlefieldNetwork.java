@@ -92,6 +92,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, CapturePointEventPacket.class,
             CapturePointEventPacket::encode, CapturePointEventPacket::decode, CapturePointEventPacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, DeployPanPacket.class,
+            DeployPanPacket::encode, DeployPanPacket::decode, DeployPanPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -149,6 +152,18 @@ public final class BattlefieldNetwork {
     /** 向玩家推送部署传送落地反馈（屏幕淡出 + 底部据点提示）。 */
     public static void sendDeploySpawnFx(ServerPlayer player, String pointLabel) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DeploySpawnFxPacket(pointLabel));
+    }
+
+    /**
+     * 向玩家推送部署确认"过场相机"的起止位姿快照——只在过场开始时发一次，客户端按渲染帧率自行插值
+     * （见 {@code ClientDeployPan}），不逐 tick 重发。
+     */
+    public static void sendDeployPan(ServerPlayer player,
+                                      double startX, double startY, double startZ, float startYaw, float startPitch,
+                                      double endX, double endY, double endZ, float endYaw, float endPitch,
+                                      int durationTicks) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DeployPanPacket(
+                startX, startY, startZ, startYaw, startPitch, endX, endY, endZ, endYaw, endPitch, durationTicks));
     }
 
     /** 向被击倒玩家推送倒地开始反馈（四角 vignette + 顶部横幅）。 */

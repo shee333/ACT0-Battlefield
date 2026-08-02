@@ -451,8 +451,11 @@ public final class RedeployService {
     /**
      * Confirm-deploy entry point. Instead of hard-teleporting straight to the spawn, this
      * records the current (deploy-overview) pose as the pan start and the resolved spawn as the
-     * pan end; {@link #tickDeployPan()} then eases the player's camera between the two every
-     * tick so the overview-to-spawn cut is never instantaneous.
+     * pan end. {@link #tickDeployPan()} keeps nudging the player's real entity position toward
+     * the end pose once per tick (authoritative landing spot), while a one-shot
+     * {@code DeployPanPacket} hands the same start/end/duration to the client so it can ease the
+     * *rendered* camera every render frame instead of every 20Hz tick — see {@code ClientDeployPan}
+     * / {@code DeployPanCameraHandler}.
      */
     private void beginDeployPan(ServerPlayer p, Faction f, String kind, String targetId) {
         UUID id = p.getUUID();
@@ -466,14 +469,30 @@ public final class RedeployService {
         redeployReadyTick.remove(id);
         deploySelection.remove(id);
         deployTarget.remove(id);
+        double startX = p.getX();
+        double startY = p.getY();
+        double startZ = p.getZ();
+        float startYaw = p.getYRot();
+        float startPitch = p.getXRot();
         deployPanState.put(id, new PanState(f, kind, targetId, hasSpawn,
-                p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot(),
+                startX, startY, startZ, startYaw, startPitch,
                 endX, endY, endZ, endYaw, endPitch,
                 server.getTickCount()));
+        // 客户端插值频率提升：过场的视觉呈现完全交给客户端每渲染帧自算(见 ClientDeployPan /
+        // DeployPanCameraHandler),这里只在过场开始时把起止位姿+总时长发一次,不逐 tick 重发。
+        // tickDeployPan() 仍然逐 tick 推进真实实体位置,作为服务端权威落点,不受这次改造影响。
+        BattlefieldNetwork.sendDeployPan(p, startX, startY, startZ, startYaw, startPitch,
+                endX, endY, endZ, endYaw, endPitch, PAN_DURATION_TICKS);
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
     }
 
-    /** Advances every in-flight deploy pan by one tick; called every server tick, unthrottled. */
+    /**
+     * Advances every in-flight deploy pan's real entity position by one tick; called every
+     * server tick, unthrottled. This remains the authoritative landing-spot driver — the
+     * client-visible camera smoothness during the pan is handled independently and at a much
+     * higher rate by {@code ClientDeployPan} (see {@code beginDeployPan}), so this method no
+     * longer needs to run at a higher-than-tick rate to look smooth.
+     */
     private void tickDeployPan() {
         if (deployPanState.isEmpty()) {
             return;
