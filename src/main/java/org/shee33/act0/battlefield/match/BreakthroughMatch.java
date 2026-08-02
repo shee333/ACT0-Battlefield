@@ -940,6 +940,16 @@ public final class BreakthroughMatch {
         if (downedUntil.isEmpty()) {
             return;
         }
+        // Re-assert SWIMMING pose every tick. Our tick runs in Phase.END, after the vanilla
+        // Player.aiStep() has already reset the pose back to STANDING (player isn't truly
+        // swimming/sneaking). Without this, the pose we'd set in enterDowned() is reverted
+        // before it ever gets synced to the client.
+        for (UUID id : downedUntil.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null && p.getPose() != Pose.SWIMMING) {
+                p.setPose(Pose.SWIMMING);
+            }
+        }
         long now = server.getTickCount();
         List<UUID> expired = new ArrayList<>();
         for (Map.Entry<UUID, Long> e : downedUntil.entrySet()) {

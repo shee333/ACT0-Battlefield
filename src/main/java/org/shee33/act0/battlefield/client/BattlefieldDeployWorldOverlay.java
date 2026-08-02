@@ -274,8 +274,11 @@ public final class BattlefieldDeployWorldOverlay {
         float r = ((argb >>> 16) & 0xFF) / 255.0f;
         float g = ((argb >>> 8) & 0xFF) / 255.0f;
         float b = (argb & 0xFF) / 255.0f;
-        consumer.vertex(matrix, (float) x1, (float) y1, (float) z1).color(r, g, b, a).endVertex();
-        consumer.vertex(matrix, (float) x2, (float) y2, (float) z2).color(r, g, b, a).endVertex();
+        // RenderType.LINES uses POSITION_COLOR_NORMAL; normal must be supplied for both vertices.
+        // Pure debug overlay — normal direction has no visible effect on line rendering,
+        // but missing it crashes strict vertex format validators (e.g. Xenon/Sodium).
+        consumer.vertex(matrix, (float) x1, (float) y1, (float) z1).color(r, g, b, a).normal(0.0f, 1.0f, 0.0f).endVertex();
+        consumer.vertex(matrix, (float) x2, (float) y2, (float) z2).color(r, g, b, a).normal(0.0f, 1.0f, 0.0f).endVertex();
     }
 
     /** 在区域一角绘制"战斗区域"标签：显式录入绿色，推导黄色。 */
