@@ -10,7 +10,6 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
 import org.shee33.act0.battlefield.network.BreakthroughPointDto;
-import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import java.util.List;
 
@@ -23,8 +22,6 @@ import java.util.List;
  *       phase/result overlay in center.</li>
  *   <li>Point row — horizontal card list of capture points with name and progress bar
  *       (blue for attackers, red for defenders, grey for locked).</li>
- *   <li>Squad panel — bottom-left, mate list with HP bars, reusing
- *       {@link BattlefieldHudOverlay} pattern.</li>
  * </ol>
  *
  * <p>FlatTheme spec:
@@ -43,8 +40,6 @@ public final class BreakthroughHudOverlay {
     private static final int ATTACKER_BLUE = 0xFF5787C7;
     /** Defender faction red (#C75757). */
     private static final int DEFENDER_RED = 0xFFC75757;
-    /** Dim attacker blue (used for panel accent borders). */
-    private static final int ATTACKER_BLUE_DIM = 0x885787C7;
     /** Neutral / locked grey. */
     private static final int NEUTRAL_GREY = 0xFF8C9196;
     /** Panel background (#101418 at 70% alpha). */
@@ -55,10 +50,6 @@ public final class BreakthroughHudOverlay {
     private static final int WHITE = 0xFFEEEEEE;
     /** Dim text for secondary info. */
     private static final int TEXT_DIM = 0xFFA0A8B0;
-    /** Alive / health green. */
-    private static final int GREEN = 0xFF66CC66;
-    /** Dead / downed red. */
-    private static final int RED = 0xFFFF4444;
 
     // ---- layout constants (8px grid) ----
     private static final int TOP_BAR_Y = 7;
@@ -68,9 +59,6 @@ public final class BreakthroughHudOverlay {
     private static final int POINT_ITEM_H = 28;
     private static final int POINT_GAP = 8;
     private static final int POINT_BAR_H = 6;
-    private static final int SQUAD_PANEL_W = 122;
-    private static final int SQUAD_ROW_H = 16;
-    private static final int SQUAD_BOTTOM_MARGIN = 32;
 
     private BreakthroughHudOverlay() {
     }
@@ -97,7 +85,6 @@ public final class BreakthroughHudOverlay {
         renderTopBar(gg, font, hud);
         renderPoints(gg, font, hud);
         renderCapturePointBanner(gg, font, hud);
-        renderSquad(gg, font, hud.squad());
         BattlefieldHudOverlay.renderDeploySpawnFx(gg, font);
         BattlefieldHudOverlay.renderDownedSelfFeedback(gg, font);
     }
@@ -257,64 +244,6 @@ public final class BreakthroughHudOverlay {
             // progress bar
             drawFlatProgressBar(gg, x + 2, y + 15, POINT_ITEM_W - 4, POINT_BAR_H,
                     p.progress(), 100, fillColor);
-        }
-    }
-
-    // ---- squad panel ----
-
-    /**
-     * Renders the squad panel at bottom-left, reusing the pattern established
-     * by {@link BattlefieldHudOverlay#renderSquadPanel}.
-     */
-    private static void renderSquad(GuiGraphics gg, Font font, List<SquadMateHudDto> squad) {
-        if (squad.isEmpty()) {
-            return;
-        }
-        int rows = Math.min(5, squad.size());
-        int panelH = 18 + rows * SQUAD_ROW_H;
-        int x = 8;
-        int y = gg.guiHeight() - panelH - SQUAD_BOTTOM_MARGIN;
-
-        // panel background
-        gg.fill(x, y, x + SQUAD_PANEL_W, y + panelH, BG);
-        // top accent border
-        gg.fill(x, y, x + SQUAD_PANEL_W, y + 1, ATTACKER_BLUE_DIM);
-        // header
-        gg.drawString(font, "小队", x + 6, y + 5, ATTACKER_BLUE, false);
-
-        int cy = y + 18;
-        for (int i = 0; i < rows; i++) {
-            SquadMateHudDto mate = squad.get(i);
-            // status dot (3x3 filled rect)
-            int dotColor = mate.alive() ? GREEN : RED;
-            gg.fill(x + 6, cy + 5, x + 9, cy + 8, dotColor);
-
-            // build display name with decorations
-            String name = mate.self() ? "你" : mate.name();
-            if (mate.isSquadLeader()) {
-                name = "\u2605 " + name; // ★
-            }
-            if (mate.downed()) {
-                name = "§4[倒地] " + name;
-            }
-            // truncate if too long for the panel
-            if (font.width(name) > 72) {
-                while (name.length() > 1 && font.width(name + "…") > 72) {
-                    name = name.substring(0, name.length() - 1);
-                }
-                name = name + "…";
-            }
-            int nameColor = mate.self() ? WHITE : TEXT_DIM;
-            gg.drawString(font, name, x + 14, cy + 3, nameColor, false);
-
-            // HP bar (right-aligned in panel)
-            int bx = x + SQUAD_PANEL_W - 34;
-            int by = cy + 5;
-            gg.fill(bx, by, bx + 26, by + 4, BG_DARK);
-            int fill = Math.max(0, Math.min(26, Math.round(26 * (mate.healthPct() / 100.0f))));
-            gg.fill(bx, by, bx + fill, by + 4, mate.alive() ? GREEN : RED);
-
-            cy += SQUAD_ROW_H;
         }
     }
 

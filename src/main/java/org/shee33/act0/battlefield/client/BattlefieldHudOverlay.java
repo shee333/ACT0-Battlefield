@@ -18,7 +18,7 @@ import org.shee33.act0.battlefield.network.SquadMateHudDto;
 import java.util.List;
 
 /**
- * BF 风格大战场 HUD：顶部票数条 + 据点图标/进度条 + 左下小队队友信息。
+ * BF 风格大战场 HUD：顶部票数条 + 据点图标/进度条（左下小队面板已移除，避免与顶部票数信息重复冗余）。
  *
  * <p>不使用原版计分板侧边栏，因此不会出现右侧红色数字。颜色按战地风格动态渲染：友军=蓝色，敌军=红色。
  */
@@ -27,7 +27,6 @@ public final class BattlefieldHudOverlay {
 
     // ---- 扁平化配色 ----
     private static final int BLUE = 0xFF4A90D9;
-    private static final int BLUE_DIM = 0x884A90D9;
     private static final int RED = 0xFFD94A4A;
     private static final int RED_DIM = 0x88D94A4A;
     private static final int GREY = 0xFF8C9196;
@@ -42,7 +41,6 @@ public final class BattlefieldHudOverlay {
     private static final ResourceLocation POINT_ENEMY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/axis.png");
     private static final ResourceLocation POINT_NEUTRAL = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint.png");
     private static final ResourceLocation POINT_OVERRUN = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint_overrun.png");
-    private static final ResourceLocation SQUAD_DOT = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/compass/waypoint_pp_player.png");
     private static final ResourceLocation CAPTURE_BAR_BLUE = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_allies.png");
     private static final ResourceLocation CAPTURE_BAR_RED = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_axis.png");
 
@@ -73,7 +71,6 @@ public final class BattlefieldHudOverlay {
         renderTopHud(gg, font, hud);
         renderCaptureFocus(gg, font, hud);
         renderCapturePointBanner(gg, font, hud);
-        renderSquadPanel(gg, font, hud.squad());
         renderKillFeed(gg, font, hud.myFaction());
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
@@ -287,55 +284,6 @@ public final class BattlefieldHudOverlay {
                 gg.fill(x, y + icon + 3, x + fill, y + icon + 5, pressureColor);
             }
             x += icon + gap;
-        }
-    }
-
-    private static void renderSquadPanel(GuiGraphics gg, Font font, List<SquadMateHudDto> squad) {
-        if (squad.isEmpty()) {
-            return;
-        }
-        int rows = Math.min(5, squad.size());
-        int panelW = 122;
-        int rowH = 16;
-        int panelH = 18 + rows * rowH;
-        int x = 8;
-        int y = gg.guiHeight() - panelH - 32;
-
-        gg.fill(x, y, x + panelW, y + panelH, BG);
-        gg.fill(x, y, x + panelW, y + 1, BLUE_DIM);
-        gg.drawString(font, "小队", x + 6, y + 5, BLUE, false);
-
-        int cy = y + 18;
-        for (int i = 0; i < rows; i++) {
-            SquadMateHudDto mate = squad.get(i);
-            int dot = mate.alive() ? GREEN : RED;
-            if (mate.alive()) {
-                gg.blit(SQUAD_DOT, x + 4, cy + 3, 0, 0, 7, 7, 7, 7);
-            } else {
-                gg.fill(x + 6, cy + 5, x + 9, cy + 8, dot);
-            }
-            String name = mate.self() ? "你" : mate.name();
-            if (mate.isSquadLeader()) {
-                name = "★ " + name;
-            }
-            if (mate.downed()) {
-                name = "§4[倒地] " + name;
-            }
-            if (font.width(name) > 72) {
-                while (name.length() > 1 && font.width(name + "…") > 72) {
-                    name = name.substring(0, name.length() - 1);
-                }
-                name = name + "…";
-            }
-            gg.drawString(font, name, x + 14, cy + 3, mate.self() ? WHITE : TEXT_DIM, false);
-
-            // 血量条
-            int bx = x + panelW - 34;
-            int by = cy + 5;
-            gg.fill(bx, by, bx + 26, by + 4, 0x66000000);
-            int fill = Math.max(0, Math.min(26, Math.round(26 * (mate.healthPct() / 100.0f))));
-            gg.fill(bx, by, bx + fill, by + 4, mate.alive() ? GREEN : RED);
-            cy += rowH;
         }
     }
 
