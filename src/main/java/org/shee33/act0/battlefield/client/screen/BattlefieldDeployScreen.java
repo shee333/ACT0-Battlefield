@@ -145,16 +145,50 @@ public final class BattlefieldDeployScreen extends Screen {
     }
 
     /**
-     * 死亡等待重生期间默认自动跟随最近的存活小队成员做越肩观战，与部署点选择（base/point/squad）
-     * 完全解耦：不论玩家在部署点上选中的是据点、基地还是队友，观战相机都独立跟随存活队友；仅在
-     * 小队没有任何存活成员时才回退为原版自由飞行。
+     * 浏览阶段的观战相机：默认保持全局俯瞰（相机完全交还玩家自由观察），只有玩家在部署列表里
+     * 明确选中了某个具体部署目标才离开俯瞰——选中队友切到越肩跟随；选中据点/基地则保持俯瞰，
+     * 只做一次性转向把视线对准目标附近。未选中任何目标、或选中的目标已失效，一律回落俯瞰。
      */
     private void updateSquadSpectate(DeployStatusDto st) {
-        if (st == null) {
+        if (st == null || st.selectedKind().isBlank()) {
+            ClientSquadSpectate.clear();
+            ClientSquadSpectate.clearLocationFocus();
+            return;
+        }
+        if ("squad".equals(st.selectedKind()) && !st.selectedTarget().isBlank()) {
+            ClientSquadSpectate.clearLocationFocus();
+            for (DeploySquadMateDto mate : st.squadMates()) {
+                if (mate.id().equals(st.selectedTarget())) {
+                    ClientSquadSpectate.focus(mate.entityId());
+                    return;
+                }
+            }
+            // 选中的队友这一帧已经不在存活列表里（刚阵亡）：服务端很快会把选择重置为未选中，
+            // 这一帧先退回俯瞰，避免相机悬空跟着一个不存在的实体。
             ClientSquadSpectate.clear();
             return;
         }
-        ClientSquadSpectate.updateSpectate(st.squadMates(), st.spectateEntityId());
+        ClientSquadSpectate.clear();
+        focusSelectedLocation(st);
+    }
+
+    /** 选中据点/基地时的一次性转向提示（详见 {@link ClientSquadSpectate#focusLocation}）。 */
+    private void focusSelectedLocation(DeployStatusDto st) {
+        if ("point".equals(st.selectedKind())) {
+            for (DeployPointDto point : st.points()) {
+                if (point.id().equals(st.selectedTarget())) {
+                    ClientSquadSpectate.focusLocation("point:" + point.id(), point.x(), point.y(), point.z());
+                    return;
+                }
+            }
+            ClientSquadSpectate.clearLocationFocus();
+            return;
+        }
+        if ("base".equals(st.selectedKind())) {
+            ClientSquadSpectate.focusLocation("base", st.baseX(), st.baseY(), st.baseZ());
+            return;
+        }
+        ClientSquadSpectate.clearLocationFocus();
     }
 
     /** 渲染小队成员切换时的淡出淡入黑幕。 */
@@ -185,7 +219,18 @@ public final class BattlefieldDeployScreen extends Screen {
         if (BattlefieldKeyMappings.SPECTATE_NEXT.matches(keyCode, scanCode)) {
             DeployStatusDto current = ClientDeployStatus.status();
             if (current != null) {
-                ClientSquadSpectate.cycleNext(current.squadMates());
+                // 仅在可部署的队友之间循环，确保新聚焦的目标一定能被服务端接受为部署选择
+                // （避免选中的目标当场就被 deployStatus() 判定为无效而弹回俯瞰）。
+                List<DeploySquadMateDto> deployable = current.squadMates().stream()
+                        .filter(DeploySquadMateDto::deployable)
+                        .toList();
+                DeploySquadMateDto focused = ClientSquadSpectate.cycleNext(deployable, current.spectateEntityId());
+                if (focused != null) {
+                    // 若当前选中的是据点/基地（而非队友），V 键顺带把部署选择切成该队友，
+                    // 让相机与实际部署目标保持一致——这比"按了 V 却看着不算数的画面"更符合直觉。
+                    BattlefieldNetwork.CHANNEL.sendToServer(
+                            new DeployActionPacket(DeployActionPacket.DeployKind.SQUAD, focused.id()));
+                }
             }
             return true;
         }

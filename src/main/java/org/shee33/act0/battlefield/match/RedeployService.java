@@ -139,12 +139,15 @@ public final class RedeployService {
         // Resolve the nearest living squadmate BEFORE teleporting the player away to the
         // deploy overview, so the distance is measured from the player's actual death spot
         // (post-teleport the player floats above the whole map, making distance meaningless).
+        // This is only a *hint* for the client's V-key squad-cycle (see DeployStatusDto.spectateEntityId());
+        // it must not be treated as an implicit selection (see deploySelection below).
         spectateTarget.put(id, nearestSquadmateEntityId(player, id, faction));
         long readyTick = server.getTickCount() + redeployDelayTicks;
         redeployReadyTick.put(id, readyTick);
-        String kind = bestDeployKind(id, faction);
-        deploySelection.put(id, kind);
-        deployTarget.put(id, bestDeployTarget(id, faction, kind));
+        // 死亡瞬间默认不选中任何具体部署目标：观战相机据此保持全局俯瞰，直到玩家在部署列表里
+        // 主动点选某个据点/基地/队友（见 deployStatus() 里对空选择的保留、不再自动补齐）。
+        deploySelection.put(id, "");
+        deployTarget.put(id, "");
         redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
         player.setGameMode(GameType.SPECTATOR);
         player.setInvulnerable(true);
@@ -290,11 +293,13 @@ public final class RedeployService {
         boolean canBase = base != null;
         long readyTick = redeployReadyTick.getOrDefault(id, (long) server.getTickCount());
         int remain = (int) Math.max(0L, readyTick - server.getTickCount());
-        String selected = deploySelection.getOrDefault(id, bestDeployKind(id, faction));
-        String target = deployTarget.getOrDefault(id, bestDeployTarget(id, faction, selected));
-        if (!canDeployTo(id, faction, selected, target)) {
-            selected = bestDeployKind(id, faction);
-            target = bestDeployTarget(id, faction, selected);
+        String selected = deploySelection.getOrDefault(id, "");
+        String target = deployTarget.getOrDefault(id, "");
+        if (!selected.isBlank() && !canDeployTo(id, faction, selected, target)) {
+            // 已选中的目标失效了（队友阵亡/据点易主等）：退回"未选中"而不是静默换绑到另一个目标，
+            // 这样客户端的观战相机会据此回落到全局俯瞰，而不是无提示地跳到别的跟随对象。
+            selected = "";
+            target = "";
             deploySelection.put(id, selected);
             deployTarget.put(id, target);
         }
