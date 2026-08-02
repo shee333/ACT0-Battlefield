@@ -26,6 +26,7 @@ public final class ClientCapturePointEvent {
 
     private static final Deque<Entry> QUEUE = new ArrayDeque<>();
     private static final Map<Integer, Long> pointPulseAt = new LinkedHashMap<>();
+    private static final Map<Integer, Snapshot> lastEventByPoint = new LinkedHashMap<>();
 
     @Nullable
     private static Entry active;
@@ -36,11 +37,23 @@ public final class ClientCapturePointEvent {
 
     /** 服务端事件包到达时调用。 */
     public static void trigger(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
-        pointPulseAt.put(pointId, System.currentTimeMillis());
+        long now = System.currentTimeMillis();
+        pointPulseAt.put(pointId, now);
+        lastEventByPoint.put(pointId, new Snapshot(kind, factionCode, now));
         QUEUE.addLast(new Entry(pointId, kind, factionCode));
         while (QUEUE.size() > MAX_QUEUE) {
             QUEUE.removeFirst();
         }
+    }
+
+    /**
+     * 非消费式地查看某据点最近一次边沿事件快照;与 {@link #poll()} 的横幅队列互不干扰(那是 FIFO
+     * 消费式的),供 {@link CaptureFocusAnimator} 边沿检测"是否刚发生中立化/占领完成"，
+     * 用于驱动 FLIP 特写的两轮制切换与完成确认，不影响横幅本身的显示逻辑。
+     */
+    @Nullable
+    public static Snapshot latestEvent(int pointId) {
+        return lastEventByPoint.get(pointId);
     }
 
     /** 每帧调用一次：推进队首横幅生命周期，过期后自动弹出下一条。可能返回 {@code null}。 */
@@ -91,5 +104,9 @@ public final class ClientCapturePointEvent {
 
     /** 当前应渲染的横幅快照：{@code age} 为距开始的毫秒数，{@code holdMs} 为纯停留时长（不含 in/out）。 */
     public record Active(int pointId, CapturePointEventPacket.Kind kind, int factionCode, long age, long holdMs) {
+    }
+
+    /** {@link #latestEvent(int)} 的非消费式快照：{@code atMs} 用于边沿检测（与上次读到的时间戳比较）。 */
+    public record Snapshot(CapturePointEventPacket.Kind kind, int factionCode, long atMs) {
     }
 }

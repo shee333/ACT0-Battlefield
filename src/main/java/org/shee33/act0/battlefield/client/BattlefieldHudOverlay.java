@@ -3,7 +3,6 @@ package org.shee33.act0.battlefield.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -37,19 +36,10 @@ public final class BattlefieldHudOverlay {
     private static final int GREEN = 0xFF66CC66;
     private static final int DANGER = 0xFFFF8C00;
 
-    private static final ResourceLocation POINT_FRIENDLY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/allies.png");
-    private static final ResourceLocation POINT_ENEMY = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/axis.png");
-    private static final ResourceLocation POINT_NEUTRAL = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint.png");
-    private static final ResourceLocation POINT_OVERRUN = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/misc/capturepoint_overrun.png");
-    private static final ResourceLocation CAPTURE_BAR_BLUE = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_allies.png");
-    private static final ResourceLocation CAPTURE_BAR_RED = new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/capturepoint/progress_axis.png");
-
-    private static String focusName = "";
-    private static int focusState;
-    private static int focusProgress;
-    private static int focusFaction;
-    private static long focusStartMs;
-    private static long focusLastSeenMs;
+    /** 据点行小图标直径(px)——见 {@link #renderPointRow} 方法文档的取值依据。 */
+    private static final float SMALL_DIAMETER = 18f;
+    /** FLIP 特写六边形直径上限(px)——见 {@link #renderCaptureFocus} 方法文档的取值依据。 */
+    private static final float FOCUS_DIAMETER_MAX = 50f;
 
     private BattlefieldHudOverlay() {
     }
@@ -209,7 +199,7 @@ public final class BattlefieldHudOverlay {
         drawScaledText(gg, font, bravoText, center + 124, top + 1, bravoColor, 1.1f);
 
         // 中央据点图标（A/B/C...）
-        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28, activeFocusName(hud),
+        renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28,
                 hud.squadOrderPointId(), hud.squadOrderAttack());
         renderStreakCounter(gg, font, hud.streak());
     }
@@ -233,57 +223,76 @@ public final class BattlefieldHudOverlay {
         }
     }
 
+    /**
+     * 据点横排小图标 —— 按占点 HUD 动效规格文档 §2.1/§4 的六边形样式 + {@link DocPalette} 配色语义重绘。
+     *
+     * <p>直径 18px(circumradius 9px):落在任务要求的 14~20px 量级区间上段,在典型 GUI 缩放下仍能同时
+     * 容纳字母 + 上方距离文字保持可读,又不会因过大挤占多据点横排的空间(N 越大越吃紧,文档 §2.1 本身也
+     * 建议大数量时缩小图标)。与文档 demo 的 46px 保持同一比例基准({@link #FOCUS_DIAMETER} 采用同源
+     * 缩放比),供 {@code CaptureFocusAnimator} 的 FLIP 特写换算缩放起点。
+     *
+     * <p>本地玩家当前站在里面的那个据点(若有 FLIP 特写正在播放)在此处只留 18% 虚影,其余据点压暗到
+     * 45% —— 对应文档 §1.3.2;这是"每个客户端只关心自己的单一 focus"，不影响其他玩家各自据点的显示。
+     */
     private static void renderPointRow(GuiGraphics gg, Font font, List<ControlPointHudDto> points, int myFaction,
-                                       int center, int y, String activeFocus, int orderPointId, boolean orderAttack) {
+                                       int center, int y, int orderPointId, boolean orderAttack) {
         if (points.isEmpty()) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        int icon = 16;
-        int gap = 8;
-        int totalW = points.size() * icon + (points.size() - 1) * gap;
+        long now = Tween.now();
+        float hexR = SMALL_DIAMETER / 2f;
+        int diameter = Math.round(SMALL_DIAMETER);
+        int gap = 10;
+        int totalW = points.size() * diameter + (points.size() - 1) * gap;
         int x = center - totalW / 2;
-        for (ControlPointHudDto p : points) {
-            int pressureColor = factionColor(p.pressure(), myFaction);
-            boolean focused = activeFocus != null && !activeFocus.isBlank() && activeFocus.equals(p.name());
-            boolean ordered = p.pointId() == orderPointId;
-            int drawIcon = focused ? 22 : icon;
-            int dx = focused ? x - 3 : x;
-            int dy = focused ? y - 3 : y;
+        int ghostId = CaptureFocusAnimator.ghostPointId();
 
-            ResourceLocation ptTex;
-            if (p.owner() == 0) {
-                ptTex = p.pressure() == 0 ? POINT_NEUTRAL : POINT_OVERRUN;
-            } else {
-                ptTex = factionColor(p.owner(), myFaction) == BLUE ? POINT_FRIENDLY : POINT_ENEMY;
+        for (ControlPointHudDto p : points) {
+            float cx = x + hexR;
+            float cy = y + hexR;
+            boolean isGhost = ghostId == p.pointId();
+            boolean dimOthers = ghostId != -1 && !isGhost;
+            float alphaMul = isGhost ? 0.18f : (dimOthers ? 0.45f : 1.0f);
+            boolean ordered = p.pointId() == orderPointId;
+
+            float bounce = CaptureFocusAnimator.accountBounceScale(p.pointId(), now);
+            gg.pose().pushPose();
+            if (bounce != 1f) {
+                gg.pose().translate(cx, cy, 0);
+                gg.pose().scale(bounce, bounce, 1f);
+                gg.pose().translate(-cx, -cy, 0);
             }
-            gg.blit(ptTex, dx, dy, 0, 0, drawIcon, drawIcon, icon, icon);
-            String label = p.name();
-            if (label.length() > 1) {
-                label = label.substring(0, 1);
-            }
-            gg.drawString(font, label, x + icon / 2 - font.width(label) / 2, y + 5, WHITE, true);
+            int ownerColor = DocPalette.relative(p.owner(), myFaction);
+            HudShapes.fillHex(gg, cx, cy, hexR, DocPalette.PANEL_BG, alphaMul);
+            HudShapes.strokeHex(gg, cx, cy, hexR, 1.5f, ownerColor, alphaMul);
+            String label = p.name().isBlank() ? "?" : p.name().substring(0, 1);
+            gg.drawString(font, label, Math.round(cx - font.width(label) / 2f), Math.round(cy - 4f),
+                    withAlpha(ownerColor, alphaMul), false);
+            gg.pose().popPose();
+
             if (mc.player != null) {
                 double dist = Math.sqrt(mc.player.distanceToSqr(p.x(), p.y(), p.z()));
                 String distText = Math.round(dist) + "m";
-                gg.drawString(font, distText, x + icon / 2 - font.width(distText) / 2, y - 7, TEXT_DIM, false);
-            }
-            if (focused) {
-                gg.fill(x - 2, y + icon + 7, x + icon + 2, y + icon + 9, pressureColor);
+                gg.drawString(font, distText, Math.round(cx - font.width(distText) / 2f), y - 9,
+                        withAlpha(TEXT_DIM, alphaMul), false);
             }
 
             if (ordered) {
                 int orderColor = orderAttack ? GREEN : BLUE;
                 String marker = "◆";
-                gg.drawString(font, marker, x + icon / 2 - font.width(marker) / 2, y - 18, orderColor, false);
+                gg.drawString(font, marker, Math.round(cx - font.width(marker) / 2f), y - 20,
+                        withAlpha(orderColor, alphaMul), false);
             }
 
-            gg.fill(x, y + icon + 3, x + icon, y + icon + 5, 0x66000000);
-            int fill = Math.max(0, Math.min(icon, Math.round(icon * (p.progress() / 100.0f))));
-            if (fill > 0 && p.pressure() != 0) {
-                gg.fill(x, y + icon + 3, x + fill, y + icon + 5, pressureColor);
-            }
-            x += icon + gap;
+            int pressureColor = DocPalette.relative(p.pressure(), myFaction);
+            int fillW = p.pressure() != 0
+                    ? Math.max(0, Math.min(diameter, Math.round(diameter * (p.progress() / 100.0f))))
+                    : 0;
+            HudShapes.flatBar(gg, x, Math.round(cy + hexR + 3), diameter, 2, fillW, BG_DARK, pressureColor, alphaMul);
+
+            CaptureFocusAnimator.reportSlot(p.pointId(), cx, cy, diameter);
+            x += diameter + gap;
         }
     }
 
@@ -310,46 +319,66 @@ public final class BattlefieldHudOverlay {
         }
     }
 
+    /**
+     * 据点占领特写(FLIP 下拉放大)—— 对应规格文档 §1.3.2/§2.2/§2.3,渲染逻辑全部交给
+     * {@link CaptureFocusAnimator} 的每帧状态机,这里只负责按快照把六边形轮廓 + 进度环 + 字母/文字画出来。
+     *
+     * <p>落点固定在票数条/据点行下方、屏幕上半部(y ≈ 30% 屏高),刻意不采用文档 demo 的屏幕正中(52%)——
+     * 那是没有准星的网页演示专用坐标,真实对局里绝对不能让特写盖住准星与中央战斗视野。特写直径按
+     * {@link #FOCUS_DIAMETER_MAX} 与屏高的 23% 取更小值,确保在任何 GUI 缩放下都不超过屏幕高度的
+     * 22~26%(任务给定的上限),小图标/特写的直径比即是 FLIP 缩放起点 S0。
+     */
     private static void renderCaptureFocus(GuiGraphics gg, Font font, BattleHudDto hud) {
-        updateFocusState(hud);
-        long now = System.currentTimeMillis();
-        boolean hasLiveFocus = hud.focusState() != 0 && !hud.focusName().isBlank();
-        long age = now - focusStartMs;
-        long sinceSeen = now - focusLastSeenMs;
-        if (!hasLiveFocus && sinceSeen > 280L) {
+        float targetX = gg.guiWidth() / 2f;
+        float targetY = Math.min(gg.guiHeight() * 0.30f, 118f);
+        float focusDiameter = Math.min(FOCUS_DIAMETER_MAX, gg.guiHeight() * 0.23f);
+        CaptureFocusAnimator.configureGeometry(targetX, targetY, SMALL_DIAMETER, focusDiameter);
+
+        CaptureFocusAnimator.Snapshot snap = CaptureFocusAnimator.update(hud);
+        if (snap == null) {
             return;
         }
 
-        float in = easeOut(Math.min(1.0f, age / 220.0f));
-        float out = hasLiveFocus ? 1.0f : (1.0f - Math.min(1.0f, sinceSeen / 280.0f));
-        float alpha = Math.max(0.0f, Math.min(1.0f, in * out));
-        int center = gg.guiWidth() / 2;
-        int topRowY = 35;
-        int focusY = 60;
-        int y = Math.round(topRowY + (focusY - topRowY) * in);
-        int panelW = 166;
-        int panelH = 48;
-        int x = center - panelW / 2;
-        int factionColor = focusState == 3 ? GREY : factionColor(focusFaction, hud.myFaction());
-        int aColor = withAlpha(factionColor, alpha);
+        float cx = snap.x();
+        float cy = snap.y();
+        float r = focusDiameter / 2f * snap.scale();
 
-        gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, alpha * 0.72f));
-        gg.fill(x, y, x + panelW, y + 2, aColor);
+        HudShapes.fillHex(gg, cx, cy, r, DocPalette.PANEL_BG, 1f);
+        HudShapes.strokeHex(gg, cx, cy, r, 1.5f, withAlpha(0xFFFFFFFF, 0.3f), 1f);
 
-        String label = focusName.length() > 1 ? focusName.substring(0, 1) : focusName;
+        float ringR = r * 0.78f;
+        float ringThickness = Math.max(2f, r * 0.09f);
+        HudShapes.ringTrack(gg, cx, cy, ringR, ringThickness, DocPalette.RING_TRACK, 1f);
+        HudShapes.ringArc(gg, cx, cy, ringR, ringThickness, snap.percent() / 100f, snap.ringColor(), 1f);
+
+        String letter = snap.letter();
+        float letterScale = Math.max(0.6f, r / 30f);
         gg.pose().pushPose();
-        gg.pose().translate(center - 5, y + 6 - 4.0f * in, 300);
-        gg.drawString(font, label, 0, 0, aColor, true);
+        gg.pose().translate(cx - font.width(letter) * letterScale / 2f, cy - 4f * letterScale, 300);
+        gg.pose().scale(letterScale, letterScale, 1f);
+        gg.drawString(font, letter, 0, 0, snap.letterColor(), true);
         gg.pose().popPose();
 
-        String title = focusTitle(focusState) + " " + focusName;
-        gg.drawString(font, title, center - font.width(title) / 2, y + 24, aColor, false);
-
-        int barX = center - 59;
-        int barY = y + 37;
-        ResourceLocation capTex = focusState == 3 ? null :
-                (factionColor(focusFaction, hud.myFaction()) == BLUE ? CAPTURE_BAR_BLUE : CAPTURE_BAR_RED);
-        drawCaptureProgressBar(gg, barX, barY, focusProgress, capTex);
+        float subAlpha = snap.subordinateAlpha();
+        if (subAlpha <= 0.01f) {
+            return;
+        }
+        float textY = cy + r + 4f;
+        if (!snap.roundText().isEmpty()) {
+            String rt = snap.roundText();
+            gg.pose().pushPose();
+            gg.pose().translate(cx, textY, 0);
+            gg.pose().scale(snap.roundPulseScale(), snap.roundPulseScale(), 1f);
+            gg.drawString(font, rt, -font.width(rt) / 2f, 0, withAlpha(TEXT_DIM, subAlpha), false);
+            gg.pose().popPose();
+            textY += 10f;
+        }
+        String pctText = snap.percent() + "%";
+        gg.drawString(font, pctText, Math.round(cx - font.width(pctText) / 2f), Math.round(textY), withAlpha(WHITE, subAlpha), false);
+        textY += 10f;
+        String statusText = snap.statusText();
+        gg.drawString(font, statusText, Math.round(cx - font.width(statusText) / 2f), Math.round(textY),
+                withAlpha(snap.textColor(), subAlpha), false);
     }
 
     /**
@@ -429,42 +458,8 @@ public final class BattlefieldHudOverlay {
         return "";
     }
 
-    private static void updateFocusState(BattleHudDto hud) {
-        long now = System.currentTimeMillis();
-        if (hud.focusState() == 0 || hud.focusName().isBlank()) {
-            return;
-        }
-        if (!hud.focusName().equals(focusName) || focusState == 0) {
-            focusStartMs = now;
-        }
-        focusName = hud.focusName();
-        focusState = hud.focusState();
-        focusProgress = hud.focusProgress();
-        focusFaction = hud.focusFaction();
-        focusLastSeenMs = now;
-    }
-
-    private static String activeFocusName(BattleHudDto hud) {
-        if (hud.focusState() != 0 && !hud.focusName().isBlank()) {
-            return hud.focusName();
-        }
-        return System.currentTimeMillis() - focusLastSeenMs <= 280L ? focusName : "";
-    }
-
     private static float easeOut(float t) {
         return 1.0f - (float) Math.pow(1.0f - t, 3.0f);
-    }
-
-    /** 扁平化据点占领进度条。 */
-    private static void drawCaptureProgressBar(GuiGraphics gg, int x, int y, int progress, ResourceLocation fillTex) {
-        int w = 118;
-        int h = 6;
-        gg.fill(x, y, x + w, y + h, BG_DARK);
-        int fill = Math.max(0, Math.min(w - 2, Math.round((w - 2) * (progress / 100.0f))));
-        if (fill > 0) {
-            int color = fillTex == CAPTURE_BAR_BLUE ? BLUE : (fillTex == CAPTURE_BAR_RED ? RED : GREY);
-            gg.fill(x + 1, y + 1, x + 1 + fill, y + h - 1, color);
-        }
     }
 
     private static int factionColor(int faction, int mine) {
@@ -475,15 +470,6 @@ public final class BattlefieldHudOverlay {
             return faction == mine ? BLUE : RED;
         }
         return faction == 1 ? BLUE : RED;
-    }
-
-    private static String focusTitle(int state) {
-        return switch (state) {
-            case 1 -> "正在占领";
-            case 2 -> "正在防守";
-            case 3 -> "争夺中";
-            default -> "";
-        };
     }
 
     /** 救援进度条：正在救援倒地队友时显示。 */
