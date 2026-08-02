@@ -92,6 +92,10 @@ public final class BreakthroughMatch {
     private final List<ControlPointDef> defs;
     private final List<CapturePoint> points;
     private final List<Sector> sectors;
+    /** 据点 ID → 所属区域索引，供 {@link #buildHudFor} 填充 {@link BreakthroughPointDto#sectorIndex()}
+     * 与 {@link #focusFor} 判定"本地玩家站立的目标点是否属于当前激活区域"，一次性从 {@link #sectors}
+     * 构建（不修改 {@code Sector} 本身，仅在此处做只读反查）。 */
+    private final Map<Integer, Integer> pointSectorIndex = new LinkedHashMap<>();
     private final Map<UUID, Faction> factionOf = new LinkedHashMap<>();
     private final SquadManager squadManager;
     private final KillTracker killTracker;
@@ -155,6 +159,11 @@ public final class BreakthroughMatch {
             this.points.add(new CapturePoint(def.pointId(), def.name()));
         }
         this.sectors = data.sectors();
+        for (Sector sector : this.sectors) {
+            for (int pid : sector.pointIds()) {
+                pointSectorIndex.put(pid, sector.id());
+            }
+        }
         this.factionOf.putAll(roster);
         this.killTracker = new KillTracker(this.factionOf, this.server, this.points, this.defs);
         for (UUID id : roster.keySet()) {
@@ -420,6 +429,11 @@ public final class BreakthroughMatch {
             broadcast("§a§l" + Faction.ALPHA.coloredName() + " §a占领了区域 §e" + current.displayName()
                     + "§a！+" + rules.ticketsPerSector() + " 票");
             playToAll(SoundEvents.PLAYER_LEVELUP, 1.0f);
+            // 客户端靠"currentSectorId 边沿变化"推断区域突破序列（占点 HUD 动效规格文档 §3.3/§3.4）；
+            // 若这是最后一个区域，下面 end() 会立刻清空 HUD（show=false），使这个终值永远送不到客户端。
+            // 这里在清空前强制补发一次快照（复用既有 broadcastHud，不新增网络包），
+            // 保证客户端一定能观察到 currentSectorId 推进到终值，从而正常触发终局演出。
+            broadcastHud();
             if (currentSectorIndex >= sectors.size()) {
                 end(Faction.ALPHA);
             }
@@ -1296,16 +1310,70 @@ public final class BreakthroughMatch {
             int pressure = cp.level() > 0.02 ? 1 : (cp.level() < -0.02 ? 2 : 0);
             int progress = Math.min(100, Math.max(0,
                     (int) Math.round(Math.abs(cp.level()) * 100.0)));
+            int sectorIndex = pointSectorIndex.getOrDefault(def.pointId(), -1);
             pointDtos.add(new BreakthroughPointDto(
-                    def.pointId(), cp.displayName(), owner, pressure, progress, locked));
+                    def.pointId(), cp.displayName(), owner, pressure, progress, locked, sectorIndex,
+                    def.pos().getX() + 0.5, def.pos().getY() + 0.5, def.pos().getZ() + 0.5));
         }
 
         List<SquadMateHudDto> squad = squadHudFor(viewer);
+        FocusHud focus = focusFor(viewer);
 
         return new BreakthroughHudDto(true,
                 (int) attackerTickets, rules.startingTickets(),
                 currentSectorIndex, sectors.size(),
-                pointDtos, squad, phase, winnerCode);
+                pointDtos, squad, phase, winnerCode,
+                focus.name(), focus.state(), focus.progress());
+    }
+
+    /**
+     * 本地玩家 FLIP 特写驱动字段（占点 HUD 动效规格文档 §1.3.2/§3.1）——只看当前激活区域内的目标点，
+     * 单圈制、颜色语义绝对（不看 viewerFaction）：{@code state} 0=未站在任何目标点内，
+     * 1=正在占领，2=已被 ALPHA 占满，3=争夺中("遭到反击")；{@code progress} 始终是朝 ALPHA 占领方向
+     * 的绝对进度（复用 {@link CapturePoint#progressFor(Faction)}，与 ConquestMatch#focusFor 的
+     * viewer 相对进度不同，突破模式没有"我方/敌方"相对概念——只有"是否已被进攻方拿下"）。
+     */
+    private FocusHud focusFor(ServerPlayer viewer) {
+        if (currentSectorIndex >= sectors.size()) {
+            return FocusHud.NONE;
+        }
+        Sector activeSector = sectors.get(currentSectorIndex);
+        for (int i = 0; i < defs.size(); i++) {
+            ControlPointDef def = defs.get(i);
+            if (!activeSector.containsPoint(def.pointId())
+                    || !def.zone().contains(viewer.getX(), viewer.getY(), viewer.getZ())) {
+                continue;
+            }
+            CapturePoint point = points.get(i);
+            int alpha = 0;
+            int bravo = 0;
+            for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+                ServerPlayer p = player(e.getKey());
+                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
+                    continue;
+                }
+                if (def.zone().contains(p.getX(), p.getY(), p.getZ())) {
+                    if (e.getValue() == Faction.ALPHA) {
+                        alpha++;
+                    } else {
+                        bravo++;
+                    }
+                }
+            }
+            int progress = (int) Math.round(point.progressFor(Faction.ALPHA) * 100.0);
+            if (alpha > 0 && bravo > 0) {
+                return new FocusHud(point.displayName(), 3, progress);
+            }
+            if (point.owner() == Faction.ALPHA) {
+                return new FocusHud(point.displayName(), 2, progress);
+            }
+            return new FocusHud(point.displayName(), 1, progress);
+        }
+        return FocusHud.NONE;
+    }
+
+    private record FocusHud(String name, int state, int progress) {
+        private static final FocusHud NONE = new FocusHud("", 0, 0);
     }
 
     private List<SquadMateHudDto> squadHudFor(ServerPlayer viewer) {
