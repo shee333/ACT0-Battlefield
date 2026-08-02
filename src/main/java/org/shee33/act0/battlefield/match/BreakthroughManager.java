@@ -8,9 +8,11 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -423,6 +425,23 @@ public final class BreakthroughManager {
             return;
         }
         active.onHurt(victim.getUUID(), attacker);
+    }
+
+    @SubscribeEvent
+    public void onLivingJump(LivingEvent.LivingJumpEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        BreakthroughMatch active = activeContaining(player.getUUID());
+        if (active == null || !active.isDowned(player.getUUID())) {
+            return;
+        }
+        // LivingJumpEvent 未标注 @Cancelable（event.setCanceled() 会抛
+        // UnsupportedOperationException），且它在 jumpFromGround() 里 setDeltaMovement()
+        // 已经施加完起跳速度之后才触发。这里把竖直速度清零，效果等同于阻止倒地玩家起跳，
+        // 又不会因为对一个不可取消事件调用 setCanceled() 而崩溃。
+        Vec3 v = player.getDeltaMovement();
+        player.setDeltaMovement(v.x, 0.0D, v.z);
     }
 
     private UUID resolveKiller(Entity attacker, Entity direct) {

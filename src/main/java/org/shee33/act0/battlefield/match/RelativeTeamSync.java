@@ -59,7 +59,7 @@ public final class RelativeTeamSync {
         friendly.setNameTagVisibility(Team.Visibility.ALWAYS);
         PlayerTeam enemy = board.addPlayerTeam(eName);
         enemy.setColor(ChatFormatting.RED);
-        enemy.setNameTagVisibility(Team.Visibility.ALWAYS);
+        enemy.setNameTagVisibility(Team.Visibility.NEVER);
 
         if (firstTime) {
             viewer.connection.send(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(friendly, true));

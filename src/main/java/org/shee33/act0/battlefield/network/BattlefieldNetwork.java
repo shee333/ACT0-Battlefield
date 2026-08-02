@@ -161,6 +161,11 @@ public final class BattlefieldNetwork {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DownedFeedbackPacket((byte) 1, reviverName));
     }
 
+    /** 倒地超时/主动放弃转入重生时，提前清除客户端"倒地"横幅与 vignette（非被救起）。 */
+    public static void sendDownedClearedFeedback(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DownedFeedbackPacket((byte) 2, ""));
+    }
+
     /** 向玩家推送据点状态边沿事件（HUD 顶部横幅 + 小地图据点图标一次性提亮反馈）。 */
     public static void sendCapturePointEvent(ServerPlayer player, int pointId,
                                               CapturePointEventPacket.Kind kind, int factionCode) {

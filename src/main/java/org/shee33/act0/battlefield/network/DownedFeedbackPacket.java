@@ -10,7 +10,9 @@ import java.util.function.Supplier;
 
 /**
  * S→C：倒地/救援视觉反馈。{@code kind=0} 表示倒地开始（{@code payload} 忽略）；
- * {@code kind=1} 表示已被救起（{@code payload} 为救援者名字）。
+ * {@code kind=1} 表示已被救起（{@code payload} 为救援者名字）；{@code kind=2} 表示倒地状态
+ * 已提前结束但非被救起（倒地超时/主动放弃触发重生时发出），仅清除横幅/vignette，不显示
+ * "已被救起"提示。
  */
 public final class DownedFeedbackPacket {
     private final byte kind;
@@ -36,6 +38,8 @@ public final class DownedFeedbackPacket {
                 () -> () -> {
                     if (msg.kind == 1) {
                         ClientDownedFeedback.triggerRevived(msg.payload);
+                    } else if (msg.kind == 2) {
+                        ClientDownedFeedback.clear();
                     } else {
                         ClientDownedFeedback.triggerDowned();
                     }

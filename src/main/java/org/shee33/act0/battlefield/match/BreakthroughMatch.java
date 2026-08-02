@@ -278,6 +278,13 @@ public final class BreakthroughMatch {
         if (++captureAccum >= captureInterval) {
             captureAccum = 0;
             resolveCapture();
+            // resolveCapture() 可能通过 checkSectorAdvance() 调用 end()（内部已做全部清理，包括
+            // clearAllRelativeTeams()/clearNameTagTeams()）。一旦 ended=true，必须立即停止本次
+            // tick 剩余逻辑，否则 syncEnemyIdentification() 会重新调用 RelativeTeamSync.sync()，
+            // 把刚清理掉的虚拟队伍原样重建，而对局已结束、下一 tick 就会被摘除，永远没有机会再清理。
+            if (ended) {
+                return;
+            }
         }
         processRedeployTick();
         squadManager.tick(server.getTickCount());
@@ -1291,6 +1298,10 @@ public final class BreakthroughMatch {
         // 转入重生：丢弃倒地时缓存的物品栏（重生会重新分配装备），并解除开火锁双重保险。
         downedInventoryCache.remove(player.getUUID());
         BattlefieldNetwork.sendFireLock(player, false);
+        // 倒地超时/放弃救援会先经过这里再进入重生选点：客户端此时应立即清除"倒地"横幅与
+        // vignette，不必等到真正部署落地（DeploySpawnFxPacket）才清除，否则玩家在观战选点
+        // 阶段会一直看到已经不再适用的倒地提示。
+        BattlefieldNetwork.sendDownedClearedFeedback(player);
         redeployService.beginRedeploy(player, faction);
     }
 
