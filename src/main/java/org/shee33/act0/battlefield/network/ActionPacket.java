@@ -31,7 +31,10 @@ public final class ActionPacket {
     }
 
     public static ActionPacket decode(FriendlyByteBuf buf) {
-        return new ActionPacket(buf.readEnum(Action.class));
+        int ordinal = buf.readVarInt();
+        Action[] actions = Action.values();
+        Action action = (ordinal >= 0 && ordinal < actions.length) ? actions[ordinal] : Action.REFRESH;
+        return new ActionPacket(action);
     }
 
     public static void handle(ActionPacket msg, Supplier<NetworkEvent.Context> ctx) {

@@ -105,6 +105,8 @@ public final class ConquestMatch {
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastTabHash = new LinkedHashMap<>();
+    private final Map<UUID, Long> callHelpCooldownUntil = new LinkedHashMap<>();
+    private static final int CALL_HELP_COOLDOWN_TICKS = 60;
     private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
     private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
 
@@ -220,6 +222,7 @@ public final class ConquestMatch {
         cancelRevive(id);
         lastHudHash.remove(id);
         lastTabHash.remove(id);
+        callHelpCooldownUntil.remove(id);
         squadManager.onPlayerLeave(id);
         squadManager.buildSquads();
         setupNameTagTeams();
@@ -650,6 +653,7 @@ public final class ConquestMatch {
         killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
+        callHelpCooldownUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -818,6 +822,7 @@ public final class ConquestMatch {
         killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
+        callHelpCooldownUntil.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         clearNameTagTeams();
@@ -1560,6 +1565,12 @@ public final class ConquestMatch {
             player.sendSystemMessage(Component.literal("§7你放弃了救援。"));
             beginRedeploy(player, f);
         } else if (action == org.shee33.act0.battlefield.network.DownedActionPacket.Action.CALL_HELP) {
+            long now = server.getTickCount();
+            Long cooldownUntil = callHelpCooldownUntil.get(id);
+            if (cooldownUntil != null && now < cooldownUntil) {
+                return;
+            }
+            callHelpCooldownUntil.put(id, now + CALL_HELP_COOLDOWN_TICKS);
             player.displayClientMessage(Component.literal("§e已呼叫救援"), true);
             player.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.6f, 1.5f);
             for (UUID mateId : factionOf.keySet()) {

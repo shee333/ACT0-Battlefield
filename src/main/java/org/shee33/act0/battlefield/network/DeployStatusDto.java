@@ -20,6 +20,8 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
                               boolean areaExplicit,
                               int spectateEntityId) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(active);
         buf.writeBoolean(canSquad);
@@ -67,12 +69,12 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         double squadX = buf.readDouble();
         double squadY = buf.readDouble();
         double squadZ = buf.readDouble();
-        int n = buf.readVarInt();
+        int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<DeployPointDto> points = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             points.add(DeployPointDto.decode(buf));
         }
-        int sn = buf.readVarInt();
+        int sn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<DeploySquadMateDto> squadMates = new ArrayList<>(sn);
         for (int i = 0; i < sn; i++) {
             squadMates.add(DeploySquadMateDto.decode(buf));

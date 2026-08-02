@@ -9,6 +9,8 @@ import java.util.List;
 public record BattleTabDto(int myFaction, int alphaTickets, int bravoTickets,
                            List<TabEntryDto> alpha, List<TabEntryDto> bravo) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeVarInt(myFaction);
         buf.writeVarInt(alphaTickets);
@@ -27,12 +29,12 @@ public record BattleTabDto(int myFaction, int alphaTickets, int bravoTickets,
         int myFaction = buf.readVarInt();
         int alphaTickets = buf.readVarInt();
         int bravoTickets = buf.readVarInt();
-        int an = buf.readVarInt();
+        int an = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<TabEntryDto> alpha = new ArrayList<>(an);
         for (int i = 0; i < an; i++) {
             alpha.add(TabEntryDto.decode(buf));
         }
-        int bn = buf.readVarInt();
+        int bn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<TabEntryDto> bravo = new ArrayList<>(bn);
         for (int i = 0; i < bn; i++) {
             bravo.add(TabEntryDto.decode(buf));

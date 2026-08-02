@@ -9,6 +9,8 @@ import java.util.List;
  */
 public record DeployLoadoutDto(String className, List<String> slotNames, List<String> itemNames) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeUtf(className);
         buf.writeInt(slotNames.size());
@@ -20,7 +22,7 @@ public record DeployLoadoutDto(String className, List<String> slotNames, List<St
 
     public static DeployLoadoutDto decode(FriendlyByteBuf buf) {
         String cn = buf.readUtf();
-        int size = buf.readInt();
+        int size = Math.max(0, Math.min(buf.readInt(), MAX_LIST_ENTRIES));
         List<String> slots = new ArrayList<>(size);
         List<String> items = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {

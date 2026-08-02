@@ -23,7 +23,10 @@ public final class DownedActionPacket {
     }
 
     public static DownedActionPacket decode(FriendlyByteBuf buf) {
-        return new DownedActionPacket(buf.readEnum(Action.class));
+        int ordinal = buf.readVarInt();
+        Action[] actions = Action.values();
+        Action action = (ordinal >= 0 && ordinal < actions.length) ? actions[ordinal] : Action.GIVE_UP;
+        return new DownedActionPacket(action);
     }
 
     public static void handle(DownedActionPacket msg, Supplier<NetworkEvent.Context> ctx) {

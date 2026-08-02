@@ -27,6 +27,8 @@ public record BreakthroughHudDto(
         int phase,
         int winner) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeBoolean(show);
         buf.writeVarInt(attackerTickets);
@@ -63,7 +65,7 @@ public record BreakthroughHudDto(
     }
 
     private static <T> List<T> readList(FriendlyByteBuf buf, Function<FriendlyByteBuf, T> reader) {
-        int size = buf.readVarInt();
+        int size = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<T> list = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             list.add(reader.apply(buf));

@@ -2,12 +2,14 @@ package org.shee33.act0.battlefield.network;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 import org.shee33.act0.battlefield.Act0Battlefield;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 大战场网络通道：加入界面、BF 风格 HUD（顶部票数条/据点进度/小队信息）与旧简易 HUD 清除兼容包。
@@ -16,7 +18,7 @@ import java.util.List;
  */
 public final class BattlefieldNetwork {
 
-    private static final String PROTOCOL = "8";
+    private static final String PROTOCOL = "9";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -28,45 +30,68 @@ public final class BattlefieldNetwork {
     private BattlefieldNetwork() {
     }
 
-    /** 在模组构造期调用，注册数据包。 */
+    /** 在模组构造期调用，注册数据包。
+     *
+     * <p>每个包都显式声明 {@link NetworkDirection}：S2C 包（服务端下发、客户端 DistExecutor 处理）
+     * 用 {@code PLAY_TO_CLIENT}；C2S 包（客户端 {@code sendToServer} 发出、服务端处理）用
+     * {@code PLAY_TO_SERVER}。缺失方向声明会让 Forge 的方向校验永远通过，等同于关闭校验。
+     */
     public static void register() {
         int id = 0;
         CHANNEL.registerMessage(id++, SyncHudPacket.class,
-                SyncHudPacket::encode, SyncHudPacket::decode, SyncHudPacket::handle);
+                SyncHudPacket::encode, SyncHudPacket::decode, SyncHudPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncStatusPacket.class,
-                SyncStatusPacket::encode, SyncStatusPacket::decode, SyncStatusPacket::handle);
+                SyncStatusPacket::encode, SyncStatusPacket::decode, SyncStatusPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, ActionPacket.class,
-                ActionPacket::encode, ActionPacket::decode, ActionPacket::handle);
+                ActionPacket::encode, ActionPacket::decode, ActionPacket::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, SyncBattleHudPacket.class,
-            SyncBattleHudPacket::encode, SyncBattleHudPacket::decode, SyncBattleHudPacket::handle);
+            SyncBattleHudPacket::encode, SyncBattleHudPacket::decode, SyncBattleHudPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncDeployPacket.class,
-            SyncDeployPacket::encode, SyncDeployPacket::decode, SyncDeployPacket::handle);
+            SyncDeployPacket::encode, SyncDeployPacket::decode, SyncDeployPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, DeployActionPacket.class,
-            DeployActionPacket::encode, DeployActionPacket::decode, DeployActionPacket::handle);
+            DeployActionPacket::encode, DeployActionPacket::decode, DeployActionPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, KillFeedPacket.class,
-            KillFeedPacket::encode, KillFeedPacket::decode, KillFeedPacket::handle);
+            KillFeedPacket::encode, KillFeedPacket::decode, KillFeedPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncBattleTabPacket.class,
-            SyncBattleTabPacket::encode, SyncBattleTabPacket::decode, SyncBattleTabPacket::handle);
+            SyncBattleTabPacket::encode, SyncBattleTabPacket::decode, SyncBattleTabPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncBattleResultPacket.class,
-            SyncBattleResultPacket::encode, SyncBattleResultPacket::decode, SyncBattleResultPacket::handle);
+            SyncBattleResultPacket::encode, SyncBattleResultPacket::decode, SyncBattleResultPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncFireLockPacket.class,
-            SyncFireLockPacket::encode, SyncFireLockPacket::decode, SyncFireLockPacket::handle);
+            SyncFireLockPacket::encode, SyncFireLockPacket::decode, SyncFireLockPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, HitFeedbackPacket.class,
-            HitFeedbackPacket::encode, HitFeedbackPacket::decode, HitFeedbackPacket::handle);
+            HitFeedbackPacket::encode, HitFeedbackPacket::decode, HitFeedbackPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SpotEnemyPacket.class,
-            SpotEnemyPacket::encode, SpotEnemyPacket::decode, SpotEnemyPacket::handle);
+            SpotEnemyPacket::encode, SpotEnemyPacket::decode, SpotEnemyPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, DownedActionPacket.class,
-            DownedActionPacket::encode, DownedActionPacket::decode, DownedActionPacket::handle);
+            DownedActionPacket::encode, DownedActionPacket::decode, DownedActionPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, SyncBreakthroughHudPacket.class,
-            SyncBreakthroughHudPacket::encode, SyncBreakthroughHudPacket::decode, SyncBreakthroughHudPacket::handle);
+            SyncBreakthroughHudPacket::encode, SyncBreakthroughHudPacket::decode, SyncBreakthroughHudPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, SyncDeployLoadoutPacket.class,
-            SyncDeployLoadoutPacket::encode, SyncDeployLoadoutPacket::decode, SyncDeployLoadoutPacket::handle);
+            SyncDeployLoadoutPacket::encode, SyncDeployLoadoutPacket::decode, SyncDeployLoadoutPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, DeploySpawnFxPacket.class,
-            DeploySpawnFxPacket::encode, DeploySpawnFxPacket::decode, DeploySpawnFxPacket::handle);
+            DeploySpawnFxPacket::encode, DeploySpawnFxPacket::decode, DeploySpawnFxPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, DownedFeedbackPacket.class,
-            DownedFeedbackPacket::encode, DownedFeedbackPacket::decode, DownedFeedbackPacket::handle);
+            DownedFeedbackPacket::encode, DownedFeedbackPacket::decode, DownedFeedbackPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, CapturePointEventPacket.class,
-            CapturePointEventPacket::encode, CapturePointEventPacket::decode, CapturePointEventPacket::handle);
+            CapturePointEventPacket::encode, CapturePointEventPacket::decode, CapturePointEventPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /** 向玩家推送 HUD 内容。 */

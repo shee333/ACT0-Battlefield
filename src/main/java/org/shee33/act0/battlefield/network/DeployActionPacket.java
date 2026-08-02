@@ -45,7 +45,10 @@ public final class DeployActionPacket {
     }
 
     public static DeployActionPacket decode(FriendlyByteBuf buf) {
-        return new DeployActionPacket(buf.readEnum(DeployKind.class), buf.readUtf());
+        int ordinal = buf.readVarInt();
+        DeployKind[] kinds = DeployKind.values();
+        DeployKind kind = (ordinal >= 0 && ordinal < kinds.length) ? kinds[ordinal] : DeployKind.REFRESH;
+        return new DeployActionPacket(kind, buf.readUtf());
     }
 
     public static void handle(DeployActionPacket msg, Supplier<NetworkEvent.Context> ctx) {

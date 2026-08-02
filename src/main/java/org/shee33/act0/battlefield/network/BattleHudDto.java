@@ -13,6 +13,8 @@ public record BattleHudDto(
         boolean isSquadLeader, int streak,
         int squadOrderPointId, boolean squadOrderAttack) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeVarInt(myFaction);
         buf.writeVarInt(alphaTickets);
@@ -38,15 +40,15 @@ public record BattleHudDto(
 
     public static BattleHudDto decode(FriendlyByteBuf buf) {
         int mf = buf.readVarInt(), at = buf.readVarInt(), bt = buf.readVarInt(), mt = buf.readVarInt();
-        int pn = buf.readVarInt();
+        int pn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<ControlPointHudDto> pts = new ArrayList<>(pn);
         for (int i = 0; i < pn; i++) pts.add(ControlPointHudDto.decode(buf));
-        int sn = buf.readVarInt();
+        int sn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<SquadMateHudDto> sq = new ArrayList<>(sn);
         for (int i = 0; i < sn; i++) sq.add(SquadMateHudDto.decode(buf));
         String fn = buf.readUtf();
         int fs = buf.readVarInt(), fp = buf.readVarInt(), ff = buf.readVarInt();
-        int dn = buf.readVarInt();
+        int dn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<DownedMateDto> dm = new ArrayList<>(dn);
         for (int i = 0; i < dn; i++) dm.add(DownedMateDto.decode(buf));
         String rn = buf.readUtf();

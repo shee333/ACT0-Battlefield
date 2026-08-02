@@ -36,7 +36,9 @@ public final class CapturePointEventPacket {
 
     public static CapturePointEventPacket decode(FriendlyByteBuf buf) {
         int pointId = buf.readVarInt();
-        Kind kind = Kind.values()[buf.readByte()];
+        int kindOrdinal = buf.readByte();
+        Kind[] kinds = Kind.values();
+        Kind kind = (kindOrdinal >= 0 && kindOrdinal < kinds.length) ? kinds[kindOrdinal] : Kind.STARTED;
         int factionCode = buf.readVarInt();
         return new CapturePointEventPacket(pointId, kind, factionCode);
     }

@@ -25,6 +25,8 @@ public record BattleResultDto(int winnerFaction, int myFaction,
                               String bestSquad, int bestSquadKills,
                               int matchSeconds, int sectorsCaptured, int totalSectors) {
 
+    private static final int MAX_LIST_ENTRIES = 256;
+
     public void encode(FriendlyByteBuf buf) {
         buf.writeVarInt(winnerFaction);
         buf.writeVarInt(myFaction);
@@ -50,7 +52,7 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         int bravo = buf.readVarInt();
         int myKills = buf.readVarInt();
         int myDeaths = buf.readVarInt();
-        int n = buf.readVarInt();
+        int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<TabEntryDto> entries = new ArrayList<>(n);
         for (int i = 0; i < n; i++) { entries.add(TabEntryDto.decode(buf)); }
         String tc = buf.readUtf();

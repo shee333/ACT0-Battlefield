@@ -107,6 +107,8 @@ public final class BreakthroughMatch {
     private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
     private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
     private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
+    private final Map<UUID, Long> callHelpCooldownUntil = new LinkedHashMap<>();
+    private static final int CALL_HELP_COOLDOWN_TICKS = 60;
 
     private double attackerTickets;
     private int currentSectorIndex;
@@ -228,6 +230,7 @@ public final class BreakthroughMatch {
         downedUntil.remove(id);
         pendingDeaths.remove(id);
         cancelRevive(id);
+        callHelpCooldownUntil.remove(id);
         squadManager.onPlayerLeave(id);
         squadManager.buildSquads();
         setupNameTagTeams();
@@ -1047,6 +1050,12 @@ public final class BreakthroughMatch {
             player.sendSystemMessage(Component.literal("§7你放弃了救援。"));
             beginRedeploy(player, f);
         } else if (action == DownedActionPacket.Action.CALL_HELP) {
+            long now = server.getTickCount();
+            Long cooldownUntil = callHelpCooldownUntil.get(id);
+            if (cooldownUntil != null && now < cooldownUntil) {
+                return;
+            }
+            callHelpCooldownUntil.put(id, now + CALL_HELP_COOLDOWN_TICKS);
             player.displayClientMessage(Component.literal("§e已呼叫救援"), true);
             player.playNotifySound(SoundEvents.NOTE_BLOCK_BELL.value(), SoundSource.MASTER, 0.6f, 1.5f);
             for (UUID mateId : factionOf.keySet()) {
@@ -1096,6 +1105,7 @@ public final class BreakthroughMatch {
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        callHelpCooldownUntil.clear();
         killTracker.clearTransient();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
@@ -1133,6 +1143,7 @@ public final class BreakthroughMatch {
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        callHelpCooldownUntil.clear();
         killTracker.clearTransient();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
