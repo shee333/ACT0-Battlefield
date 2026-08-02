@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -37,6 +38,10 @@ public final class BattlefieldDeployWorldOverlay {
     private static final int LIGHT = 0xF000F0;
     private static final int AREA_FLOOR_RGB = 0xFFE8C36A;
     private static final int AREA_WALL_RGB = 0xCCB6E3FF;
+
+    private static final ResourceLocation POINT_FRIENDLY = texture("capturepoint/allies.png");
+    private static final ResourceLocation POINT_ENEMY = texture("capturepoint/axis.png");
+    private static final ResourceLocation POINT_NEUTRAL = texture("misc/capturepoint.png");
 
     private static final List<DeployClickTarget> TARGETS = new ArrayList<>();
     private static Matrix4f projectionMatrix;
@@ -75,24 +80,24 @@ public final class BattlefieldDeployWorldOverlay {
         if (status.canBase()) {
             addAndRender(pose, buffer, font, camera, status,
                     status.baseX(), status.baseY(), status.baseZ(), "H", "基地", true, BLUE,
-                    DeployActionPacket.DeployKind.BASE, "");
+                    DeployActionPacket.DeployKind.BASE, "", null);
         }
         if (status.canSquad() && status.squadMates().isEmpty()) {
             addAndRender(pose, buffer, font, camera, status,
                     status.squadX(), status.squadY(), status.squadZ(), "S", "小队", true, BLUE,
-                    DeployActionPacket.DeployKind.SQUAD, "");
+                    DeployActionPacket.DeployKind.SQUAD, "", null);
         }
         for (DeploySquadMateDto mate : status.squadMates()) {
             addAndRender(pose, buffer, font, camera, status,
                     mate.x(), mate.y(), mate.z(), "◆", mate.name(), mate.deployable(), mate.deployable() ? BLUE : RED,
-                    DeployActionPacket.DeployKind.SQUAD, mate.id());
+                    DeployActionPacket.DeployKind.SQUAD, mate.id(), null);
         }
         for (DeployPointDto point : status.points()) {
             String label = point.name() == null || point.name().isBlank() ? "?" : point.name().substring(0, 1);
             int color = point.owner() == 0 ? GREY : (point.deployable() ? BLUE : RED);
             addAndRender(pose, buffer, font, camera, status,
                     point.x(), point.y(), point.z(), label, point.name(), point.deployable(), color,
-                    DeployActionPacket.DeployKind.POINT, point.id());
+                    DeployActionPacket.DeployKind.POINT, point.id(), pointTexture(point));
         }
         if (status.hasArea()) {
             drawAreaBox(pose, buffer, camera,
@@ -131,7 +136,8 @@ public final class BattlefieldDeployWorldOverlay {
     private static void addAndRender(PoseStack pose, MultiBufferSource.BufferSource buffer, Font font, Camera camera,
                                      DeployStatusDto status, double x, double y, double z,
                                      String icon, String name, boolean deployable, int color,
-                                     DeployActionPacket.DeployKind kind, String targetId) {
+                                     DeployActionPacket.DeployKind kind, String targetId,
+                                     ResourceLocation iconTexture) {
         Vec3 pos = new Vec3(x, y, z);
         ScreenProjection projected = projectToScreen(Minecraft.getInstance(), pos);
         boolean selected = status.selectedKind().equals(kind.id())
@@ -142,11 +148,12 @@ public final class BattlefieldDeployWorldOverlay {
             TARGETS.add(new DeployClickTarget(projected.x(), projected.y(), selected || hovered ? 24 : 18, kind, targetId,
                     safe(name), deployable));
         }
-        renderMarker(pose, buffer, font, camera, pos, icon, name, deployable, selected, hovered, color);
+        renderMarker(pose, buffer, font, camera, pos, icon, name, deployable, selected, hovered, color, iconTexture);
     }
 
     private static void renderMarker(PoseStack pose, MultiBufferSource buffer, Font font, Camera camera, Vec3 pos,
-                                     String icon, String name, boolean deployable, boolean selected, boolean hovered, int color) {
+                                     String icon, String name, boolean deployable, boolean selected, boolean hovered, int color,
+                                     ResourceLocation iconTexture) {
         Vec3 cam = camera.getPosition();
         double dx = pos.x - cam.x;
         double dy = pos.y - cam.y;
@@ -166,6 +173,9 @@ public final class BattlefieldDeployWorldOverlay {
         pose.scale(-scale, -scale, scale);
         var mat = pose.last().pose();
 
+        if (iconTexture != null) {
+            drawIcon(mat, buffer, iconTexture, -8, -32, 16, 16, 220);
+        }
         drawCentered(font, line1, 0, -16, main, mat, buffer, 0x77000000);
         drawCentered(font, line2, 0, -4, deployable ? WHITE : GREY, mat, buffer, 0x66000000);
         if (selected || hovered) {
@@ -178,6 +188,34 @@ public final class BattlefieldDeployWorldOverlay {
                                      Matrix4f matrix, MultiBufferSource buffer, int bg) {
         float px = x - font.width(text) / 2.0f;
         font.drawInBatch(text, px, y, color, false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, bg, LIGHT);
+    }
+
+    /** 16x16 据点图标四边形——与 BattlefieldWorldPointOverlay.drawIcon 同技术路线。 */
+    private static void drawIcon(Matrix4f matrix, MultiBufferSource buffer, ResourceLocation iconTexture,
+                                 float x, float y, float w, float h, int alpha) {
+        VertexConsumer vc = buffer.getBuffer(RenderType.text(iconTexture));
+        int a = Math.max(0, Math.min(255, alpha));
+        vc.vertex(matrix, x, y + h, 0.0f).color(255, 255, 255, a).uv(0.0f, 1.0f).uv2(LIGHT).endVertex();
+        vc.vertex(matrix, x + w, y + h, 0.0f).color(255, 255, 255, a).uv(1.0f, 1.0f).uv2(LIGHT).endVertex();
+        vc.vertex(matrix, x + w, y, 0.0f).color(255, 255, 255, a).uv(1.0f, 0.0f).uv2(LIGHT).endVertex();
+        vc.vertex(matrix, x, y, 0.0f).color(255, 255, 255, a).uv(0.0f, 0.0f).uv2(LIGHT).endVertex();
+    }
+
+    /**
+     * 据点标记图标选择：
+     * owner==0 中立；deployable 即 owner==玩家阵营，取友方；其余敌方。
+     * DeployPointDto 不带 pressure 字段，因此 POINT_OVERRUN 在此界面无法渲染。
+     */
+    private static ResourceLocation pointTexture(DeployPointDto point) {
+        if (point.owner() == 0) {
+            return POINT_NEUTRAL;
+        }
+        return point.deployable() ? POINT_FRIENDLY : POINT_ENEMY;
+    }
+
+    @SuppressWarnings("removal")
+    private static ResourceLocation texture(String path) {
+        return new ResourceLocation(Act0Battlefield.MODID, "textures/gui/hud/" + path);
     }
 
     private static String safe(String text) {

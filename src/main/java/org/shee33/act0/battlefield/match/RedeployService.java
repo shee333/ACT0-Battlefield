@@ -4,6 +4,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
@@ -59,8 +60,24 @@ public final class RedeployService {
     private final Map<UUID, GameType> redeployOriginalMode = new LinkedHashMap<>();
     private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> spectateTarget = new LinkedHashMap<>();
+    private final Map<UUID, PanState> deployPanState = new LinkedHashMap<>();
+
+    /** Deploy-overview-to-spawn camera pan duration. Kept well under 1s (20 ticks). */
+    private static final int PAN_DURATION_TICKS = 18;
 
     private boolean fireLocked;
+
+    /**
+     * Immutable snapshot of an in-flight "deploy pan" – the short eased camera move from the
+     * deploy overview point to the resolved spawn point, so the confirm action never hard-cuts
+     * the player's view.
+     */
+    private record PanState(
+            Faction faction, String kind, String targetId, boolean hasSpawn,
+            double startX, double startY, double startZ, float startYaw, float startPitch,
+            double endX, double endY, double endZ, float endYaw, float endPitch,
+            long startTick) {
+    }
 
     public RedeployService(
             ServerLevel level,
@@ -93,7 +110,7 @@ public final class RedeployService {
     // ---- Query helpers for ConquestMatch ----
 
     public boolean isRedeploying(UUID id) {
-        return redeployReadyTick.containsKey(id);
+        return redeployReadyTick.containsKey(id) || deployPanState.containsKey(id);
     }
 
     public boolean consumeProtection(UUID id) {
@@ -139,6 +156,7 @@ public final class RedeployService {
     }
 
     public void processRedeployTick() {
+        tickDeployPan();
         if (redeployReadyTick.isEmpty()) {
             return;
         }
@@ -189,7 +207,7 @@ public final class RedeployService {
         deploySelection.put(id, normalized);
         deployTarget.put(id, target);
         if (server.getTickCount() >= redeployReadyTick.getOrDefault(id, 0L)) {
-            deploy(player, faction, normalized, target);
+            beginDeployPan(player, faction, normalized, target);
         } else {
             BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
         }
@@ -225,7 +243,7 @@ public final class RedeployService {
 
     public void deployDirect(ServerPlayer player, Faction faction) {
         String kind = bestDeployKind(player.getUUID(), faction);
-        deploy(player, faction, kind, bestDeployTarget(player.getUUID(), faction, kind));
+        beginDeployPan(player, faction, kind, bestDeployTarget(player.getUUID(), faction, kind));
     }
 
     public void clearAll() {
@@ -235,6 +253,7 @@ public final class RedeployService {
         redeployOriginalMode.clear();
         protectedUntil.clear();
         spectateTarget.clear();
+        deployPanState.clear();
     }
 
     /** Entity id of the living squadmate closest to {@code player}, or -1 if none. */
@@ -419,21 +438,84 @@ public final class RedeployService {
 
     // ---- Private: deploy execution ----
 
-    private void deploy(ServerPlayer p, Faction f, String kind, String targetId) {
-        UUID id = p.getUUID();
+    @Nullable
+    private BattlefieldData.BaseSpawn resolveSpawn(UUID id, Faction f, String kind, String targetId) {
         BattlefieldData.BaseSpawn spawn = switch (kind) {
             case "squad" -> squadManager.squadMateSpawn(id, f, targetId);
             case "point" -> pointSpawn(f, targetId);
             default -> data.base(f);
         };
-        if (spawn == null) {
-            spawn = data.base(f);
+        return spawn != null ? spawn : data.base(f);
+    }
+
+    /**
+     * Confirm-deploy entry point. Instead of hard-teleporting straight to the spawn, this
+     * records the current (deploy-overview) pose as the pan start and the resolved spawn as the
+     * pan end; {@link #tickDeployPan()} then eases the player's camera between the two every
+     * tick so the overview-to-spawn cut is never instantaneous.
+     */
+    private void beginDeployPan(ServerPlayer p, Faction f, String kind, String targetId) {
+        UUID id = p.getUUID();
+        BattlefieldData.BaseSpawn spawn = resolveSpawn(id, f, kind, targetId);
+        boolean hasSpawn = spawn != null;
+        double endX = hasSpawn ? spawn.x() : p.getX();
+        double endY = hasSpawn ? spawn.y() : p.getY();
+        double endZ = hasSpawn ? spawn.z() : p.getZ();
+        float endYaw = hasSpawn ? spawn.yaw() : p.getYRot();
+        float endPitch = hasSpawn ? spawn.pitch() : p.getXRot();
+        redeployReadyTick.remove(id);
+        deploySelection.remove(id);
+        deployTarget.remove(id);
+        deployPanState.put(id, new PanState(f, kind, targetId, hasSpawn,
+                p.getX(), p.getY(), p.getZ(), p.getYRot(), p.getXRot(),
+                endX, endY, endZ, endYaw, endPitch,
+                server.getTickCount()));
+        BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
+    }
+
+    /** Advances every in-flight deploy pan by one tick; called every server tick, unthrottled. */
+    private void tickDeployPan() {
+        if (deployPanState.isEmpty()) {
+            return;
         }
+        for (UUID id : new ArrayList<>(deployPanState.keySet())) {
+            PanState pan = deployPanState.get(id);
+            ServerPlayer p = player(id);
+            if (p == null) {
+                deployPanState.remove(id);
+                continue;
+            }
+            long elapsed = server.getTickCount() - pan.startTick();
+            if (elapsed >= PAN_DURATION_TICKS) {
+                deployPanState.remove(id);
+                finishDeploy(p, pan);
+                continue;
+            }
+            float t = easeOutCubic(Mth.clamp(elapsed / (float) PAN_DURATION_TICKS, 0f, 1f));
+            double x = Mth.lerp(t, pan.startX(), pan.endX());
+            double y = Mth.lerp(t, pan.startY(), pan.endY());
+            double z = Mth.lerp(t, pan.startZ(), pan.endZ());
+            float yaw = pan.startYaw() + Mth.wrapDegrees(pan.endYaw() - pan.startYaw()) * t;
+            float pitch = Mth.lerp(t, pan.startPitch(), pan.endPitch());
+            p.connection.teleport(x, y, z, yaw, pitch);
+            p.setDeltaMovement(0.0, 0.0, 0.0);
+        }
+    }
+
+    private static float easeOutCubic(float t) {
+        float inv = 1f - t;
+        return 1f - inv * inv * inv;
+    }
+
+    /** Snaps the player onto the resolved spawn and runs the original post-teleport deploy logic. */
+    private void finishDeploy(ServerPlayer p, PanState pan) {
+        UUID id = p.getUUID();
+        p.teleportTo(level, pan.endX(), pan.endY(), pan.endZ(), pan.endYaw(), pan.endPitch());
+        p.setDeltaMovement(0.0, 0.0, 0.0);
         p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
-        if (spawn != null) {
-            p.teleportTo(level, spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
-            BattlefieldNetwork.sendDeploySpawnFx(p, deployLocationLabel(kind, targetId, f));
-            BattlefieldFx.deployLanding(level, spawn.x(), spawn.y(), spawn.z(), f);
+        if (pan.hasSpawn()) {
+            BattlefieldNetwork.sendDeploySpawnFx(p, deployLocationLabel(pan.kind(), pan.targetId(), pan.faction()));
+            BattlefieldFx.deployLanding(level, pan.endX(), pan.endY(), pan.endZ(), pan.faction());
         }
         clearRedeployState(p, false);
         escapeTicks.remove(id);

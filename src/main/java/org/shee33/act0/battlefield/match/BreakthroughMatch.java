@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.match;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.NonNullList;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -13,6 +14,8 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
@@ -104,6 +107,8 @@ public final class BreakthroughMatch {
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
 
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
+    /** 倒地期间缓存的完整物品栏（含盔甲/副手），救援成功归还，转入重生时必须移除以免内存泄漏。 */
+    private final Map<UUID, NonNullList<ItemStack>> downedInventoryCache = new LinkedHashMap<>();
     private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
     private final Map<UUID, UUID> revivingTarget = new LinkedHashMap<>();
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
@@ -239,6 +244,7 @@ public final class BreakthroughMatch {
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
+        downedInventoryCache.remove(id);
         pendingDeaths.remove(id);
         cancelRevive(id);
         lastHudHash.remove(id);
@@ -920,10 +926,37 @@ public final class BreakthroughMatch {
 
     // ---- 倒地救援 ----
 
+    /** 倒地时把玩家整个物品栏（主背包+副手+盔甲）序列化缓存并清空，任何模组的开火/交互逻辑都拿不到物品。 */
+    private void cacheAndClearInventoryForDowned(ServerPlayer p) {
+        Inventory inv = p.getInventory();
+        int size = inv.getContainerSize();
+        NonNullList<ItemStack> snapshot = NonNullList.withSize(size, ItemStack.EMPTY);
+        for (int i = 0; i < size; i++) {
+            snapshot.set(i, inv.getItem(i).copy());
+            inv.setItem(i, ItemStack.EMPTY);
+        }
+        downedInventoryCache.put(p.getUUID(), snapshot);
+    }
+
+    /** 救援成功后把缓存的物品栏原样归还；没有缓存时安全跳过。 */
+    private void restoreDownedInventory(ServerPlayer p) {
+        NonNullList<ItemStack> snapshot = downedInventoryCache.remove(p.getUUID());
+        if (snapshot == null) {
+            return;
+        }
+        Inventory inv = p.getInventory();
+        int size = Math.min(snapshot.size(), inv.getContainerSize());
+        for (int i = 0; i < size; i++) {
+            inv.setItem(i, snapshot.get(i));
+        }
+    }
+
     private void enterDowned(ServerPlayer p, Faction f, @Nullable UUID killerId) {
         UUID id = p.getUUID();
         long until = server.getTickCount() + downedDurationTicks;
         downedUntil.put(id, until);
+        cacheAndClearInventoryForDowned(p);
+        BattlefieldNetwork.sendFireLock(p, true);
         p.setHealth(1.0f);
         p.setPose(Pose.SWIMMING);
         p.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, downedDurationTicks, 5, false, false));
@@ -1021,6 +1054,8 @@ public final class BreakthroughMatch {
             if (target != null && reviver != null) {
                 downedUntil.remove(targetId);
                 pendingDeaths.remove(targetId);
+                restoreDownedInventory(target);
+                BattlefieldNetwork.sendFireLock(target, false);
                 target.removeAllEffects();
                 target.setPose(Pose.STANDING);
                 target.setHealth(target.getMaxHealth() * 0.5f);
@@ -1115,6 +1150,10 @@ public final class BreakthroughMatch {
         }
         this.ended = true;
         this.winner = w;
+        // 先解散阵营名牌 Scoreboard 队伍：一旦 ended=true，管理器下一 tick 就会把这场对局从
+        // activeByWorld 中摘除并丢弃引用；如果下面逐人结算（网络发包/传送）抛出异常，必须保证
+        // 这行已经执行过，否则队伍会永久残留在服务器 Scoreboard 里，再也没有代码路径能碰到它。
+        clearNameTagTeams();
         broadcast("§6§l对局结束：" + w.coloredName() + " §6§l获胜！");
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
@@ -1139,6 +1178,7 @@ public final class BreakthroughMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        downedInventoryCache.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
@@ -1146,7 +1186,6 @@ public final class BreakthroughMatch {
         killTracker.clearTransient();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
-        clearNameTagTeams();
         sendFireLockToAll(false);
     }
 
@@ -1156,6 +1195,8 @@ public final class BreakthroughMatch {
             return;
         }
         ended = true;
+        // 同 end()：先解散名牌队伍，防止下面逐人传送/清 HUD 出异常时把队伍清理漏掉。
+        clearNameTagTeams();
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p != null) {
@@ -1177,6 +1218,7 @@ public final class BreakthroughMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        downedInventoryCache.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
@@ -1184,7 +1226,6 @@ public final class BreakthroughMatch {
         killTracker.clearTransient();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
-        clearNameTagTeams();
         sendFireLockToAll(false);
     }
 
@@ -1247,6 +1288,9 @@ public final class BreakthroughMatch {
     // ---- 部署 ----
 
     private void beginRedeploy(ServerPlayer player, Faction faction) {
+        // 转入重生：丢弃倒地时缓存的物品栏（重生会重新分配装备），并解除开火锁双重保险。
+        downedInventoryCache.remove(player.getUUID());
+        BattlefieldNetwork.sendFireLock(player, false);
         redeployService.beginRedeploy(player, faction);
     }
 
