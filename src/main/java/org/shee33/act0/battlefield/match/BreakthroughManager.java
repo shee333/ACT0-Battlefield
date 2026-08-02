@@ -168,6 +168,68 @@ public final class BreakthroughManager {
         return String.join(", ", names);
     }
 
+    /**
+     * 供 ACT0-Arcade 房间浏览器调用：把玩家加入一个正在进行中的突破对局（非候选名单）。
+     * 与 {@link ConquestManager#quickJoin} 同一套实现模式：按 roomKey 定位对局，校验
+     * 存在/未满/玩家未在其中，自动分配到人少的一方，再调用 {@link BreakthroughMatch#addLatecomer}。
+     *
+     * @param key {@code browserRows()} 中返回的 room key（{@code bt@<dimension>} 格式），
+     *            也接受裸维度 key（不带 {@code bt@} 前缀）
+     */
+    public void quickJoin(ServerPlayer player, String key) {
+        ResourceKey<Level> levelKey = resolveQuickJoinKey(key);
+        BreakthroughMatch match = levelKey != null ? activeByWorld.get(levelKey) : activeFor(player.serverLevel());
+        if (match == null || match.isEnded()) {
+            player.displayClientMessage(Component.literal("§c该突破对局不存在或已结束"), true);
+            return;
+        }
+        if (match.contains(player.getUUID())) {
+            player.displayClientMessage(Component.literal("§e你已在该突破对局中"), true);
+            return;
+        }
+        Faction faction = match.memberCount(Faction.ALPHA) <= match.memberCount(Faction.BRAVO)
+                ? Faction.ALPHA : Faction.BRAVO;
+        if (match.addLatecomer(player, faction)) {
+            ResourceKey<Level> battleKey = levelKey != null ? levelKey : player.serverLevel().dimension();
+            player.displayClientMessage(Component.literal("§a已加入 "
+                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + faction.coloredName()), true);
+        } else {
+            player.displayClientMessage(Component.literal("§c无法加入该突破对局"), true);
+        }
+    }
+
+    @Nullable
+    private ResourceKey<Level> resolveQuickJoinKey(String key) {
+        String raw = normalizeQuickJoinKey(key);
+        if (raw.isBlank()) {
+            return null;
+        }
+        if (raw.startsWith("bt@")) {
+            raw = raw.substring(3).trim();
+        }
+        for (Map.Entry<ResourceKey<Level>, BreakthroughMatch> e : activeByWorld.entrySet()) {
+            if (e.getValue().isEnded()) {
+                continue;
+            }
+            if (e.getKey().location().toString().equals(raw)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeQuickJoinKey(String key) {
+        if (key == null) {
+            return "";
+        }
+        String raw = key.trim();
+        while (raw.length() >= 2 && ((raw.startsWith("\"") && raw.endsWith("\""))
+                || (raw.startsWith("'") && raw.endsWith("'")))) {
+            raw = raw.substring(1, raw.length() - 1).trim();
+        }
+        return raw;
+    }
+
     private Map<UUID, Faction> lobbyFor(ServerLevel level) {
         return lobbies.computeIfAbsent(level.dimension(), ignored -> new LinkedHashMap<>());
     }

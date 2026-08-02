@@ -52,6 +52,9 @@ public final class BreakthroughCommand {
                 .then(Commands.literal("join")
                     .then(Commands.literal("attacker").executes(c -> join(c, Faction.ALPHA)))
                     .then(Commands.literal("defender").executes(c -> join(c, Faction.BRAVO))))
+                .then(Commands.literal("quickjoin")
+                    .then(Commands.argument("battle", StringArgumentType.greedyString())
+                        .executes(BreakthroughCommand::quickJoin)))
                 .then(Commands.literal("leave").executes(BreakthroughCommand::leave))
                 .then(buildOrderBranch())
                 .then(Commands.literal("status").executes(BreakthroughCommand::status))
@@ -213,6 +216,17 @@ public final class BreakthroughCommand {
         ServerPlayer player = c.getSource().getPlayerOrException();
         BREAKTHROUGH_MANAGER.join(player.serverLevel(), player, faction);
         feedback(c, "§a已加入 " + faction.coloredName() + "§a，等待开局。");
+        return 1;
+    }
+
+    /**
+     * {@code /breakthrough quickjoin <roomKey>}：给 ACT0-Arcade 房间浏览器用，把玩家加入一个
+     * 正在进行中的突破对局（而不是预开局候选名单）。{@code roomKey} 接受
+     * {@code browserRows()} 返回的 {@code bt@<dimension>} 格式，也接受裸维度 key。
+     */
+    private static int quickJoin(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        BREAKTHROUGH_MANAGER.quickJoin(player, StringArgumentType.getString(c, "battle"));
         return 1;
     }
 

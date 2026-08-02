@@ -316,7 +316,8 @@ public final class ConquestMatch {
             CapturePoint.CaptureStatus prevStatus = lastCaptureStatus.getOrDefault(
                     pointId, CapturePoint.CaptureStatus.IDLE);
             boolean wasActiveContest = prevStatus == CapturePoint.CaptureStatus.CONTESTED
-                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING;
+                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING
+                    || prevStatus == CapturePoint.CaptureStatus.NEUTRALIZED;
             CapturePoint.CaptureStatus st = point.tick(alphaEffective, bravoEffective, rules, captureDelta);
             lastCaptureStatus.put(pointId, st);
             if (st == CapturePoint.CaptureStatus.CAPTURED) {

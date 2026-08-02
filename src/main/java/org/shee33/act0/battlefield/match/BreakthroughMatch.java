@@ -47,6 +47,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -109,6 +110,7 @@ public final class BreakthroughMatch {
     private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
     private final Map<UUID, Long> callHelpCooldownUntil = new LinkedHashMap<>();
     private static final int CALL_HELP_COOLDOWN_TICKS = 60;
+    private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
 
     private double attackerTickets;
     private int currentSectorIndex;
@@ -230,6 +232,7 @@ public final class BreakthroughMatch {
         downedUntil.remove(id);
         pendingDeaths.remove(id);
         cancelRevive(id);
+        lastHudHash.remove(id);
         callHelpCooldownUntil.remove(id);
         squadManager.onPlayerLeave(id);
         squadManager.buildSquads();
@@ -288,7 +291,16 @@ public final class BreakthroughMatch {
             if (p == null) {
                 continue;
             }
-            BattlefieldNetwork.sendBreakthroughHud(p, buildHudFor(p));
+
+            BreakthroughHudDto hud = buildHudFor(p);
+            int hudHash = Objects.hash(
+                    hud.attackerTickets(), hud.maxTickets(), hud.currentSectorId(), hud.totalSectors(),
+                    hud.points().hashCode(), hud.squad().hashCode(), hud.phase(), hud.winner());
+            Integer prevHudHash = lastHudHash.get(id);
+            if (prevHudHash == null || prevHudHash != hudHash) {
+                BattlefieldNetwork.sendBreakthroughHud(p, hud);
+                lastHudHash.put(id, hudHash);
+            }
         }
     }
 
@@ -342,7 +354,8 @@ public final class BreakthroughMatch {
             CapturePoint.CaptureStatus prevStatus = lastCaptureStatus.getOrDefault(
                     pointId, CapturePoint.CaptureStatus.IDLE);
             boolean wasActiveContest = prevStatus == CapturePoint.CaptureStatus.CONTESTED
-                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING;
+                    || prevStatus == CapturePoint.CaptureStatus.CAPTURING
+                    || prevStatus == CapturePoint.CaptureStatus.NEUTRALIZED;
             CapturePoint.CaptureStatus st = points.get(i).tick(alpha, bravo, captureRules, captureDelta);
             lastCaptureStatus.put(pointId, st);
             // 突破模式单向推进，无需 LOST/CAPTURED_RECOVERED 语义：只发 STARTED（首次进入争夺/推进）
@@ -1392,6 +1405,17 @@ public final class BreakthroughMatch {
 
     public int capacityHint() {
         return 64;
+    }
+
+    /** 某阵营当前参战人数。 */
+    public int memberCount(Faction faction) {
+        int n = 0;
+        for (Faction f : factionOf.values()) {
+            if (f == faction) {
+                n++;
+            }
+        }
+        return n;
     }
 
     @Nullable

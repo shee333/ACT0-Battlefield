@@ -82,8 +82,14 @@ public final class BattlefieldHudOverlay {
         renderDownedSelfFeedback(gg, font);
     }
 
-    /** 部署/重生传送落地反馈：全屏黑幕 ease-out 淡出 + 底部"已部署 · 据点名"提示。 */
-    private static void renderDeploySpawnFx(GuiGraphics gg, Font font) {
+    /**
+     * 部署/重生传送落地反馈：全屏黑幕 ease-out 淡出 + 底部"已部署 · 据点名"提示。
+     *
+     * <p>模式无关：服务端向 Conquest / Breakthrough 玩家均会发送 {@code DeploySpawnFxPacket}，
+     * 因此本方法为包内可见（非 private），供 {@code BreakthroughHudOverlay} 复用，
+     * 参照 {@link #renderCapturePointBannerCore} 的共享方法模式。
+     */
+    static void renderDeploySpawnFx(GuiGraphics gg, Font font) {
         int fadeAlpha = ClientDeployFx.fadeAlpha();
         if (fadeAlpha > 0) {
             gg.fill(0, 0, gg.guiWidth(), gg.guiHeight(), fadeAlpha << 24);
@@ -104,8 +110,13 @@ public final class BattlefieldHudOverlay {
         gg.drawString(font, text, centerX - textW / 2, y + 5, withAlpha(WHITE, toast), false);
     }
 
-    /** 自身倒地反馈：四角低调 vignette（静止不闪烁）+ 顶部常驻横幅 + 被救起后的短暂提示。 */
-    private static void renderDownedSelfFeedback(GuiGraphics gg, Font font) {
+    /**
+     * 自身倒地反馈：四角低调 vignette（静止不闪烁）+ 顶部常驻横幅 + 被救起后的短暂提示。
+     *
+     * <p>模式无关：包内可见，供 {@code BreakthroughHudOverlay} 复用，参照
+     * {@link #renderCapturePointBannerCore} 的共享方法模式。
+     */
+    static void renderDownedSelfFeedback(GuiGraphics gg, Font font) {
         float vignette = ClientDownedFeedback.vignetteAlpha();
         if (vignette > 0f) {
             int w = gg.guiWidth();

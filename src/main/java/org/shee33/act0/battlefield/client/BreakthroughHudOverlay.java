@@ -98,6 +98,8 @@ public final class BreakthroughHudOverlay {
         renderPoints(gg, font, hud);
         renderCapturePointBanner(gg, font, hud);
         renderSquad(gg, font, hud.squad());
+        BattlefieldHudOverlay.renderDeploySpawnFx(gg, font);
+        BattlefieldHudOverlay.renderDownedSelfFeedback(gg, font);
     }
 
     // ---- capture point banner (reuses BattlefieldHudOverlay's shared render core) ----
