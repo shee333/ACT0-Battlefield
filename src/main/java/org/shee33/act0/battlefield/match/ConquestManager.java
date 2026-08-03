@@ -15,7 +15,6 @@ import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import com.mojang.logging.LogUtils;
@@ -585,6 +584,13 @@ public final class ConquestManager {
         }
     }
 
+    public void handleReviveHeartbeat(ServerPlayer reviver, int targetEntityId, boolean active) {
+        ConquestMatch match = activeContaining(reviver.getUUID());
+        if (match != null) {
+            match.handleReviveHeartbeat(reviver, targetEntityId, active);
+        }
+    }
+
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();
@@ -597,35 +603,6 @@ public final class ConquestManager {
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         // 不再自动归位；玩家可通过大战场/游戏浏览器中途加入。
-    }
-
-    @SubscribeEvent
-    public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        handleRevive(event.getEntity(), event.getTarget(), event);
-    }
-
-    @SubscribeEvent
-    public void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
-        handleRevive(event.getEntity(), event.getTarget(), event);
-    }
-
-    private void handleRevive(Entity clicker, Entity target, PlayerInteractEvent event) {
-        if (!(clicker instanceof ServerPlayer reviver)) {
-            return;
-        }
-        if (!(target instanceof ServerPlayer downed)) {
-            return;
-        }
-        ConquestMatch match = activeContaining(reviver.getUUID());
-        if (match == null) {
-            return;
-        }
-        if (!match.isDowned(downed.getUUID())) {
-            return;
-        }
-        if (match.reviveDownedPlayer(downed.getUUID(), reviver)) {
-            event.setCanceled(true);
-        }
     }
 
     @SubscribeEvent

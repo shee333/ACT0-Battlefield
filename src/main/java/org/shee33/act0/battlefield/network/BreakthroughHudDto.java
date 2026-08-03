@@ -34,7 +34,8 @@ public record BreakthroughHudDto(
         List<SquadMateHudDto> squad,
         int phase,
         int winner,
-        String focusName, int focusState, int focusProgress) {
+        String focusName, int focusState, int focusProgress,
+        String beingRevivedByName, int beingRevivedProgress) {
 
     private static final int MAX_LIST_ENTRIES = 256;
 
@@ -57,12 +58,14 @@ public record BreakthroughHudDto(
         buf.writeUtf(focusName);
         buf.writeVarInt(focusState);
         buf.writeVarInt(focusProgress);
+        buf.writeUtf(beingRevivedByName);
+        buf.writeVarInt(beingRevivedProgress);
     }
 
     public static BreakthroughHudDto decode(FriendlyByteBuf buf) {
         boolean show = buf.readBoolean();
         if (!show) {
-            return new BreakthroughHudDto(false, 0, 0, 0, 0, List.of(), List.of(), 0, 0, "", 0, 0);
+            return new BreakthroughHudDto(false, 0, 0, 0, 0, List.of(), List.of(), 0, 0, "", 0, 0, "", 0);
         }
         int attackerTickets = buf.readVarInt();
         int maxTickets = buf.readVarInt();
@@ -75,9 +78,11 @@ public record BreakthroughHudDto(
         String focusName = buf.readUtf();
         int focusState = buf.readVarInt();
         int focusProgress = buf.readVarInt();
+        String beingRevivedByName = buf.readUtf();
+        int beingRevivedProgress = buf.readVarInt();
         return new BreakthroughHudDto(true, attackerTickets, maxTickets,
                 currentSectorId, totalSectors, points, squad, phase, winner,
-                focusName, focusState, focusProgress);
+                focusName, focusState, focusProgress, beingRevivedByName, beingRevivedProgress);
     }
 
     private static <T> List<T> readList(FriendlyByteBuf buf, Function<FriendlyByteBuf, T> reader) {

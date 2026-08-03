@@ -12,12 +12,19 @@ import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.ActionPacket;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
+import org.shee33.act0.battlefield.network.ReviveHeartbeatPacket;
 import org.shee33.act0.battlefield.network.SpotEnemyPacket;
 
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldClientInput {
 
+    /** 救援心跳发送间隔（tick）：不必每 tick 都发包，服务端容忍窗口留足余量即可（见
+     * ConquestMatch/BreakthroughMatch 的 REVIVE_HEARTBEAT_TIMEOUT_TICKS）。 */
+    private static final int REVIVE_HEARTBEAT_INTERVAL_TICKS = 4;
+
     private static long spaceHeldMs;
+    private static int lastReviveTargetId = -1;
+    private static int reviveHeartbeatCooldown;
 
     private BattlefieldClientInput() {}
 
@@ -34,6 +41,26 @@ public final class BattlefieldClientInput {
             if (mc.hitResult instanceof EntityHitResult hit && hit.getEntity() instanceof Player) {
                 BattlefieldNetwork.CHANNEL.sendToServer(new SpotEnemyPacket(hit.getEntity().getId()));
             }
+        }
+
+        if (BattlefieldKeyMappings.REVIVE.isDown()
+                && mc.hitResult instanceof EntityHitResult reviveHit
+                && reviveHit.getEntity() instanceof Player targetPlayer
+                && targetPlayer != mc.player) {
+            int targetId = reviveHit.getEntity().getId();
+            if (targetId != lastReviveTargetId || reviveHeartbeatCooldown <= 0) {
+                BattlefieldNetwork.CHANNEL.sendToServer(new ReviveHeartbeatPacket(targetId, true));
+                reviveHeartbeatCooldown = REVIVE_HEARTBEAT_INTERVAL_TICKS;
+            } else {
+                reviveHeartbeatCooldown--;
+            }
+            lastReviveTargetId = targetId;
+        } else {
+            if (lastReviveTargetId != -1) {
+                BattlefieldNetwork.CHANNEL.sendToServer(new ReviveHeartbeatPacket(-1, false));
+            }
+            lastReviveTargetId = -1;
+            reviveHeartbeatCooldown = 0;
         }
 
         long win = mc.getWindow().getWindow();

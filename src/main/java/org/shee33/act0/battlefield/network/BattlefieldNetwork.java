@@ -95,6 +95,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, DeployPanPacket.class,
             DeployPanPacket::encode, DeployPanPacket::decode, DeployPanPacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, ReviveHeartbeatPacket.class,
+            ReviveHeartbeatPacket::encode, ReviveHeartbeatPacket::decode, ReviveHeartbeatPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -126,7 +129,7 @@ public final class BattlefieldNetwork {
 
     public static void clearBreakthroughHud(ServerPlayer player) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBreakthroughHudPacket(
-                new BreakthroughHudDto(false, 0, 0, 0, 0, List.of(), List.of(), 0, 0, "", 0, 0)));
+                new BreakthroughHudDto(false, 0, 0, 0, 0, List.of(), List.of(), 0, 0, "", 0, 0, "", 0)));
     }
 
     /** 向玩家推送部署界面状态。 */

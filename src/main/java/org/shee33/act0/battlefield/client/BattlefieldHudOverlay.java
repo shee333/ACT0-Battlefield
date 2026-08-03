@@ -67,6 +67,7 @@ public final class BattlefieldHudOverlay {
         renderCornerHud(gg, font, hud);
         renderDeploySpawnFx(gg, font);
         renderDownedSelfFeedback(gg, font);
+        renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
     }
 
     /**
@@ -143,6 +144,30 @@ public final class BattlefieldHudOverlay {
             gg.fill(x, y, x + panelW, y + 1, withAlpha(GREEN, revivedToast * 0.9f));
             gg.drawString(font, text, centerX - textW / 2, y + 5, withAlpha(WHITE, revivedToast), false);
         }
+    }
+
+    /**
+     * 被救援中(target侧)进度条：与 reviver 侧的 {@link #renderReviveProgress} 互为镜像，让倒地的
+     * 一方也能看到同一场救援的实时进度。紧贴 {@link #renderDownedSelfFeedback} 的"倒地·等待救援"
+     * 横幅下方（16px 间距，8px 网格对齐），同属"自身倒地"信息组，不与其重叠。
+     *
+     * <p>模式无关：包内可见，供 {@code BreakthroughHudOverlay} 复用，参照
+     * {@link #renderCapturePointBannerCore} 的共享方法模式。
+     */
+    static void renderBeingRevivedProgress(GuiGraphics gg, Font font, String reviverName, int progress) {
+        if (reviverName == null || reviverName.isBlank()) {
+            return;
+        }
+        int centerX = gg.guiWidth() / 2;
+        int y = 152;
+        String text = "§b" + reviverName + " §f正在救援你 " + progress + "%";
+        int textW = font.width(text);
+        int barW = Math.max(textW + 20, 140);
+        int barH = 16;
+        int x = centerX - barW / 2;
+        gg.fill(x, y, x + barW, y + barH, 0xCC000000);
+        gg.fill(x + 1, y + 1, x + 1 + Math.round((barW - 2) * (progress / 100f)), y + barH - 1, 0xCC66CC66);
+        gg.drawCenteredString(font, text, centerX, y + 4, 0xFFFFFFFF);
     }
 
     private static void renderHitFeedback(GuiGraphics gg, Font font) {

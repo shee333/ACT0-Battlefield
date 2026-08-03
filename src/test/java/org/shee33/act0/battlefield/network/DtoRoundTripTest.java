@@ -32,7 +32,7 @@ class DtoRoundTripTest {
         BattleHudDto dto = new BattleHudDto(1, 250, 180, 300,
                 List.of(cp), List.of(sm),
                 "A", 1, 50, 1,
-                List.of(dm), "P2", 60, false, 5, 3, true);
+                List.of(dm), "P2", 60, "P3", 35, false, 5, 3, true);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         BattleHudDto decoded = BattleHudDto.decode(buf);
@@ -43,6 +43,8 @@ class DtoRoundTripTest {
         assertEquals(1, decoded.downedMates().size());
         assertEquals("P2", decoded.revivingName());
         assertEquals(60, decoded.revivingProgress());
+        assertEquals("P3", decoded.beingRevivedByName());
+        assertEquals(35, decoded.beingRevivedProgress());
         assertEquals(5, decoded.streak());
         assertEquals(3, decoded.squadOrderPointId());
         assertEquals(true, decoded.squadOrderAttack());

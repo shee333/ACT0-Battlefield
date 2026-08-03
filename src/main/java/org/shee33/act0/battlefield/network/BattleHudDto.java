@@ -10,6 +10,7 @@ public record BattleHudDto(
         List<ControlPointHudDto> points, List<SquadMateHudDto> squad,
         String focusName, int focusState, int focusProgress, int focusFaction,
         List<DownedMateDto> downedMates, String revivingName, int revivingProgress,
+        String beingRevivedByName, int beingRevivedProgress,
         boolean isSquadLeader, int streak,
         int squadOrderPointId, boolean squadOrderAttack) {
 
@@ -32,6 +33,8 @@ public record BattleHudDto(
         for (DownedMateDto d : downedMates) { d.encode(buf); }
         buf.writeUtf(revivingName);
         buf.writeVarInt(revivingProgress);
+        buf.writeUtf(beingRevivedByName);
+        buf.writeVarInt(beingRevivedProgress);
         buf.writeBoolean(isSquadLeader);
         buf.writeVarInt(streak);
         buf.writeVarInt(squadOrderPointId);
@@ -53,10 +56,12 @@ public record BattleHudDto(
         for (int i = 0; i < dn; i++) dm.add(DownedMateDto.decode(buf));
         String rn = buf.readUtf();
         int rp = buf.readVarInt();
+        String brn = buf.readUtf();
+        int brp = buf.readVarInt();
         boolean sl = buf.readBoolean();
         int sk = buf.readVarInt();
         int sop = buf.readVarInt();
         boolean soa = buf.readBoolean();
-        return new BattleHudDto(mf, at, bt, mt, pts, sq, fn, fs, fp, ff, dm, rn, rp, sl, sk, sop, soa);
+        return new BattleHudDto(mf, at, bt, mt, pts, sq, fn, fs, fp, ff, dm, rn, rp, brn, brp, sl, sk, sop, soa);
     }
 }

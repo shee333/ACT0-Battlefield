@@ -105,6 +105,13 @@ public final class ConquestMatch {
     private final Map<UUID, NonNullList<ItemStack>> downedInventoryCache = new LinkedHashMap<>();
     private final Map<UUID, UUID> revivingTarget = new LinkedHashMap<>();
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
+    /** reviverId → 收到的最近一次客户端救援心跳所在 tick，见 {@link #handleReviveHeartbeat}。 */
+    private final Map<UUID, Long> revivingHeartbeat = new LinkedHashMap<>();
+    /** 救援朝向判定阈值：比 IFF 远距离标敌（{@link #enemyMarkViewDot}）更宽松，救援本就要求近距离
+     * （≤4 格），只需大致朝向目标即可，不必是精确瞄准。 */
+    private static final double REVIVE_VIEW_DOT = 0.5D;
+    /** 救援心跳容忍窗口（tick）：超过这个时长没收到新心跳视为按键松开/掉线，避免网络抖动误取消。 */
+    private static final int REVIVE_HEARTBEAT_TIMEOUT_TICKS = 10;
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
@@ -676,6 +683,7 @@ public final class ConquestMatch {
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        revivingHeartbeat.clear();
         killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
@@ -847,6 +855,7 @@ public final class ConquestMatch {
         pendingDeaths.clear();
         revivingTarget.clear();
         revivingStarted.clear();
+        revivingHeartbeat.clear();
         killTracker.clearTransient();
         spottedUntil.clear();
         captureTime.clear();
@@ -1060,12 +1069,16 @@ public final class ConquestMatch {
     }
 
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
+        return isInFrontOf(viewer, target, enemyMarkViewDot);
+    }
+
+    private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target, double minDot) {
         Vec3 eyes = viewer.getEyePosition();
         Vec3 toTarget = target.getEyePosition().subtract(eyes);
         if (toTarget.lengthSqr() < 0.0001D) {
             return true;
         }
-        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= enemyMarkViewDot;
+        return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= minDot;
     }
 
     private boolean hasClearSight(ServerPlayer viewer, ServerPlayer target) {
@@ -1245,6 +1258,8 @@ public final class ConquestMatch {
         List<DownedMateDto> downedMates = getDownedMateDtos(viewer.getUUID());
         String revivingName = getRevivingName(viewer.getUUID());
         int revivingProgress = getRevivingProgress(viewer.getUUID());
+        String beingRevivedByName = getBeingRevivedByName(viewer.getUUID());
+        int beingRevivedProgress = getBeingRevivedProgress(viewer.getUUID());
 
         return new BattleHudDto(
                 factionCode(viewerFaction),
@@ -1255,6 +1270,7 @@ public final class ConquestMatch {
                 squad,
                 focus.name(), focus.state(), focus.progress(), focus.faction(),
                 downedMates, revivingName != null ? revivingName : "", revivingProgress,
+                beingRevivedByName != null ? beingRevivedByName : "", beingRevivedProgress,
                 squadManager.isSquadLeader(viewer.getUUID()),
                 killTracker.killStreakOf(viewer.getUUID()),
                 squadOrderPointId(viewer.getUUID()), squadOrderAttack(viewer.getUUID()));
@@ -1475,7 +1491,7 @@ public final class ConquestMatch {
             }
         }
         String killerName = killerId != null ? nameOf(killerId) : "未知";
-        p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 右键队友救你"));
+        p.sendSystemMessage(Component.literal("§c你被 " + killerName + " 击倒了！§7长按空格放弃 · 队友按住F瞄准你即可救援"));
         p.displayClientMessage(Component.literal("§c§l倒地！等待队友救援"), true);
         BattlefieldNetwork.sendDownedFeedback(p);
         BattlefieldFx.downed(level, p.getX(), p.getY(), p.getZ());
@@ -1484,7 +1500,7 @@ public final class ConquestMatch {
             if (factionOf.get(mateId) == f) {
                 ServerPlayer mate = player(mateId);
                 if (mate != null) {
-                    mate.displayClientMessage(Component.literal("§c" + p.getGameProfile().getName() + " 倒地 · 右键救援"), true);
+                    mate.displayClientMessage(Component.literal("§c" + p.getGameProfile().getName() + " 倒地 · 按住F瞄准救援"), true);
                 }
             }
         }
@@ -1550,7 +1566,12 @@ public final class ConquestMatch {
             ServerPlayer reviver = player(reviverId);
             ServerPlayer target = player(targetId);
             if (reviver == null || target == null || !downedUntil.containsKey(targetId)
-                    || target.distanceToSqr(reviver) > 16.0D) {
+                    || target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
+                toCancel.add(reviverId);
+                continue;
+            }
+            Long lastHeartbeat = revivingHeartbeat.get(reviverId);
+            if (lastHeartbeat == null || now - lastHeartbeat > REVIVE_HEARTBEAT_TIMEOUT_TICKS) {
                 toCancel.add(reviverId);
                 continue;
             }
@@ -1564,6 +1585,7 @@ public final class ConquestMatch {
         for (UUID reviverId : toComplete) {
             UUID targetId = revivingTarget.remove(reviverId);
             revivingStarted.remove(reviverId);
+            revivingHeartbeat.remove(reviverId);
             ServerPlayer target = player(targetId);
             ServerPlayer reviver = player(reviverId);
             if (target != null && reviver != null) {
@@ -1587,34 +1609,54 @@ public final class ConquestMatch {
     private void cancelRevive(UUID reviverId) {
         revivingTarget.remove(reviverId);
         revivingStarted.remove(reviverId);
+        revivingHeartbeat.remove(reviverId);
         ServerPlayer reviver = player(reviverId);
         if (reviver != null) {
             reviver.displayClientMessage(Component.literal("§c救援中断"), true);
         }
     }
 
-    /** 开始救援倒地队友（返回 true 表示已开始）。 */
-    public boolean reviveDownedPlayer(UUID targetId, ServerPlayer reviver) {
+    /**
+     * C2S 救援心跳：客户端持续按住救援键且瞄准倒地队友时上报（{@code active=true}，附带目标实体
+     * ID）；按键松开或瞄准脱离时上报一次 {@code active=false} 停止信号，立即取消救援。
+     *
+     * <p>{@code active=true} 时仍会做一次完整校验（同队、倒地中、距离、朝向），校验不通过直接
+     * 忽略（不会开始/续期救援）；{@link #tickRevives} 每 tick 独立复核同样的条件并检查心跳是否
+     * 超时，两者任意一个失败都会 {@link #cancelRevive}——服务端不会仅凭客户端上报的信号驱动救援。
+     */
+    public void handleReviveHeartbeat(ServerPlayer reviver, int targetEntityId, boolean active) {
         UUID reviverId = reviver.getUUID();
+        if (!active) {
+            if (revivingStarted.containsKey(reviverId)) {
+                cancelRevive(reviverId);
+            }
+            return;
+        }
+        if (!(level.getEntity(targetEntityId) instanceof ServerPlayer target)) {
+            return;
+        }
+        UUID targetId = target.getUUID();
         if (!downedUntil.containsKey(targetId)) {
-            return false;
+            return;
         }
         Faction tf = factionOf.get(targetId);
         Faction rf = factionOf.get(reviverId);
         if (tf == null || rf == null || tf != rf) {
-            return false;
+            return;
         }
-        ServerPlayer target = player(targetId);
-        if (target == null || target.distanceToSqr(reviver) > 16.0D) {
-            return false;
+        if (target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
+            return;
         }
-        if (revivingStarted.containsKey(reviverId)) {
-            return true;
+        long now = server.getTickCount();
+        revivingHeartbeat.put(reviverId, now);
+        if (!revivingStarted.containsKey(reviverId)) {
+            revivingTarget.put(reviverId, targetId);
+            revivingStarted.put(reviverId, now);
+            reviver.displayClientMessage(Component.literal("§a正在救援 " + target.getGameProfile().getName() + "..."), true);
+        } else if (!targetId.equals(revivingTarget.get(reviverId))) {
+            revivingTarget.put(reviverId, targetId);
+            revivingStarted.put(reviverId, now);
         }
-        revivingTarget.put(reviverId, targetId);
-        revivingStarted.put(reviverId, (long) server.getTickCount());
-        reviver.displayClientMessage(Component.literal("§a正在救援 " + target.getGameProfile().getName() + "..."), true);
-        return true;
     }
 
     public boolean isDowned(UUID id) {
@@ -1754,6 +1796,31 @@ public final class ConquestMatch {
         }
         ServerPlayer target = player(targetId);
         return target != null ? target.getGameProfile().getName() : null;
+    }
+
+    int getBeingRevivedProgress(UUID targetId) {
+        UUID reviverId = findReviverOf(targetId);
+        return reviverId == null ? 0 : getRevivingProgress(reviverId);
+    }
+
+    @Nullable
+    String getBeingRevivedByName(UUID targetId) {
+        UUID reviverId = findReviverOf(targetId);
+        if (reviverId == null) {
+            return null;
+        }
+        ServerPlayer reviver = player(reviverId);
+        return reviver != null ? reviver.getGameProfile().getName() : null;
+    }
+
+    @Nullable
+    private UUID findReviverOf(UUID targetId) {
+        for (Map.Entry<UUID, UUID> e : revivingTarget.entrySet()) {
+            if (e.getValue().equals(targetId)) {
+                return e.getKey();
+            }
+        }
+        return null;
     }
 
     // ---- 工具 ----
