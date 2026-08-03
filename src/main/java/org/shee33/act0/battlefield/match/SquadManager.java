@@ -186,6 +186,12 @@ public final class SquadManager {
         return members == null ? 0 : members.size();
     }
 
+    /** 两名玩家是否同一小队；任一玩家不在小队（squadId 为 0）时视为不同小队。供聊天染色等关系判断使用。 */
+    public boolean isSameSquad(UUID a, UUID b) {
+        int squadA = squadIdOf(a);
+        return squadA != 0 && squadA == squadIdOf(b);
+    }
+
     // ---- Squad orders ----
 
     public void setOrder(int squadId, SquadOrder order) {

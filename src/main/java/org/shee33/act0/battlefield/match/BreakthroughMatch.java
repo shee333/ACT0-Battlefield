@@ -1585,6 +1585,11 @@ public final class BreakthroughMatch {
         return squadManager.isSquadLeader(playerId);
     }
 
+    /** 两名玩家是否同一小队。 */
+    public boolean isSameSquad(UUID a, UUID b) {
+        return squadManager.isSameSquad(a, b);
+    }
+
     public boolean canChangeLoadout(UUID id) {
         return factionOf.containsKey(id) && redeployService.isRedeploying(id);
     }

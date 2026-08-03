@@ -10,6 +10,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.BreakthroughManager;
 import org.shee33.act0.battlefield.match.ConquestManager;
+import org.shee33.act0.battlefield.match.MatchChatHandler;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ public final class Act0Battlefield {
         MinecraftForge.EVENT_BUS.register(MANAGER);
         MinecraftForge.EVENT_BUS.register(BREAKTHROUGH_MANAGER);
         MinecraftForge.EVENT_BUS.register(BattlefieldEntranceHolograms.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(new MatchChatHandler(MANAGER, BREAKTHROUGH_MANAGER));
 
         LOGGER.info("{}constructed", LOG_PREFIX);
     }

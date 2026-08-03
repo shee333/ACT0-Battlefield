@@ -1944,6 +1944,11 @@ public final class ConquestMatch {
         return squadManager.isSquadLeader(playerId);
     }
 
+    /** 两名玩家是否同一小队。 */
+    public boolean isSameSquad(UUID a, UUID b) {
+        return squadManager.isSameSquad(a, b);
+    }
+
     @Nullable
     public String setSquadOrder(UUID playerId, int pointId, boolean attack) {
         Integer squadId = squadManager.getSquadOf().get(playerId);
