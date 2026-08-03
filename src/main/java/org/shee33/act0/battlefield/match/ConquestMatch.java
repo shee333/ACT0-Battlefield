@@ -1008,8 +1008,14 @@ public final class ConquestMatch {
 
     private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
         Faction mine = factionOf.get(viewerId);
-        RelativeTeamSync.sync(viewer, factionOf.keySet(), this::player,
-                id -> mine != null && mine == factionOf.get(id));
+        RelativeTeamSync.sync(viewer, factionOf.keySet(), this::player, id -> {
+            if (mine == null || factionOf.get(id) != mine) {
+                return RelativeTeamSync.Relation.ENEMY;
+            }
+            return downedUntil.containsKey(id)
+                    ? RelativeTeamSync.Relation.FRIENDLY_DOWNED
+                    : RelativeTeamSync.Relation.FRIENDLY;
+        });
     }
 
     private boolean canViewerIdentify(@Nullable ServerPlayer viewer) {
@@ -1308,7 +1314,8 @@ public final class ConquestMatch {
             int bravo = 0;
             for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
                 ServerPlayer p = player(e.getKey());
-                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
+                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
+                        || downedUntil.containsKey(e.getKey())) {
                     continue;
                 }
                 if (def.zone().contains(p.getX(), p.getY(), p.getZ())) {
