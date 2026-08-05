@@ -552,10 +552,16 @@ public final class ConquestManager {
         if (active == null || !active.isDowned(player.getUUID())) {
             return;
         }
-        // LivingJumpEvent 未标注 @Cancelable（event.setCanceled() 会抛
-        // UnsupportedOperationException），且它在 jumpFromGround() 里 setDeltaMovement()
-        // 已经施加完起跳速度之后才触发。这里把竖直速度清零，效果等同于阻止倒地玩家起跳，
-        // 又不会因为对一个不可取消事件调用 setCanceled() 而崩溃。
+        // 注意：对真正联网的 ServerPlayer 而言，这段清零本身并不能阻止玩家看起来跳起来——
+        // MC 的移动同步是"客户端预测、上报绝对坐标，服务端在合理范围内信任接受"（见
+        // ServerGamePacketListenerImpl.handleMovePlayer，最终位置来自
+        // absMoveTo(clampVertical(packet.getY(...)), ...)，与这里的 deltaMovement 无关），
+        // 服务端执行到这里时客户端早已用自己的物理预测算出并上报了跳起来的 Y 坐标。真正生效的
+        // 拦截在客户端 BattlefieldClientInput.onLivingJump（同一个事件也会在本机玩家的客户端
+        // aiStep() 里同步触发，在 travel() 消费 deltaMovement 之前拦下）；
+        // ConquestMatch.tickDownedPlayers() 里还有一层按 tick 校验 Y 位移的服务端反作弊兜底。
+        // 这里保留清零仅作为无害的防御性收尾（对非联网路径/其他读取 deltaMovement 的逻辑有意义），
+        // 不再是本 mod 阻止倒地起跳的主要依据。
         Vec3 v = player.getDeltaMovement();
         player.setDeltaMovement(v.x, 0.0D, v.z);
     }

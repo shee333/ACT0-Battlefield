@@ -107,6 +107,17 @@ public final class BreakthroughMatch {
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
 
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
+    /** 倒地玩家反作弊 Y 坐标基准：玩家 UUID → 上一次校验通过（或被强制拉回后）的 Y 坐标。
+     * MC 的玩家位置同步是"客户端上报、服务端信任范围内接受"（见 {@code
+     * ServerGamePacketListenerImpl.handleMovePlayer}：最终位置来自 {@code
+     * absMoveTo(clampVertical(packet.getY(...)), ...)}，与服务端 {@code deltaMovement} 无关），
+     * 客户端侧拦截跳跃键才是真正阻止倒地玩家起跳的手段（见 {@code BattlefieldClientInput}）。
+     * 这里是给失效/被绕过的客户端拦截兜底的服务端反作弊：每 tick 与此基准比较，单 tick 上升
+     * 超过阈值即视为异常起跳并强制拉回，见 {@link #tickDownedPlayers()}。 */
+    private final Map<UUID, Double> downedLastGoodY = new LinkedHashMap<>();
+    /** 倒地玩家单 tick 允许的最大 Y 上升量：明显高于地形噪声/爬行时的台阶误差，
+     * 但远低于一次正常起跳产生的位移（约 0.4 格/首 tick），足以拦截"跳跃绕过"同时容忍误差。 */
+    private static final double DOWNED_MAX_Y_RISE_PER_TICK = 0.2D;
     /** 倒地期间缓存的完整物品栏（含盔甲/副手），救援成功归还，转入重生时必须移除以免内存泄漏。 */
     private final Map<UUID, NonNullList<ItemStack>> downedInventoryCache = new LinkedHashMap<>();
     private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
@@ -251,6 +262,7 @@ public final class BreakthroughMatch {
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
+        downedLastGoodY.remove(id);
         downedInventoryCache.remove(id);
         pendingDeaths.remove(id);
         cancelRevive(id);
@@ -979,6 +991,7 @@ public final class BreakthroughMatch {
         UUID id = p.getUUID();
         long until = server.getTickCount() + downedDurationTicks;
         downedUntil.put(id, until);
+        downedLastGoodY.put(id, p.getY());
         cacheAndClearInventoryForDowned(p);
         BattlefieldNetwork.sendFireLock(p, true);
         p.setHealth(1.0f);
@@ -1017,8 +1030,21 @@ public final class BreakthroughMatch {
         // before it ever gets synced to the client.
         for (UUID id : downedUntil.keySet()) {
             ServerPlayer p = player(id);
-            if (p != null && p.getPose() != Pose.SWIMMING) {
+            if (p == null) {
+                continue;
+            }
+            if (p.getPose() != Pose.SWIMMING) {
                 p.setPose(Pose.SWIMMING);
+            }
+            double lastGoodY = downedLastGoodY.getOrDefault(id, p.getY());
+            if (p.getY() - lastGoodY > DOWNED_MAX_Y_RISE_PER_TICK) {
+                p.connection.teleport(p.getX(), lastGoodY, p.getZ(), p.getYRot(), p.getXRot());
+                Vec3 v = p.getDeltaMovement();
+                if (v.y > 0.0D) {
+                    p.setDeltaMovement(v.x, 0.0D, v.z);
+                }
+            } else {
+                downedLastGoodY.put(id, p.getY());
             }
         }
         long now = server.getTickCount();
@@ -1035,6 +1061,7 @@ public final class BreakthroughMatch {
         for (UUID id : expired) {
             consumePendingDeath(id);
             downedUntil.remove(id);
+            downedLastGoodY.remove(id);
             ServerPlayer p = player(id);
             Faction f = factionOf.get(id);
             if (p != null && f != null) {
@@ -1083,6 +1110,7 @@ public final class BreakthroughMatch {
             ServerPlayer reviver = player(reviverId);
             if (target != null && reviver != null) {
                 downedUntil.remove(targetId);
+                downedLastGoodY.remove(targetId);
                 pendingDeaths.remove(targetId);
                 restoreDownedInventory(target);
                 BattlefieldNetwork.sendFireLock(target, false);
@@ -1201,6 +1229,7 @@ public final class BreakthroughMatch {
         if (action == DownedActionPacket.Action.GIVE_UP) {
             consumePendingDeath(id);
             downedUntil.remove(id);
+            downedLastGoodY.remove(id);
             player.removeAllEffects();
             player.setPose(Pose.STANDING);
             player.sendSystemMessage(Component.literal("§7你放弃了救援。"));
@@ -1262,6 +1291,7 @@ public final class BreakthroughMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        downedLastGoodY.clear();
         downedInventoryCache.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
@@ -1303,6 +1333,7 @@ public final class BreakthroughMatch {
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
+        downedLastGoodY.clear();
         downedInventoryCache.clear();
         pendingDeaths.clear();
         revivingTarget.clear();
@@ -1416,6 +1447,7 @@ public final class BreakthroughMatch {
         }
         if (downedUntil.containsKey(id)) {
             downedUntil.remove(id);
+            downedLastGoodY.remove(id);
             player.removeAllEffects();
             player.setPose(Pose.STANDING);
             player.sendSystemMessage(Component.literal("§c你掉线时倒地过久，已阵亡。"));

@@ -3,8 +3,10 @@ package org.shee33.act0.battlefield.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.living.LivingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
@@ -78,5 +80,32 @@ public final class BattlefieldClientInput {
         if (leftDown) {
             BattlefieldNetwork.CHANNEL.sendToServer(new DownedActionPacket(DownedActionPacket.Action.CALL_HELP));
         }
+    }
+
+    /**
+     * 真正阻止倒地玩家跳跃的地方（ConquestManager/BreakthroughManager 里那份服务端 onLivingJump
+     * 只是兜底，对本机玩家的跳跃动作本身无效——MC 的玩家位置同步是"客户端预测、上报绝对坐标，
+     * 服务端在合理范围内信任接受"（{@code ServerGamePacketListenerImpl.handleMovePlayer} 里最终
+     * 位置来自 {@code absMoveTo(clampVertical(packet.getY(...)), ...)}，跟服务端 {@code
+     * deltaMovement} 无关），服务端清零 deltaMovement 时客户端早已经用自己的物理预测算出并上报了
+     * 跳起来的 Y 坐标。
+     * <p>但 {@code LivingEntity.jumpFromGround()} 本身（设置 deltaMovement.y 为跳跃速度、随后
+     * {@code ForgeHooks.onLivingJump} 同步 post 出 {@link LivingEvent.LivingJumpEvent}）在本机
+     * 玩家（{@code LocalPlayer}）身上也会照常于客户端 {@code aiStep()} 内执行一次——同一次
+     * {@code aiStep()} 调用里，"jump" 阶段设置完 deltaMovement 并同步触发这个事件之后，紧接着的
+     * "travel" 阶段才会读取 deltaMovement 施加重力/位移。所以在这里于客户端拦截同一个事件、
+     * 把本机玩家的竖直速度归零，是在 travel() 消费它之前完成的，能真正让本机玩家这一 tick 不产生
+     * 向上位移，从而也不会把"跳起来的" Y 坐标上报给服务端。这与 Manager 里那份服务端处理程序
+     * 用的是完全相同的手法，只是注册在客户端事件总线、作用在本机玩家实体上，因此才真正生效。
+     */
+    @SubscribeEvent
+    public static void onLivingJump(LivingEvent.LivingJumpEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        Player self = mc.player;
+        if (self == null || event.getEntity() != self || !ClientDownedFeedback.isDowned()) {
+            return;
+        }
+        Vec3 v = self.getDeltaMovement();
+        self.setDeltaMovement(v.x, 0.0D, v.z);
     }
 }
