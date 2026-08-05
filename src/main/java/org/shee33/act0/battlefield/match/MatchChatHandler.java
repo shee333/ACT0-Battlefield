@@ -39,22 +39,42 @@ public final class MatchChatHandler {
     public void onServerChat(ServerChatEvent event) {
         ServerPlayer sender = event.getPlayer();
         UUID senderId = sender.getUUID();
+        String messageText = messageText(event);
 
         ConquestMatch conquest = conquestManager.activeContaining(senderId);
         if (conquest != null) {
             event.setCanceled(true);
-            broadcast(sender, event.getRawText(), conquest::contains, conquest::factionOf, conquest::isSameSquad);
+            broadcast(sender, messageText, conquest::contains, conquest::factionOf, conquest::isSameSquad);
             return;
         }
         BreakthroughMatch breakthrough = breakthroughManager.activeContaining(senderId);
         if (breakthrough != null) {
             event.setCanceled(true);
-            broadcast(sender, event.getRawText(), breakthrough::contains, breakthrough::factionOf,
+            broadcast(sender, messageText, breakthrough::contains, breakthrough::factionOf,
                     breakthrough::isSameSquad);
         }
     }
 
-    private void broadcast(ServerPlayer sender, String rawText, Predicate<UUID> isParticipant,
+    /**
+     * 提取玩家实际打的消息正文。
+     *
+     * <p>不用 {@link ServerChatEvent#getRawText()}：其值来自 Forge 内部
+     * {@code ForgeHooks.getRawText(Component)}，该方法仅在消息内容是裸的
+     * {@code LiteralContents}（单层纯文本）时才返回文本，一旦装饰后的 Component
+     * 被包成别的结构（比如其他同样监听聊天装饰链路的模组把正文放进了 sibling，
+     * 或未来 MC/Forge 版本改变了装饰产物的结构），就会静默退化为空字符串——
+     * 这与用户反馈的"看不到消息正文"完全吻合。
+     *
+     * <p>改用 {@link ServerChatEvent#getMessage()}（即将被发送给客户端的最终
+     * Component，取消事件后不会真正发出）配合 {@link Component#getString()}：
+     * 后者会递归访问 contents 以及全部 siblings，无论正文以什么结构挂在
+     * Component 树上都能拿到完整文本，比 rawText 的单层 literal 判断更稳健。
+     */
+    private static String messageText(ServerChatEvent event) {
+        return event.getMessage().getString();
+    }
+
+    private void broadcast(ServerPlayer sender, String messageText, Predicate<UUID> isParticipant,
                             Function<UUID, Faction> factionOf, BiPredicate<UUID, UUID> isSameSquad) {
         MinecraftServer server = sender.getServer();
         if (server == null) {
@@ -69,7 +89,7 @@ public final class MatchChatHandler {
                 continue;
             }
             String color = relationColor(senderFaction, factionOf.apply(viewerId), senderId, viewerId, isSameSquad);
-            viewer.sendSystemMessage(Component.literal(color + senderName + "§f: " + rawText));
+            viewer.sendSystemMessage(Component.literal(color + senderName + "§f: " + messageText));
         }
     }
 
