@@ -55,6 +55,12 @@ public final class DeployConfirmFx {
         landedAtMs = -1L;
     }
 
+    /** 断开服务器连接时兜底清空，防止下次连到另一个世界/服务器时播放上一局遗留的白闪转场。 */
+    static void reset() {
+        triggeredAtMs = -1L;
+        landedAtMs = -1L;
+    }
+
     /** 由 {@code DeploySpawnFxPacket} 处理器在触发 {@code ClientDeployFx.trigger} 的同一帧调用。 */
     public static void onLanded() {
         if (triggeredAtMs >= 0L && landedAtMs < 0L) {

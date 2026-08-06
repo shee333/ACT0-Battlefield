@@ -24,6 +24,12 @@ public final class ClientDeployFx {
         label = pointLabel != null ? pointLabel : "";
     }
 
+    /** 断开服务器连接时兜底清空，防止下次连到另一个世界/服务器时播放上一局遗留的落地反馈。 */
+    static void reset() {
+        startedMs = 0L;
+        label = "";
+    }
+
     public static String label() {
         return label;
     }

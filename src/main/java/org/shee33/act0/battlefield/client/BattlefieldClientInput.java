@@ -108,4 +108,11 @@ public final class BattlefieldClientInput {
         Vec3 v = self.getDeltaMovement();
         self.setDeltaMovement(v.x, 0.0D, v.z);
     }
+
+    /** 断开服务器连接时兜底清空，防止残留的救援/长按状态带进下一个世界/服务器。 */
+    static void reset() {
+        spaceHeldMs = 0L;
+        lastReviveTargetId = -1;
+        reviveHeartbeatCooldown = 0;
+    }
 }

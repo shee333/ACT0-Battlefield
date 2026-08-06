@@ -33,6 +33,11 @@ public final class ClientMatchStartFx {
         startedMs = System.currentTimeMillis();
     }
 
+    /** 断开服务器连接时兜底清空，防止下次连到另一个世界/服务器时播放上一局遗留的黑屏转场。 */
+    static void reset() {
+        startedMs = 0L;
+    }
+
     /** 全屏黑幕 alpha（0~255），三段式曲线，从触发时刻起算。 */
     public static int fadeAlpha() {
         if (startedMs <= 0L) {

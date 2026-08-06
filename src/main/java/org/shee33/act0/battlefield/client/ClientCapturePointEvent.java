@@ -35,6 +35,15 @@ public final class ClientCapturePointEvent {
     private ClientCapturePointEvent() {
     }
 
+    /** 断开服务器连接时兜底清空，防止下次连到另一个世界/服务器时播放上一局遗留的据点事件横幅。 */
+    static void reset() {
+        QUEUE.clear();
+        pointPulseAt.clear();
+        lastEventByPoint.clear();
+        active = null;
+        activeStartedMs = 0L;
+    }
+
     /** 服务端事件包到达时调用。 */
     public static void trigger(int pointId, CapturePointEventPacket.Kind kind, int factionCode) {
         long now = System.currentTimeMillis();

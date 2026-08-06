@@ -98,7 +98,9 @@ final class BreakthroughSectorAnimator {
         return phase == Phase.IDLE ? null : lastNonNullHud;
     }
 
-    private static void reset() {
+    /** 包内可见（非 private）：{@link ClientLifecycleHandler} 在断线时也会调用它兜底清空，
+     * 防止下次连到另一个世界/服务器时播放上一局遗留的区域突破动画。 */
+    static void reset() {
         phase = Phase.IDLE;
         lastSectorId = Integer.MIN_VALUE;
         lastRowSnapshot = List.of();

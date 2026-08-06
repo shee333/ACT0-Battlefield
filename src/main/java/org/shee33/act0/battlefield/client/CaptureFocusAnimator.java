@@ -94,6 +94,21 @@ final class CaptureFocusAnimator {
         slots.put(id, new float[]{cx, cy, diameter});
     }
 
+    /** 断开服务器连接时兜底清空，防止下次连到另一个世界/服务器时播放上一局遗留的幽灵特写/回撤动画。 */
+    static void reset() {
+        phase = Phase.IDLE;
+        pointId = -1;
+        twoRoundMode = false;
+        secondRound = false;
+        completedFriendly = false;
+        shownProgress = 0f;
+        lastEventSeenMs = -1L;
+        contestStartMs = -1L;
+        accountBounceStartMs = -1L;
+        accountBouncePointId = -1;
+        slots.clear();
+    }
+
     /** 由 {@code renderCaptureFocus} 每帧同步落点坐标与小图标/特写图的直径,随 GUI 分辨率变化。 */
     static void configureGeometry(float targetXpx, float targetYpx, float smallD, float focusD) {
         targetX = targetXpx;
