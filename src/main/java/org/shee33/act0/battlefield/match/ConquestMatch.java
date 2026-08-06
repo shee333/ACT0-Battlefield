@@ -124,6 +124,15 @@ public final class ConquestMatch {
     /** 救援心跳容忍窗口（tick）：超过这个时长没收到新心跳视为按键松开/掉线，避免网络抖动误取消。 */
     private static final int REVIVE_HEARTBEAT_TIMEOUT_TICKS = 10;
     private final Map<UUID, Long> spottedUntil = new LinkedHashMap<>();
+    /** 标记目标"首次被标记"的tick，标记时长固定从这里起算——重复标记同一目标不会无限延长发光
+     * 时间（P0安全修复：此前每次标记都把spottedUntil刷新为now+5s，恶意客户端持续spam可让
+     * 敌方永久发光，见.omo审计报告）。 */
+    private final Map<UUID, Long> spotFirstTick = new LinkedHashMap<>();
+    /** 每个标记者的上次标记tick，用于节流（P0安全修复：SpotEnemyPacket此前完全无频率限制，
+     * spam可打出O(N)次GlowSync同步的CPU/带宽放大攻击）。 */
+    private final Map<UUID, Long> lastSpotTick = new LinkedHashMap<>();
+    private static final long SPOT_DURATION_TICKS = 5 * 20;
+    private static final long SPOT_MIN_INTERVAL_TICKS = 4;
     private final Map<UUID, Integer> captureTime = new LinkedHashMap<>();
     private final Map<UUID, PendingDeath> pendingDeaths = new LinkedHashMap<>();
     private final Map<UUID, Integer> lastHudHash = new LinkedHashMap<>();
@@ -706,6 +715,8 @@ public final class ConquestMatch {
         revivingHeartbeat.clear();
         killTracker.clearTransient();
         spottedUntil.clear();
+        spotFirstTick.clear();
+        lastSpotTick.clear();
         captureTime.clear();
         callHelpCooldownUntil.clear();
         clearAllEnemyGlows();
@@ -879,6 +890,8 @@ public final class ConquestMatch {
         revivingHeartbeat.clear();
         killTracker.clearTransient();
         spottedUntil.clear();
+        spotFirstTick.clear();
+        lastSpotTick.clear();
         captureTime.clear();
         callHelpCooldownUntil.clear();
         clearAllEnemyGlows();
@@ -1742,6 +1755,13 @@ public final class ConquestMatch {
         if (spotter == null) {
             return;
         }
+        long now = server.getTickCount();
+        Long lastTick = lastSpotTick.get(spotter.getUUID());
+        if (lastTick != null && now - lastTick < SPOT_MIN_INTERVAL_TICKS) {
+            // 200ms内重复标记请求直接丢弃：正常单次按键标记不会撞上这个门槛，只有异常/
+            // 恶意客户端狂发这个C2S小包才会被限制住。
+            return;
+        }
         org.shee33.act0.battlefield.core.Faction spotterFaction = factionOf.get(spotter.getUUID());
         if (spotterFaction == null) {
             return;
@@ -1754,8 +1774,10 @@ public final class ConquestMatch {
         if (enemyFaction == null || enemyFaction == spotterFaction) {
             return;
         }
+        lastSpotTick.put(spotter.getUUID(), now);
         UUID targetUuid = enemy.getUUID();
-        spottedUntil.put(targetUuid, (long) server.getTickCount() + 5 * 20);
+        long firstTick = spotFirstTick.computeIfAbsent(targetUuid, ignored -> now);
+        spottedUntil.put(targetUuid, firstTick + SPOT_DURATION_TICKS);
         for (UUID mateId : factionOf.keySet()) {
             if (factionOf.get(mateId) != spotterFaction) {
                 continue;
@@ -1781,6 +1803,7 @@ public final class ConquestMatch {
         }
         for (UUID id : expired) {
             spottedUntil.remove(id);
+            spotFirstTick.remove(id);
             ServerPlayer target = player(id);
             if (target != null) {
                 target.setGlowingTag(false);
