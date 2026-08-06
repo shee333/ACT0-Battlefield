@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 
 /**
@@ -116,6 +117,70 @@ public final class SquadManager {
         squadLeaders.keySet().removeIf(id -> !squads.containsKey(id));
         orderRequests.keySet().removeIf(id -> !squads.containsKey(id));
         activeOrders.keySet().removeIf(id -> !squads.containsKey(id));
+    }
+
+    // ---- 中途加入(latecomer)增量分队 ----
+
+    /**
+     * 中途加入玩家的增量分队，与 {@link #buildSquads()} 的"全量清空重建"完全不同，专供
+     * 对局进行中加入的玩家使用。
+     *
+     * <p>{@link #buildSquads()} 会先清空 {@link #squadOf}/{@link #squads}，再按
+     * {@link #factionOf} 当前的迭代顺序从头重新编号所有小队——开局分队时这没问题，但中途
+     * 加入时新玩家的 UUID 是最后插入 {@link #factionOf} 的，在迭代顺序里必然排在最后。一旦
+     * 该阵营现有小队恰好都满员，新玩家就会被塞进"下一个新开的小队"，自己一个人形成一个孤零零
+     * 的小队；而且全量重建还会把其他所有玩家的 squadOf/squads 也重新算一遍，虽然队长指派逻辑
+     * 有"已有队长不覆盖"的保护，但这仍然是不必要的、有风险的全量操作。
+     *
+     * <p>本方法只做增量：
+     * <ol>
+     *   <li>找出该阵营现有小队里人数未满 {@code squadSize} 的小队；</li>
+     *   <li>如果有，从这些"未满小队"里随机挑一个塞进去（不是塞进最空的那个），该小队原有
+     *       队长不变；</li>
+     *   <li>如果该阵营现有小队全部满员（或该阵营还没有任何小队），才新开一个小队编号，玩家
+     *       自己是这个新小队唯一的成员，也直接指派为队长。</li>
+     * </ol>
+     * 全程只新增一条 {@link #squadOf}/{@link #squads} 记录，绝不触碰其他玩家已有的
+     * squadOf/squads/squadLeaders 映射。
+     *
+     * @param playerId 中途加入的玩家 UUID（调用前应已写入 {@link #factionOf}）
+     * @param faction  玩家所属阵营
+     */
+    public void assignLatecomer(UUID playerId, Faction faction) {
+        List<Integer> underfull = new ArrayList<>();
+        for (Map.Entry<Integer, LinkedHashSet<UUID>> entry : squads.entrySet()) {
+            LinkedHashSet<UUID> members = entry.getValue();
+            if (members.isEmpty() || members.size() >= squadSize) {
+                continue;
+            }
+            UUID firstMember = members.iterator().next();
+            if (factionOf.get(firstMember) == faction) {
+                underfull.add(entry.getKey());
+            }
+        }
+        boolean opensNewSquad = underfull.isEmpty();
+        int squadId = opensNewSquad
+                ? nextSquadId(faction)
+                : underfull.get(ThreadLocalRandom.current().nextInt(underfull.size()));
+        squadOf.put(playerId, squadId);
+        squads.computeIfAbsent(squadId, ignored -> new LinkedHashSet<>()).add(playerId);
+        if (opensNewSquad) {
+            // 新小队没有既存队长，新玩家是唯一成员，直接指派为队长——与 buildSquads() 的
+            // 队长自动指派逻辑一致（每个小队的第一个成员即队长）。
+            squadLeaders.put(squadId, playerId);
+        }
+    }
+
+    /**
+     * 给指定阵营找一个尚未被占用的小队编号，沿用 {@link #buildSquads()} 同样的编号规则
+     * （ALPHA 从 1 起、BRAVO 从 101 起，逐个探测直到找到空位）。
+     */
+    private int nextSquadId(Faction faction) {
+        int candidate = faction == Faction.ALPHA ? 1 : 101;
+        while (squads.containsKey(candidate)) {
+            candidate++;
+        }
+        return candidate;
     }
 
     // ---- Squad leader ----

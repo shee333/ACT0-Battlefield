@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.shee33.act0.battlefield.command.BreakthroughCommand;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.LatecomerAssignment;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
@@ -188,8 +189,16 @@ public final class BreakthroughManager {
             player.displayClientMessage(Component.literal("§e你已在该突破对局中"), true);
             return;
         }
-        Faction faction = match.memberCount(Faction.ALPHA) <= match.memberCount(Faction.BRAVO)
-                ? Faction.ALPHA : Faction.BRAVO;
+        // 中途加入随机分配阵营（不再是"人数少的一方优先"）。理由与 ConquestManager#quickJoin
+        // 一致：本 mod 没有"每阵营人数上限"配置概念，cap 传 Integer.MAX_VALUE 退化为纯 50/50
+        // 随机；randomFaction() 的容量约束分支仍保留，未来引入人数上限时无需再改这里。
+        Faction faction = LatecomerAssignment.randomFaction(
+                match.memberCount(Faction.ALPHA), Integer.MAX_VALUE,
+                match.memberCount(Faction.BRAVO), Integer.MAX_VALUE);
+        if (faction == null) {
+            player.displayClientMessage(Component.literal("§c该突破对局已满员"), true);
+            return;
+        }
         if (match.addLatecomer(player, faction)) {
             ResourceKey<Level> battleKey = levelKey != null ? levelKey : player.serverLevel().dimension();
             player.displayClientMessage(Component.literal("§a已加入 "

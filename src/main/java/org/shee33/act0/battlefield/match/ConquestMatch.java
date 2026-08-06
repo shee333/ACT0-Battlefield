@@ -211,7 +211,7 @@ public final class ConquestMatch {
         factionOf.put(id, faction);
         killTracker.initPlayer(id);
         RelativeTeamSync.reset(id); // 强制下次同步进行全量重建
-        squadManager.buildSquads();
+        squadManager.assignLatecomer(id, faction);
         setupNameTagTeams();
         beginRedeploy(player, faction);
         broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
