@@ -54,9 +54,10 @@ class DtoRoundTripTest {
     void deployStatusDtoRoundTrip() {
         DeployPointDto dp = new DeployPointDto("0", "A", 1, true, 100.0, 65.0, 200.0);
         DeploySquadMateDto sm = new DeploySquadMateDto("uuid", "Mate", 42, true, 105.0, 64.0, 210.0);
+        DeployAllyDto ally = new DeployAllyDto("ally-uuid", "Ally", 43, 110.0, 64.0, 220.0);
         DeployStatusDto dto = new DeployStatusDto(true, true, true, true, "point", "0", 60,
                 100.0, 64.0, 200.0, 105.0, 64.0, 210.0,
-                List.of(dp), List.of(sm),
+                List.of(dp), List.of(sm), List.of(ally),
                 true, -50.0, 0.0, -50.0, 150.0, 128.0, 150.0, false, 42);
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
@@ -68,6 +69,39 @@ class DtoRoundTripTest {
         assertEquals(dto.areaExplicit(), decoded.areaExplicit());
         assertEquals(1, decoded.points().size());
         assertEquals(1, decoded.squadMates().size());
+        assertEquals(1, decoded.allies().size());
+        assertEquals("Ally", decoded.allies().get(0).name());
         assertEquals(dto.spectateEntityId(), decoded.spectateEntityId());
+    }
+
+    @Test
+    void deployAllyDtoRoundTrip() {
+        DeployAllyDto dto = new DeployAllyDto("uuid-1", "Rifleman", 7, 12.5, 64.0, -30.25);
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        dto.encode(buf);
+        DeployAllyDto decoded = DeployAllyDto.decode(buf);
+        assertEquals(dto.id(), decoded.id());
+        assertEquals(dto.name(), decoded.name());
+        assertEquals(dto.entityId(), decoded.entityId());
+        assertEquals(dto.x(), decoded.x());
+        assertEquals(dto.y(), decoded.y());
+        assertEquals(dto.z(), decoded.z());
+    }
+
+    @Test
+    void deployLoadoutDtoRoundTrip() {
+        DeploySlotOptionsDto slot = new DeploySlotOptionsDto(0, "PRIMARY_WEAPON", "m4a1",
+                List.of("m4a1", "ak74", "scar_h"));
+        DeployLoadoutDto dto = new DeployLoadoutDto("ASSAULT", List.of(slot));
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        dto.encode(buf);
+        DeployLoadoutDto decoded = DeployLoadoutDto.decode(buf);
+        assertEquals(dto.className(), decoded.className());
+        assertEquals(1, decoded.slots().size());
+        DeploySlotOptionsDto decodedSlot = decoded.slots().get(0);
+        assertEquals(slot.slotIndex(), decodedSlot.slotIndex());
+        assertEquals(slot.slotName(), decodedSlot.slotName());
+        assertEquals(slot.currentItemName(), decodedSlot.currentItemName());
+        assertEquals(slot.availableItemNames(), decodedSlot.availableItemNames());
     }
 }

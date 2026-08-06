@@ -259,6 +259,7 @@ public final class BreakthroughMatch {
         BattlefieldNetwork.sendFireLock(player, false);
         killTracker.removePlayer(id);
         redeployService.removeProtection(id);
+        redeployService.clearLoadoutOverride(id);
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
@@ -1434,6 +1435,10 @@ public final class BreakthroughMatch {
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
         redeployService.handleDeployAction(player, kind, targetId);
+    }
+
+    public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
+        redeployService.handleSlotOverride(player, slotIndex, itemName);
     }
 
     public void refreshDeployStatus(ServerPlayer player) {

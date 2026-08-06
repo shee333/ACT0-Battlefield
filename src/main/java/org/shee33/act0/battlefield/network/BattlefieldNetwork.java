@@ -101,6 +101,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncMatchStartFxPacket.class,
             SyncMatchStartFxPacket::encode, SyncMatchStartFxPacket::decode, SyncMatchStartFxPacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, DeploySlotOverridePacket.class,
+            DeploySlotOverridePacket::encode, DeploySlotOverridePacket::decode, DeploySlotOverridePacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 
     /** 向玩家推送 HUD 内容。 */

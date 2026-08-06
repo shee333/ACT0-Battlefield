@@ -607,6 +607,13 @@ public final class ConquestManager {
         }
     }
 
+    public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.handleDeploySlotOverride(player, slotIndex, itemName);
+        }
+    }
+
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();

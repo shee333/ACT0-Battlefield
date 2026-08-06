@@ -13,6 +13,7 @@ import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
+import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 
@@ -283,7 +284,7 @@ public final class BattlefieldDeployScreen extends Screen {
      */
     private void renderLoadoutPanel(GuiGraphics gg) {
         DeployLoadoutDto loadout = ClientDeployLoadout.get();
-        if (loadout == null || loadout.slotNames().isEmpty()) {
+        if (loadout == null || loadout.slots().isEmpty()) {
             return;
         }
 
@@ -293,7 +294,7 @@ public final class BattlefieldDeployScreen extends Screen {
         final int maxBottom = height - 26;
         final int accent = PixelTheme.ALPHA_COLOR;
 
-        int rows = Math.min(loadout.slotNames().size(), 10);
+        int rows = Math.min(loadout.slots().size(), 10);
         int contentH = 32 + rows * 14;
         int panelH = Math.min(contentH, maxBottom - panelY);
 
@@ -319,8 +320,9 @@ public final class BattlefieldDeployScreen extends Screen {
             int sy = panelY + 24 + i * lineH;
             if (sy + lineH > panelY + panelH - 4) break;
 
-            String slot = loadout.slotNames().get(i);
-            String item = loadout.itemNames().get(i);
+            DeploySlotOptionsDto slotDto = loadout.slots().get(i);
+            String slot = slotDto.slotName();
+            String item = slotDto.currentItemName();
             String text = slot + ": " + item;
             if (font.width(text) > maxTextW) {
                 text = font.plainSubstrByWidth(text, maxTextW);

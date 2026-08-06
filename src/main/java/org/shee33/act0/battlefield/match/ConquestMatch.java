@@ -238,6 +238,7 @@ public final class ConquestMatch {
         BattlefieldNetwork.sendFireLock(player, false);
         killTracker.removePlayer(id);
         redeployService.removeProtection(id);
+        redeployService.clearLoadoutOverride(id);
         lastHurtTick.remove(id);
         escapeTicks.remove(id);
         downedUntil.remove(id);
@@ -635,6 +636,10 @@ public final class ConquestMatch {
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
         redeployService.handleDeployAction(player, kind, targetId);
+    }
+
+    public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
+        redeployService.handleSlotOverride(player, slotIndex, itemName);
     }
 
     private void deploy(ServerPlayer p, Faction f) {

@@ -15,6 +15,8 @@ import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
+import org.shee33.act0.battlefield.network.DeployAllyDto;
+import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
@@ -61,6 +63,16 @@ public final class RedeployService {
     private final Map<UUID, Long> protectedUntil = new LinkedHashMap<>();
     private final Map<UUID, Integer> spectateTarget = new LinkedHashMap<>();
     private final Map<UUID, PanState> deployPanState = new LinkedHashMap<>();
+    /**
+     * 玩家 UUID → (槽位序号 → 覆盖后物品名) 的本次对局会话覆盖状态。玩家在部署界面武器更换
+     * 面板里选中的槖位覆盖只影响"这一命"落地时应用的装备，不改变 Arcade 里保存的配装本身。
+     *
+     * <p>生命周期：一旦写入就持续有效，直到玩家自己再改（覆盖同一槽位）或退出对局/对局结束
+     * ——每次重生之间<b>不</b>自动重置，这更符合"这条命换的装备一直用到我再换"的直觉，而不是
+     * 每次死亡重生都被静默清空。见 {@link #clearLoadoutOverride}（退出对局时调用）与
+     * {@link #clearAll}（对局结束/中止时调用）。
+     */
+    private final Map<UUID, Map<Integer, String>> loadoutOverrides = new LinkedHashMap<>();
 
     /** Deploy-overview-to-spawn camera pan duration. Kept well under 1s (20 ticks). */
     private static final int PAN_DURATION_TICKS = 18;
@@ -154,7 +166,7 @@ public final class RedeployService {
         player.setDeltaMovement(0.0, 0.0, 0.0);
         teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
-        BattlefieldNetwork.sendDeployLoadout(player, ArcadeLoadoutBridge.readDeployLoadout(player));
+        BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
         player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
     }
 
@@ -193,6 +205,30 @@ public final class RedeployService {
         } else {
             BattlefieldNetwork.sendDeploy(player, false, DeployStatusDto.inactive());
         }
+    }
+
+    /**
+     * 部署界面底部武器更换面板提交的槖位覆盖选择（{@code DeploySlotOverridePacket}）。
+     * 只在部署界面确实开着时受理，物品名必须在该槖位当前的已解锁可选列表内才会被接受——
+     * 校验逻辑见 {@link DeployLoadoutDto#isValidOverride}（纯函数，不依赖本类）。
+     */
+    public void handleSlotOverride(ServerPlayer player, int slotIndex, String itemName) {
+        UUID id = player.getUUID();
+        if (!redeployReadyTick.containsKey(id)) {
+            return;
+        }
+        DeployLoadoutDto base = ArcadeLoadoutBridge.readDeployLoadout(player);
+        String item = itemName != null ? itemName : "";
+        if (base.isValidOverride(slotIndex, item)) {
+            loadoutOverrides.computeIfAbsent(id, ignored -> new LinkedHashMap<>()).put(slotIndex, item);
+        }
+        BattlefieldNetwork.sendDeployLoadout(player, base.withOverrides(loadoutOverrides.get(id)));
+    }
+
+    /** 把本次对局会话覆盖叠加到 Arcade 原始配装快照上，供部署界面展示。 */
+    private DeployLoadoutDto deployLoadoutFor(ServerPlayer player) {
+        DeployLoadoutDto base = ArcadeLoadoutBridge.readDeployLoadout(player);
+        return base.withOverrides(loadoutOverrides.get(player.getUUID()));
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
@@ -257,6 +293,12 @@ public final class RedeployService {
         protectedUntil.clear();
         spectateTarget.clear();
         deployPanState.clear();
+        loadoutOverrides.clear();
+    }
+
+    /** 玩家退出对局时调用：清除其本次对局的槽位覆盖会话状态，避免残留造成内存泄漏。 */
+    public void clearLoadoutOverride(UUID id) {
+        loadoutOverrides.remove(id);
     }
 
     /** Entity id of the living squadmate closest to {@code player}, or -1 if none. */
@@ -288,6 +330,7 @@ public final class RedeployService {
         BattlefieldData.BaseSpawn base = data.base(faction);
         List<DeployPointDto> pointDtos = deployPointDtos(faction);
         List<DeploySquadMateDto> squadDtos = squadManager.deploySquadMateDtos(id, faction);
+        List<DeployAllyDto> allyDtos = deployAllyDtos(id, faction);
         boolean canSquad = squadDtos.stream().anyMatch(DeploySquadMateDto::deployable);
         boolean canPoint = pointDtos.stream().anyMatch(DeployPointDto::deployable);
         boolean canBase = base != null;
@@ -308,7 +351,7 @@ public final class RedeployService {
         return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
                 base != null ? base.x() : 0, base != null ? base.y() + 1.0 : 0, base != null ? base.z() : 0,
                 squad != null ? squad.x() : 0, squad != null ? squad.y() + 1.0 : 0, squad != null ? squad.z() : 0,
-                pointDtos, squadDtos,
+                pointDtos, squadDtos, allyDtos,
                 area.isSet(),
                 area.minX(), area.minY(), area.minZ(),
                 area.maxX(), area.maxY(), area.maxZ(),
@@ -326,6 +369,47 @@ public final class RedeployService {
                     deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5));
         }
         return list;
+    }
+
+    /**
+     * 同阵营(非小队)存活玩家坐标标记——见《部署界面动效规格文档》2.2 节"同阵营玩家"一行：
+     * 蓝色实心圆、纯展示不可交互。与 {@link SquadManager#deploySquadMateDtos} 互斥：已经在
+     * 小队成员列表里的人不会再在这里重复出现一次，避免地图上同一个人被画成两种标记。
+     */
+    private List<DeployAllyDto> deployAllyDtos(UUID self, Faction faction) {
+        List<DeployAllyDto> list = new ArrayList<>();
+        for (UUID otherId : filterAllyCandidateIds(self, faction, factionOf, squadManager)) {
+            ServerPlayer other = player(otherId);
+            if (other == null || other.level() != level || !other.isAlive() || other.isSpectator()
+                    || downedUntil.containsKey(otherId)) {
+                continue;
+            }
+            list.add(new DeployAllyDto(otherId.toString(), other.getGameProfile().getName(), other.getId(),
+                    other.getX(), other.getY() + 1.0, other.getZ()));
+        }
+        return list;
+    }
+
+    /**
+     * 纯函数：从阵营归属表里筛出"应作为同阵营点位标记显示"的候选玩家 ID——排除自己、排除敌方、
+     * 排除同小队成员。真实的存活/旁观者/倒地/所在世界校验依赖 {@code ServerPlayer}，由调用方
+     * （{@link #deployAllyDtos}）在此基础上再筛一遍。不依赖 {@code ServerPlayer}/
+     * {@code ServerLevel}，可直接单测。
+     */
+    static List<UUID> filterAllyCandidateIds(UUID self, Faction selfFaction, Map<UUID, Faction> factionOf,
+                                              SquadManager squadManager) {
+        List<UUID> out = new ArrayList<>();
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            UUID id = e.getKey();
+            if (id.equals(self) || e.getValue() != selfFaction) {
+                continue;
+            }
+            if (squadManager.isSameSquad(self, id)) {
+                continue;
+            }
+            out.add(id);
+        }
+        return out;
     }
 
     // ---- Private: deploy selection helpers ----
@@ -547,6 +631,7 @@ public final class RedeployService {
         cancelRevive.accept(id);
         p.setPose(Pose.STANDING);
         ArcadeLoadoutBridge.apply(p);
+        ArcadeLoadoutBridge.applyOverrides(p, loadoutOverrides.get(id));
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
         lastHurtTick.remove(id);
