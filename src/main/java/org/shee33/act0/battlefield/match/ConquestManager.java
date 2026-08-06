@@ -61,6 +61,12 @@ public final class ConquestManager {
     /** 地图模板根路径。 */
     private final Path templateBasePath = Path.of("config", "act0_battlefield", "templates");
 
+    /** 每玩家上次"加入候选名单"的时间戳，节流JOIN_ALPHA/JOIN_BRAVO——这两个动作会触发
+     * {@link #broadcastStatus}向所有在线玩家广播状态快照，恶意客户端spam切边会打出
+     * N倍广播放大攻击（P1安全修复）。 */
+    private final Map<UUID, Long> lastLobbyJoinMs = new LinkedHashMap<>();
+    private static final long LOBBY_JOIN_MIN_INTERVAL_MS = 200L;
+
     private static final Logger LOGGER = LogUtils.getLogger();
 
     // ---- 候选名单 ----
@@ -350,6 +356,12 @@ public final class ConquestManager {
                     }
                     player.sendSystemMessage(Component.literal("§c该世界对局进行中，无法加入。"));
                 } else {
+                    long now = System.currentTimeMillis();
+                    Long last = lastLobbyJoinMs.get(player.getUUID());
+                    if (last != null && now - last < LOBBY_JOIN_MIN_INTERVAL_MS) {
+                        return;
+                    }
+                    lastLobbyJoinMs.put(player.getUUID(), now);
                     lobbyFor(player.serverLevel()).put(player.getUUID(), ActionPacket.factionOf(action));
                     broadcastStatus(player.getServer());
                     return;
