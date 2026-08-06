@@ -1,10 +1,12 @@
 package org.shee33.act0.battlefield.network;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.core.Faction;
+import org.slf4j.Logger;
 
 import java.util.function.Supplier;
 
@@ -15,6 +17,8 @@ import java.util.function.Supplier;
  * {@link Action#REFRESH} 请求刷新。处理后回推最新状态。
  */
 public final class ActionPacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public enum Action {
         JOIN_ALPHA, JOIN_BRAVO, LEAVE, START, STOP, OPEN, OPEN_LOADOUT, REFRESH
@@ -42,7 +46,11 @@ public final class ActionPacket {
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
             if (player != null) {
-                Act0Battlefield.manager().handleAction(player, msg.action);
+                try {
+                    Act0Battlefield.manager().handleAction(player, msg.action);
+                } catch (Throwable t) {
+                    LOGGER.warn("ActionPacket handler failed for {}", player.getGameProfile().getName(), t);
+                }
             }
         });
         context.setPacketHandled(true);

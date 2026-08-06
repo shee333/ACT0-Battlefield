@@ -1,9 +1,11 @@
 package org.shee33.act0.battlefield.network;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.slf4j.Logger;
 
 import java.util.function.Supplier;
 
@@ -20,6 +22,8 @@ import java.util.function.Supplier;
  * {@code ReviveHeartbeatPacket} 同款写法，各管理器内部会自行判断玩家是否在其管理的对局中）。
  */
 public final class DeploySlotOverridePacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final int slotIndex;
     private final String itemName;
@@ -43,8 +47,12 @@ public final class DeploySlotOverridePacket {
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
             if (player != null) {
-                Act0Battlefield.manager().handleDeploySlotOverride(player, msg.slotIndex, msg.itemName);
-                Act0Battlefield.BREAKTHROUGH_MANAGER.handleDeploySlotOverride(player, msg.slotIndex, msg.itemName);
+                try {
+                    Act0Battlefield.manager().handleDeploySlotOverride(player, msg.slotIndex, msg.itemName);
+                    Act0Battlefield.BREAKTHROUGH_MANAGER.handleDeploySlotOverride(player, msg.slotIndex, msg.itemName);
+                } catch (Throwable t) {
+                    LOGGER.warn("DeploySlotOverridePacket handler failed for {}", player.getGameProfile().getName(), t);
+                }
             }
         });
         context.setPacketHandled(true);

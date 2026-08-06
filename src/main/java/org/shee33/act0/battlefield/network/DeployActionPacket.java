@@ -1,10 +1,12 @@
 package org.shee33.act0.battlefield.network;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.match.ConquestMatch;
+import org.slf4j.Logger;
 
 import java.util.function.Supplier;
 
@@ -12,6 +14,8 @@ import java.util.function.Supplier;
  * C2S: deploy screen action. Supports selecting a concrete point target.
  */
 public final class DeployActionPacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public enum DeployKind {
         SQUAD("squad"), POINT("point"), BASE("base"), REFRESH("");
@@ -57,10 +61,14 @@ public final class DeployActionPacket {
             ServerPlayer player = context.getSender();
             ConquestMatch match = player != null ? Act0Battlefield.manager().activeContaining(player.getUUID()) : null;
             if (player != null && match != null) {
-                if (msg.kind == DeployKind.REFRESH) {
-                    match.refreshDeployStatus(player);
-                } else {
-                    match.handleDeployAction(player, msg.kind.id(), msg.targetId);
+                try {
+                    if (msg.kind == DeployKind.REFRESH) {
+                        match.refreshDeployStatus(player);
+                    } else {
+                        match.handleDeployAction(player, msg.kind.id(), msg.targetId);
+                    }
+                } catch (Throwable t) {
+                    LOGGER.warn("DeployActionPacket handler failed for {}", player.getGameProfile().getName(), t);
                 }
             }
         });

@@ -1,9 +1,11 @@
 package org.shee33.act0.battlefield.network;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.slf4j.Logger;
 
 import java.util.function.Supplier;
 
@@ -16,6 +18,8 @@ import java.util.function.Supplier;
  * 超过容忍窗口没收到新心跳同样会被判定为取消。
  */
 public final class ReviveHeartbeatPacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final int targetEntityId;
     private final boolean active;
@@ -41,8 +45,12 @@ public final class ReviveHeartbeatPacket {
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
             if (player != null) {
-                Act0Battlefield.manager().handleReviveHeartbeat(player, msg.targetEntityId, msg.active);
-                Act0Battlefield.BREAKTHROUGH_MANAGER.handleReviveHeartbeat(player, msg.targetEntityId, msg.active);
+                try {
+                    Act0Battlefield.manager().handleReviveHeartbeat(player, msg.targetEntityId, msg.active);
+                    Act0Battlefield.BREAKTHROUGH_MANAGER.handleReviveHeartbeat(player, msg.targetEntityId, msg.active);
+                } catch (Throwable t) {
+                    LOGGER.warn("ReviveHeartbeatPacket handler failed for {}", player.getGameProfile().getName(), t);
+                }
             }
         });
         context.setPacketHandled(true);
