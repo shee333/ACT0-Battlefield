@@ -98,6 +98,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, ReviveHeartbeatPacket.class,
             ReviveHeartbeatPacket::encode, ReviveHeartbeatPacket::decode, ReviveHeartbeatPacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, SyncMatchStartFxPacket.class,
+            SyncMatchStartFxPacket::encode, SyncMatchStartFxPacket::decode, SyncMatchStartFxPacket::handle,
+            Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -155,6 +158,14 @@ public final class BattlefieldNetwork {
     /** 向玩家推送部署传送落地反馈（屏幕淡出 + 底部据点提示）。 */
     public static void sendDeploySpawnFx(ServerPlayer player, String pointLabel) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DeploySpawnFxPacket(pointLabel));
+    }
+
+    /**
+     * 向玩家推送"比赛开局"全屏黑屏转场（淡入→停留→淡出）。倒计时结束、COMBAT 阶段正式开始
+     * 那一刻触发，与 {@link #sendDeploySpawnFx} 语义/状态互不干扰，各自独立并存。
+     */
+    public static void sendMatchStartFx(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncMatchStartFxPacket());
     }
 
     /**

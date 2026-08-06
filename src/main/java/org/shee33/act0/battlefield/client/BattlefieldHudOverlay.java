@@ -66,6 +66,7 @@ public final class BattlefieldHudOverlay {
         renderDownedMates(gg, font, hud);
         renderCornerHud(gg, font, hud);
         renderDeploySpawnFx(gg, font);
+        renderMatchStartFx(gg);
         renderDownedSelfFeedback(gg, font);
         renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
     }
@@ -96,6 +97,20 @@ public final class BattlefieldHudOverlay {
         gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, toast * 0.72f));
         gg.fill(x, y, x + panelW, y + 1, withAlpha(WHITE, toast * 0.9f));
         gg.drawString(font, text, centerX - textW / 2, y + 5, withAlpha(WHITE, toast), false);
+    }
+
+    /**
+     * 比赛开局全屏黑屏转场：淡入(变黑)→停留→淡出(恢复)，倒计时结束、COMBAT 阶段正式开始那一刻
+     * 触发。与 {@link #renderDeploySpawnFx} 用的 {@code ClientDeployFx} 是两套独立状态，互不覆盖。
+     *
+     * <p>模式无关：包内可见，供 {@code BreakthroughHudOverlay} 复用，参照
+     * {@link #renderCapturePointBannerCore} 的共享方法模式。
+     */
+    static void renderMatchStartFx(GuiGraphics gg) {
+        int fadeAlpha = ClientMatchStartFx.fadeAlpha();
+        if (fadeAlpha > 0) {
+            gg.fill(0, 0, gg.guiWidth(), gg.guiHeight(), fadeAlpha << 24);
+        }
     }
 
     /**

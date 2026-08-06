@@ -359,6 +359,7 @@ public final class BreakthroughMatch {
             startCountdownTicks = 0;
             startedTick = server.getTickCount();
             sendFireLockToAll(false);
+            sendMatchStartFxToAll();
             showTitle("§a§l突破开始", "§7进攻方推进！防守方守住阵地！", 2, 24, 8);
             playToAll(SoundEvents.PLAYER_LEVELUP, 1.0f);
             broadcast("§a突破模式正式开始！");
@@ -1736,6 +1737,16 @@ public final class BreakthroughMatch {
             ServerPlayer p = player(id);
             if (p != null) {
                 BattlefieldNetwork.sendFireLock(p, locked);
+            }
+        }
+    }
+
+    /** 向全体参战玩家广播"比赛开局"全屏黑屏转场，倒计时结束、COMBAT 阶段正式开始那一刻调用。 */
+    private void sendMatchStartFxToAll() {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                BattlefieldNetwork.sendMatchStartFx(p);
             }
         }
     }

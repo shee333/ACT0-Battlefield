@@ -79,6 +79,7 @@ public final class BreakthroughHudOverlay {
         renderFinalBanner(gg, font, now);
         renderCapturePointBanner(gg, font, hud);
         BattlefieldHudOverlay.renderDeploySpawnFx(gg, font);
+        BattlefieldHudOverlay.renderMatchStartFx(gg);
         BattlefieldHudOverlay.renderDownedSelfFeedback(gg, font);
         BattlefieldHudOverlay.renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
     }
