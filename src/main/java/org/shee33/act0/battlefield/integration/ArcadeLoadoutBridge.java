@@ -172,11 +172,11 @@ public final class ArcadeLoadoutBridge {
                         availableNames.add((String) itemKeyM.invoke(item));
                     }
                 }
-                if (!availableNames.contains(key)) {
-                    // 当前选中项理应总在其自身可选列表内(默认武器恒可用，其余能被选中说明已解锁过)；
-                    // 兜底补入，避免解锁状态被后续调整导致"当前项"反而不在可选项内的展示不一致。
-                    availableNames.add(0, key);
-                }
+                // P1-1 修复：不再把"当前选中项"强制塞进 availableNames——这个列表同时被
+                // DeployLoadoutDto#isValidOverride（校验换装覆盖是否合法）和武器更换面板
+                // （展示可选项）共用，强塞一个未解锁的当前项会让它在校验眼中变成合法可选项，
+                // 使已被撤销解锁的物品能通过部署面板重新拿到。currentItemName（即此处的 key）
+                // 是独立字段，展示当前装备名不需要靠"塞进可选列表"来实现。
                 int hotbarIndex = (Integer) hotbarIndexM.invoke(slot);
                 slots.add(new DeploySlotOptionsDto(hotbarIndex, slot.toString(), key, availableNames));
             }

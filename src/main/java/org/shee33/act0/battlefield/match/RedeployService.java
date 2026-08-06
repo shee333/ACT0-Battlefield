@@ -79,6 +79,15 @@ public final class RedeployService {
      * {@link #clearAll}（对局结束/中止时调用）。
      */
     private final Map<UUID, Map<Integer, String>> loadoutOverrides = new LinkedHashMap<>();
+    /**
+     * 玩家 UUID → 上次成功处理 {@code DeploySlotOverridePacket} 的 tick（P1-2 修复）。每收到
+     * 这个小包都要跑一遍反射开销不小的 {@link ArcadeLoadoutBridge#readDeployLoadout}，
+     * 无节流会让恶意/异常客户端狂发小包造成主线程反射风暴+回包带宽放大；参照
+     * {@link ConquestMatch} 里 CALL_HELP 呼救冷却同款"记录上次处理 tick，间隔太短直接丢弃"写法。
+     */
+    private final Map<UUID, Long> lastSlotOverrideTick = new LinkedHashMap<>();
+    /** 换装覆盖包最小处理间隔：100ms（20 tick/s，2 tick）。 */
+    private static final int MIN_SLOT_OVERRIDE_INTERVAL_TICKS = 2;
 
     /** Deploy-overview-to-spawn camera pan duration. Kept well under 1s (20 ticks). */
     private static final int PAN_DURATION_TICKS = 18;
@@ -225,12 +234,28 @@ public final class RedeployService {
         if (!redeployReadyTick.containsKey(id)) {
             return;
         }
+        long now = server.getTickCount();
+        if (isSlotOverrideThrottled(lastSlotOverrideTick.get(id), now)) {
+            // 请求间隔太短(<100ms):直接丢弃,不回复任何东西——正常客户端点击换装面板的频率
+            // 不会撞上这个门槛,只有异常/恶意客户端狂发这个C2S小包才会被限制住(P1-2修复)。
+            return;
+        }
+        lastSlotOverrideTick.put(id, now);
         DeployLoadoutDto base = ArcadeLoadoutBridge.readDeployLoadout(player);
         String item = itemName != null ? itemName : "";
         if (base.isValidOverride(slotIndex, item)) {
             loadoutOverrides.computeIfAbsent(id, ignored -> new LinkedHashMap<>()).put(slotIndex, item);
         }
         BattlefieldNetwork.sendDeployLoadout(player, base.withOverrides(loadoutOverrides.get(id)));
+    }
+
+    /**
+     * 纯函数(P1-2修复):给定"上次处理这个包的tick"与"当前tick",判断这次请求是否应该被节流
+     * 拒绝——间隔小于 {@link #MIN_SLOT_OVERRIDE_INTERVAL_TICKS}(100ms)时拒绝。不依赖
+     * {@code ServerPlayer}/{@code MinecraftServer},可直接单测。
+     */
+    static boolean isSlotOverrideThrottled(@Nullable Long lastTick, long nowTick) {
+        return lastTick != null && nowTick - lastTick < MIN_SLOT_OVERRIDE_INTERVAL_TICKS;
     }
 
     /** 把本次对局会话覆盖叠加到 Arcade 原始配装快照上，供部署界面展示。 */
@@ -302,11 +327,13 @@ public final class RedeployService {
         spectateTarget.clear();
         deployPanState.clear();
         loadoutOverrides.clear();
+        lastSlotOverrideTick.clear();
     }
 
     /** 玩家退出对局时调用：清除其本次对局的槽位覆盖会话状态，避免残留造成内存泄漏。 */
     public void clearLoadoutOverride(UUID id) {
         loadoutOverrides.remove(id);
+        lastSlotOverrideTick.remove(id);
     }
 
     /** Entity id of the living squadmate closest to {@code player}, or -1 if none. */
@@ -643,6 +670,7 @@ public final class RedeployService {
         cancelRevive.accept(id);
         p.setPose(Pose.STANDING);
         ArcadeLoadoutBridge.apply(p);
+        purgeInvalidOverrides(p, id);
         ArcadeLoadoutBridge.applyOverrides(p, loadoutOverrides.get(id));
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
@@ -652,6 +680,23 @@ public final class RedeployService {
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
         BattlefieldNetwork.sendFireLock(p, fireLocked);
+    }
+
+    /**
+     * P1-1 修复：落地这一刻用最新的 Arcade 解锁/职业快照重新校验本次对局会话覆盖，原地移除
+     * 任何此刻已不再合法的槽位覆盖。{@code loadoutOverrides} 只在收到覆盖包那一刻校验过一次
+     * （见 {@link #handleSlotOverride}），但覆盖状态跨越整场对局持续有效——玩家保存的 Arcade
+     * 配装引用的物品后来被撤销解锁，或对局中途 Arcade 激活配装的职业发生变化，旧覆盖都可能
+     * 变成越权物品/跨职业武器夹带。在 {@link ArcadeLoadoutBridge#applyOverrides} 真正把
+     * ItemStack 写进背包之前拦住这个窗口。
+     */
+    private void purgeInvalidOverrides(ServerPlayer player, UUID id) {
+        Map<Integer, String> ov = loadoutOverrides.get(id);
+        if (ov == null || ov.isEmpty()) {
+            return;
+        }
+        DeployLoadoutDto fresh = ArcadeLoadoutBridge.readDeployLoadout(player);
+        ov.entrySet().removeIf(e -> !fresh.isValidOverride(e.getKey(), e.getValue()));
     }
 
     private String deployLocationLabel(String kind, String targetId, Faction f) {

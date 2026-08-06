@@ -12,7 +12,9 @@ import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 部署界面 2D 缩略地图 —— 参照《部署界面动效规格文档》第2/3节,在 {@link GuiGraphics} 2D 约束下
@@ -65,11 +67,17 @@ public final class DeployMapPanel {
 
     private static long openedAtMs = -1L;
 
-    // ---- 悬停(§3.3):全局唯一"进入中"/"退出中"槖位,160ms outCubic,对称补间 ----
-    private static String hoverInKey = "";
-    private static final Tween.Anim HOVER_IN = new Tween.Anim();
-    private static String hoverOutKey = "";
-    private static final Tween.Anim HOVER_OUT = new Tween.Anim();
+    // ---- 悬停(§3.3,P1-3修复):每个标记独立一份补间状态,160ms outCubic,对称补间 ----
+    // 原实现是全局唯一的"进入中"/"退出中"槖位,当两个标记同时落在悬停判定半径内时(压缩过的
+    // 缩略图上队友标记扎堆是很常见的场景)每一帧会互相抢占同一份共享tween,导致悬停效果永远
+    // 不出现;改为per-marker独立tween后各标记互不干扰。key是标记的稳定标识符(如"squad:<uuid>")。
+    private static final Map<String, HoverState> hoverStates = new LinkedHashMap<>();
+
+    /** 单个标记的悬停过渡状态:{@code hovering}记录当前是否处于悬停中,anim是本次过渡的补间。 */
+    private static final class HoverState {
+        boolean hovering;
+        final Tween.Anim anim = new Tween.Anim();
+    }
 
     // ---- 选中(服务端权威,见类注释) ----
     private static String selectedKey = "";
@@ -136,10 +144,7 @@ public final class DeployMapPanel {
     /** 部署界面每次打开时调用一次:重置所有状态并让开场动效从头播放。 */
     public static void onOpened() {
         openedAtMs = Tween.now();
-        hoverInKey = "";
-        hoverOutKey = "";
-        HOVER_IN.reset();
-        HOVER_OUT.reset();
+        hoverStates.clear();
         selectedKey = "";
         dismissed = false;
         xhSession = false;
@@ -213,10 +218,15 @@ public final class DeployMapPanel {
         // 十字准星在标记之下(规格 SVG 里 xhair 组在 mks 组之前),先画。
         renderCrosshair(gg, now, rx, ry, rw, rh);
 
+        // P0 修复:标记(含悬浮标签)裁剪到地图外框box内,防止越界标记的视觉溢出到右侧预览卡/
+        // 顶部标题条/底部武器栏等其他UI区域。用外框box而非letterbox后的内框rect,给
+        // drawLabelAbove 悬浮标签留出足够的裁剪空间不被裁掉。
+        gg.enableScissor(mapX, mapY, mapX + mapW, mapY + mapH);
         renderAllies(gg, st, now, rx, ry, rw, rh);
         renderSquadMates(gg, font, st, now, rx, ry, rw, rh, mouseX, mouseY);
         renderPoints(gg, font, st, now, rx, ry, rw, rh, mouseX, mouseY);
         renderBase(gg, font, st, now, rx, ry, rw, rh, mouseX, mouseY);
+        gg.disableScissor();
     }
 
     /** 渲染右侧预览卡(§3.5),独立于地图矩形之外的另一块屏幕区域,由 Screen 决定位置。 */
@@ -390,7 +400,8 @@ public final class DeployMapPanel {
             if (m.deployable() && (hoverV > 0.02f || selected)) {
                 drawLabelAbove(gg, font, cx, cy - 12f, "小队 · " + safe(m.name()), Math.max(hoverV, selected ? 1f : 0f));
             }
-            if (m.deployable()) {
+            if (m.deployable() && DeployMapMath.insideRect(cx, cy, rx, ry, rw, rh)) {
+                // P0 修复:越界(落在letterbox内框rect之外)的标记不参与点击命中。
                 lastTargets.add(new ClickTarget(DeployActionPacket.DeployKind.SQUAD, m.id(), cx, cy, Math.max(8f, r + 4f)));
             }
         }
@@ -443,7 +454,8 @@ public final class DeployMapPanel {
             if (interactive && (hoverV > 0.02f || selected)) {
                 drawLabelAbove(gg, font, cx, cy - r - 4f, "目标 · " + safe(pt.name()), Math.max(hoverV, selected ? 1f : 0f));
             }
-            if (interactive) {
+            if (interactive && DeployMapMath.insideRect(cx, cy, rx, ry, rw, rh)) {
+                // P0 修复:同上,越界标记不参与点击命中。
                 lastTargets.add(new ClickTarget(DeployActionPacket.DeployKind.POINT, pt.id(), cx, cy, r + 4f));
             }
         }
@@ -496,7 +508,10 @@ public final class DeployMapPanel {
         if (hoverV > 0.02f || selected) {
             drawLabelAbove(gg, font, cx, cy - r - 4f, "友方总部", Math.max(hoverV, selected ? 1f : 0f));
         }
-        lastTargets.add(new ClickTarget(DeployActionPacket.DeployKind.BASE, "", cx, cy, r + 4f));
+        if (DeployMapMath.insideRect(cx, cy, rx, ry, rw, rh)) {
+            // P0 修复:同上,越界标记不参与点击命中。
+            lastTargets.add(new ClickTarget(DeployActionPacket.DeployKind.BASE, "", cx, cy, r + 4f));
+        }
     }
 
     // =====================================================================
@@ -525,29 +540,18 @@ public final class DeployMapPanel {
     }
 
     /**
-     * §3.3 悬停/移出对称补间(160ms outCubic):全局唯一"进入中"槖位 + 唯一"退出中"槖位,
-     * 与已选中的标记互斥(调用方对选中标记直接短路传 1,不会走到这里)。
+     * §3.3 悬停/移出对称补间(160ms outCubic,P1-3修复后per-marker独立):每个标记(key)持有
+     * 自己的一份 {@link HoverState},与已选中的标记互斥(调用方对选中标记直接短路传 1,
+     * 不会走到这里)。
      */
     private static float updateHover(String key, boolean hoveredNow, long now) {
-        if (hoveredNow) {
-            if (!key.equals(hoverInKey)) {
-                hoverInKey = key;
-                if (key.equals(hoverOutKey)) {
-                    hoverOutKey = "";
-                }
-                HOVER_IN.start(now, 160L, Tween.Ease.OUT_CUBIC);
-            }
-            return HOVER_IN.easedT(now);
+        HoverState hs = hoverStates.computeIfAbsent(key, k -> new HoverState());
+        if (hoveredNow != hs.hovering) {
+            hs.hovering = hoveredNow;
+            hs.anim.start(now, 160L, Tween.Ease.OUT_CUBIC);
         }
-        if (key.equals(hoverInKey)) {
-            hoverInKey = "";
-            hoverOutKey = key;
-            HOVER_OUT.start(now, 160L, Tween.Ease.OUT_CUBIC);
-        }
-        if (key.equals(hoverOutKey)) {
-            return 1f - HOVER_OUT.easedT(now);
-        }
-        return 0f;
+        float t = hs.anim.easedT(now);
+        return hs.hovering ? t : 1f - t;
     }
 
     private static void renderHoverRing(GuiGraphics gg, float cx, float cy, float r, float alphaMul, int color) {

@@ -3,6 +3,7 @@ package org.shee33.act0.battlefield.client;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DeployMapMathTest {
@@ -166,5 +167,33 @@ class DeployMapMathTest {
     void edgeFadeAlphaClampsOutOfRangeInput() {
         assertEquals(0f, DeployMapMath.edgeFadeAlpha(-1f), EPS);
         assertEquals(0f, DeployMapMath.edgeFadeAlpha(2f), EPS);
+    }
+
+    // ---------------- insideRect (P0修复:地图标记裁剪/命中边界判断) ----------------
+
+    @Test
+    void insideRectAcceptsPointWithinBounds() {
+        assertTrue(DeployMapMath.insideRect(50f, 50f, 0f, 0f, 100f, 100f));
+    }
+
+    @Test
+    void insideRectAcceptsBoundaryPoints() {
+        assertTrue(DeployMapMath.insideRect(0f, 0f, 0f, 0f, 100f, 100f), "左上边界应视为范围内");
+        assertTrue(DeployMapMath.insideRect(100f, 100f, 0f, 0f, 100f, 100f), "右下边界应视为范围内");
+    }
+
+    @Test
+    void insideRectRejectsPointOutsideEachDirection() {
+        assertFalse(DeployMapMath.insideRect(-1f, 50f, 0f, 0f, 100f, 100f), "左侧越界应被拒绝");
+        assertFalse(DeployMapMath.insideRect(101f, 50f, 0f, 0f, 100f, 100f), "右侧越界应被拒绝");
+        assertFalse(DeployMapMath.insideRect(50f, -1f, 0f, 0f, 100f, 100f), "上方越界应被拒绝");
+        assertFalse(DeployMapMath.insideRect(50f, 101f, 0f, 0f, 100f, 100f), "下方越界应被拒绝");
+    }
+
+    @Test
+    void insideRectRejectsPointFarOutsideLikeAllyPastAreaBoundary() {
+        // 复现场景:队友跑到战斗区域AABB之外约40格,letterbox内框对应的越界坐标应被拒绝命中。
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 0, 0, 100, 100);
+        assertFalse(DeployMapMath.insideRect(r[0] + r[2] + 40f, r[1] + 10f, r[0], r[1], r[2], r[3]));
     }
 }

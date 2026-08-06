@@ -62,6 +62,16 @@ final class DeployMapMath {
     }
 
     /**
+     * 纯函数(P0修复):给定投影坐标与letterbox后的内框rect,判断是否落在范围内——战斗区域
+     * AABB之外的标记(比如队友跑到最外圈据点范围之外)投影后可能落在地图矩形rect之外,甚至
+     * 落在地图外框box范围内的其他UI区域(预览卡/标题条/武器栏)上,这些越界标记不能参与
+     * 点击命中判定,否则点击那些区域可能意外命中一个"漏"出来的标记从而触发部署。
+     */
+    static boolean insideRect(float px, float py, float rx, float ry, float rw, float rh) {
+        return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+    }
+
+    /**
      * §3.2 全局漂移循环:{@code dx=sin(t/1400+φ)*1.6, dy=cos(t/1700+φ)*1.6}。
      * {@code phase} 由调用方按标记 id 派生(见 {@code DeployMapPanel#phaseFor}),
      * 使漂移在多次渲染帧之间保持稳定而不需要额外持久化状态。
