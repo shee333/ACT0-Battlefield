@@ -712,6 +712,12 @@ public final class ConquestMatch {
     // ---- 结束 ----
 
     private void end(Faction w) {
+        // 幂等性守卫：同一tick内两名玩家的死亡结算都可能触发end()(如consumePendingDeath的票数
+        // 判负检查)，缺这层守卫会导致双重广播/双重传送/双重结算包(与abort()和
+        // BreakthroughMatch.end()现有写法保持一致)。
+        if (ended) {
+            return;
+        }
         this.ended = true;
         this.winner = w;
         // 先解散阵营名牌 Scoreboard 队伍：一旦 ended=true，管理器下一 tick 就会把这场对局从
@@ -755,6 +761,12 @@ public final class ConquestMatch {
         lastSpotTick.clear();
         captureTime.clear();
         callHelpCooldownUntil.clear();
+        // 此前end()/abort()都没清这4个map，跨对局残留可能导致下一局误报"防御通知"冷却、
+        // HUD/Tab首帧因hash碰撞不刷新。
+        defendNotificationCooldown.clear();
+        lastCaptureStatus.clear();
+        lastHudHash.clear();
+        lastTabHash.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         sendFireLockToAll(false);
@@ -930,6 +942,12 @@ public final class ConquestMatch {
         lastSpotTick.clear();
         captureTime.clear();
         callHelpCooldownUntil.clear();
+        // 此前end()/abort()都没清这4个map，跨对局残留可能导致下一局误报"防御通知"冷却、
+        // HUD/Tab首帧因hash碰撞不刷新。
+        defendNotificationCooldown.clear();
+        lastCaptureStatus.clear();
+        lastHudHash.clear();
+        lastTabHash.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         sendFireLockToAll(false);

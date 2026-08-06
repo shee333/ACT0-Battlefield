@@ -1337,6 +1337,11 @@ public final class BreakthroughMatch {
         revivingHeartbeat.clear();
         callHelpCooldownUntil.clear();
         killTracker.clearTransient();
+        // 此前end()/abort()都没清这3个map，跨对局残留可能导致下一局误报"防御通知"冷却、
+        // HUD首帧因hash碰撞不刷新。
+        defendNotificationCooldown.clear();
+        lastCaptureStatus.clear();
+        lastHudHash.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         sendFireLockToAll(false);
@@ -1379,6 +1384,11 @@ public final class BreakthroughMatch {
         revivingHeartbeat.clear();
         callHelpCooldownUntil.clear();
         killTracker.clearTransient();
+        // 此前end()/abort()都没清这3个map，跨对局残留可能导致下一局误报"防御通知"冷却、
+        // HUD首帧因hash碰撞不刷新。
+        defendNotificationCooldown.clear();
+        lastCaptureStatus.clear();
+        lastHudHash.clear();
         clearAllEnemyGlows();
         clearAllRelativeTeams();
         sendFireLockToAll(false);
