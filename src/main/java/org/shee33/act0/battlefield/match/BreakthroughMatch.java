@@ -150,6 +150,12 @@ public final class BreakthroughMatch {
     private int captureAccum;
     private int hudAccum;
     private int iffAccum;
+    /** 某一阵营人数清零起算的tick，-1表示当前非空。超过{@link #EMPTY_FACTION_TIMEOUT_TICKS}
+     * 未恢复则判另一方获胜——此前只有两阵营都清空才会结束对局，进攻方(ALPHA)全体退出后防守方
+     * (BRAVO)没有票池可扣、无人推进区域，对局会永久挂起。 */
+    private long alphaEmptySinceTick = -1L;
+    private long bravoEmptySinceTick = -1L;
+    private static final long EMPTY_FACTION_TIMEOUT_TICKS = 60 * 20;
 
     public BreakthroughMatch(ServerLevel level, ServerLevel lobbyLevel, BreakthroughRules rules,
                              List<ControlPointDef> defs, Map<UUID, Faction> roster,
@@ -281,9 +287,39 @@ public final class BreakthroughMatch {
         return true;
     }
 
+    /** 单阵营人数清零超时判负：见{@link #alphaEmptySinceTick}字段注释。 */
+    private void checkEmptyFactionTimeout() {
+        long now = server.getTickCount();
+        boolean alphaEmpty = factionOf.values().stream().noneMatch(f -> f == Faction.ALPHA);
+        boolean bravoEmpty = factionOf.values().stream().noneMatch(f -> f == Faction.BRAVO);
+        if (alphaEmpty && !bravoEmpty) {
+            if (alphaEmptySinceTick < 0) {
+                alphaEmptySinceTick = now;
+            } else if (now - alphaEmptySinceTick >= EMPTY_FACTION_TIMEOUT_TICKS) {
+                end(Faction.BRAVO);
+                return;
+            }
+        } else {
+            alphaEmptySinceTick = -1L;
+        }
+        if (bravoEmpty && !alphaEmpty) {
+            if (bravoEmptySinceTick < 0) {
+                bravoEmptySinceTick = now;
+            } else if (now - bravoEmptySinceTick >= EMPTY_FACTION_TIMEOUT_TICKS) {
+                end(Faction.ALPHA);
+            }
+        } else {
+            bravoEmptySinceTick = -1L;
+        }
+    }
+
     // ---- 每刻 ----
 
     public void tick() {
+        if (ended) {
+            return;
+        }
+        checkEmptyFactionTimeout();
         if (ended) {
             return;
         }

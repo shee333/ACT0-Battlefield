@@ -152,6 +152,12 @@ public final class ConquestMatch {
     private long startedTick;
     private int startCountdownTicks;
     private int startCountdownLastSecond = -1;
+    /** 某一阵营人数清零起算的tick，-1表示当前非空。超过{@link #EMPTY_FACTION_TIMEOUT_TICKS}
+     * 未恢复则判另一方获胜——此前只有两阵营都清空才会结束对局，单阵营清空(如ALPHA全体退出但
+     * BRAVO还在)时对局会永久挂起(没人推进据点，纯靠票数流失又太慢)。 */
+    private long alphaEmptySinceTick = -1L;
+    private long bravoEmptySinceTick = -1L;
+    private static final long EMPTY_FACTION_TIMEOUT_TICKS = 60 * 20;
 
     public ConquestMatch(ServerLevel level, ServerLevel lobbyLevel, ConquestRules rules,
                          List<ControlPointDef> defs, Map<UUID, Faction> roster,
@@ -274,10 +280,40 @@ public final class ConquestMatch {
         return true;
     }
 
+    /** 单阵营人数清零超时判负：见{@link #alphaEmptySinceTick}字段注释。 */
+    private void checkEmptyFactionTimeout() {
+        long now = server.getTickCount();
+        boolean alphaEmpty = factionOf.values().stream().noneMatch(f -> f == Faction.ALPHA);
+        boolean bravoEmpty = factionOf.values().stream().noneMatch(f -> f == Faction.BRAVO);
+        if (alphaEmpty && !bravoEmpty) {
+            if (alphaEmptySinceTick < 0) {
+                alphaEmptySinceTick = now;
+            } else if (now - alphaEmptySinceTick >= EMPTY_FACTION_TIMEOUT_TICKS) {
+                end(Faction.BRAVO);
+                return;
+            }
+        } else {
+            alphaEmptySinceTick = -1L;
+        }
+        if (bravoEmpty && !alphaEmpty) {
+            if (bravoEmptySinceTick < 0) {
+                bravoEmptySinceTick = now;
+            } else if (now - bravoEmptySinceTick >= EMPTY_FACTION_TIMEOUT_TICKS) {
+                end(Faction.ALPHA);
+            }
+        } else {
+            bravoEmptySinceTick = -1L;
+        }
+    }
+
     // ---- 每刻 ----
 
     public void tick() {
         if (ended || paused) {
+            return;
+        }
+        checkEmptyFactionTimeout();
+        if (ended) {
             return;
         }
         if (startCountdownTicks > 0) {
