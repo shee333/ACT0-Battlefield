@@ -6,15 +6,13 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
 import org.shee33.act0.battlefield.client.BattlefieldKeyMappings;
-import org.shee33.act0.battlefield.client.ClientDeployLoadout;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
 import org.shee33.act0.battlefield.client.DeployMapPanel;
+import org.shee33.act0.battlefield.client.DeployWeaponPanel;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
-import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
-import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
 
@@ -27,6 +25,11 @@ import java.util.List;
  * 交互命中区域。{@link BattlefieldDeployWorldOverlay} 的 3D 世界标记保留作纯视觉辅助，其
  * {@code targets()}/{@code hoveredTarget()} 不再参与点击/悬停判定(见部署界面动效规格文档
  * Wave2 设计决策 3)。
+ *
+ * <p>Wave3 新增:底部武器更换上拉面板({@link DeployWeaponPanel})取代旧的右侧纵向配装文字列表
+ * ({@code renderLoadoutPanel}，已删除，避免同一份配装信息在两处重复展示)，是本次"部署界面大改"
+ * 里唯一涉及真实换装功能的一块——{@link DeployWeaponPanel#handleClick} 在 {@link #mouseClicked}
+ * 里被赋予比地图选点更高的点击优先级(先命中武器栏/面板，未命中才落到 {@link DeployMapPanel})。
  */
 public final class BattlefieldDeployScreen extends Screen {
 
@@ -34,15 +37,16 @@ public final class BattlefieldDeployScreen extends Screen {
     private static final int HEADER_H = 30;
     /** 底部提示条高度。 */
     private static final int HINT_H = 26;
-    /** 右侧固定宽度栏(预览卡 + 配装面板共用一栏，纵向堆叠)。 */
+    /** 右侧固定宽度栏(预览卡独占一栏)。 */
     private static final int SIDE_W = 208;
     private static final int MAP_MARGIN = 10;
-    private static final int CARD_H = 54;
-    private static final int CARD_GAP = 8;
+    /** 武器栏与底部提示条之间的留白。 */
+    private static final int WEAPON_BAR_MARGIN = 6;
 
     public BattlefieldDeployScreen() {
         super(Component.literal("部署"));
         DeployMapPanel.onOpened();
+        DeployWeaponPanel.onOpened();
     }
 
     public void onDeployUpdated() {
@@ -64,10 +68,12 @@ public final class BattlefieldDeployScreen extends Screen {
 
         updateSquadSpectate(st);
 
+        int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployWeaponPanel.barHeight();
+
         int mapX = MAP_MARGIN;
         int mapY = HEADER_H + 6;
         int mapW = Math.max(160, width - SIDE_W - mapX - 8);
-        int mapH = Math.max(120, height - HEADER_H - 6 - HINT_H - 8);
+        int mapH = Math.max(120, barTopY - mapY - 6);
         DeployMapPanel.render(gg, font, st, mapX, mapY, mapW, mapH, mouseX, mouseY);
 
         int sideX = width - SIDE_W;
@@ -82,7 +88,7 @@ public final class BattlefieldDeployScreen extends Screen {
 
         renderSpectateFade(gg);
 
-        renderLoadoutPanel(gg, mapY + CARD_H + CARD_GAP);
+        DeployWeaponPanel.render(gg, font, width, height, barTopY, mouseX, mouseY);
     }
 
     /**
@@ -143,6 +149,11 @@ public final class BattlefieldDeployScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            // 武器栏/上拉面板优先命中：命中槍位或可选项时直接消费，不落到地图选点逻辑；未命中
+            // 任何交互区域时它会把已打开的面板顺手关闭（同规格文档"点空白"语义），再放行给地图。
+            if (DeployWeaponPanel.handleClick(mouseX, mouseY)) {
+                return true;
+            }
             DeployMapPanel.ClickOutcome outcome = DeployMapPanel.handleClick(mouseX, mouseY);
             if (outcome.selection() != null) {
                 BattlefieldNetwork.CHANNEL.sendToServer(
@@ -209,6 +220,7 @@ public final class BattlefieldDeployScreen extends Screen {
     public void removed() {
         ClientSquadSpectate.clear();
         DeployMapPanel.onClosed();
+        DeployWeaponPanel.onClosed();
         super.removed();
     }
 
@@ -220,57 +232,5 @@ public final class BattlefieldDeployScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    /**
-     * BF5-style vertical loadout panel on the right side.
-     * Anchored below the preview card (see {@code panelY}) and above the bottom hint bar.
-     */
-    private void renderLoadoutPanel(GuiGraphics gg, int panelY) {
-        DeployLoadoutDto loadout = ClientDeployLoadout.get();
-        if (loadout == null || loadout.slots().isEmpty()) {
-            return;
-        }
-
-        final int panelX = width - SIDE_W;
-        final int panelW = SIDE_W - 8;
-        final int maxBottom = height - 26;
-        final int accent = PixelTheme.ALPHA_COLOR;
-
-        int rows = Math.min(loadout.slots().size(), 10);
-        int contentH = 32 + rows * 14;
-        int panelH = Math.min(contentH, maxBottom - panelY);
-
-        gg.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xB3101418);
-
-        int border = 0x663A3A3A;
-        gg.fill(panelX, panelY, panelX + panelW, panelY + 1, border);
-        gg.fill(panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, border);
-        gg.fill(panelX, panelY, panelX + 1, panelY + panelH, border);
-        gg.fill(panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, border);
-
-        gg.fill(panelX + 1, panelY + 1, panelX + panelW - 1, panelY + 3, accent);
-
-        int tx = panelX + 8;
-        String header = "配装 · " + (loadout.className().isEmpty() ? "-" : loadout.className());
-        gg.drawString(font, header, tx, panelY + 6, 0xFFB0B0B0, false);
-
-        gg.fill(panelX + 6, panelY + 20, panelX + panelW - 6, panelY + 21, 0x333A3A3A);
-
-        int lineH = 14;
-        int maxTextW = panelW - 16;
-        for (int i = 0; i < rows; i++) {
-            int sy = panelY + 24 + i * lineH;
-            if (sy + lineH > panelY + panelH - 4) break;
-
-            DeploySlotOptionsDto slotDto = loadout.slots().get(i);
-            String slot = slotDto.slotName();
-            String item = slotDto.currentItemName();
-            String text = slot + ": " + item;
-            if (font.width(text) > maxTextW) {
-                text = font.plainSubstrByWidth(text, maxTextW);
-            }
-            gg.drawString(font, text, tx, sy, 0xFFE0E0E0, false);
-        }
     }
 }
