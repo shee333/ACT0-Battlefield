@@ -303,6 +303,11 @@ public final class RedeployService {
         deploySelection.remove(id);
         deployTarget.remove(id);
         spectateTarget.remove(id);
+        // 此前漏清这个map：玩家若在900ms部署过场镜头运镜期间退出对局(quitPlayer调用本方法)，
+        // tickDeployPan()仍会按UUID查到人在线(server.getPlayerList().getPlayer(id)不管玩家
+        // 是否已离开本场对局)，继续把已退出的玩家插值传送并最终finishDeploy()二次拉回对局
+        // 世界。
+        deployPanState.remove(id);
         GameType original = redeployOriginalMode.remove(id);
         GameType targetMode = restoreOriginalMode && original != null ? original : GameType.ADVENTURE;
         if (targetMode == GameType.SPECTATOR) {
