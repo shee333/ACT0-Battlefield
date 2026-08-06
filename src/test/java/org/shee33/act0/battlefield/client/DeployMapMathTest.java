@@ -1,0 +1,170 @@
+package org.shee33.act0.battlefield.client;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class DeployMapMathTest {
+
+    private static final float EPS = 0.05f;
+
+    // ---------------- fittedRect ----------------
+
+    @Test
+    void squareAreaInSquareBoxFillsExactly() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 0, 0, 200, 200);
+        assertEquals(0f, r[0], EPS);
+        assertEquals(0f, r[1], EPS);
+        assertEquals(200f, r[2], EPS);
+        assertEquals(200f, r[3], EPS);
+    }
+
+    @Test
+    void wideAreaInSquareBoxLetterboxesTopBottom() {
+        // 区域 200x100(2:1),放进 100x100 的正方形框 → 应受宽度限制,高度留白居中。
+        float[] r = DeployMapMath.fittedRect(0, 0, 200, 100, 0, 0, 100, 100);
+        assertEquals(100f, r[2], EPS, "宽度应撑满 box 宽");
+        assertEquals(50f, r[3], EPS, "高度按等比缩放应为一半");
+        assertEquals(0f, r[0], EPS, "宽度撑满,X 不应留白");
+        assertEquals(25f, r[1], EPS, "高度居中留白 25 上 25 下");
+    }
+
+    @Test
+    void tallAreaInWideBoxLetterboxesLeftRight() {
+        // 区域 100x200(1:2),放进 200x100 的宽框 → 受高度限制,宽度留白居中。
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 200, 0, 0, 200, 100);
+        assertEquals(100f, r[3], EPS, "高度应撑满 box 高");
+        assertEquals(50f, r[2], EPS, "宽度按等比缩放应为一半");
+        assertEquals(0f, r[1], EPS, "高度撑满,Y 不应留白");
+        assertEquals(75f, r[0], EPS, "宽度居中留白 75 左 75 右");
+    }
+
+    @Test
+    void boxOffsetIsRespected() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 10, 20, 100, 100);
+        assertEquals(10f, r[0], EPS);
+        assertEquals(20f, r[1], EPS);
+    }
+
+    @Test
+    void degenerateZeroSpanAreaDoesNotCrashOrProduceNaN() {
+        // 单点区域(minX==maxX, minZ==maxZ):不应抛异常/产生 NaN/Infinite。
+        float[] r = DeployMapMath.fittedRect(50, 50, 50, 50, 0, 0, 200, 200);
+        for (float v : r) {
+            assertTrue(Float.isFinite(v), "退化区域不应产生非有限值: " + v);
+        }
+    }
+
+    // ---------------- project ----------------
+
+    @Test
+    void projectsMinCornerToRectOrigin() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 0, 0, 200, 200);
+        float[] p = DeployMapMath.project(0, 0, 0, 0, 100, 100, 0, 0, 200, 200);
+        assertEquals(r[0], p[0], EPS);
+        assertEquals(r[1], p[1], EPS);
+    }
+
+    @Test
+    void projectsMaxCornerToRectFarCorner() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 0, 0, 200, 200);
+        float[] p = DeployMapMath.project(100, 100, 0, 0, 100, 100, 0, 0, 200, 200);
+        assertEquals(r[0] + r[2], p[0], EPS);
+        assertEquals(r[1] + r[3], p[1], EPS);
+    }
+
+    @Test
+    void projectsCenterToRectCenter() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 200, 100, 0, 0, 100, 100);
+        float[] p = DeployMapMath.project(100, 50, 0, 0, 200, 100, 0, 0, 100, 100);
+        assertEquals(r[0] + r[2] / 2f, p[0], EPS);
+        assertEquals(r[1] + r[3] / 2f, p[1], EPS);
+    }
+
+    @Test
+    void largerWorldXMapsFurtherRight() {
+        float[] p1 = DeployMapMath.project(10, 50, 0, 0, 100, 100, 0, 0, 100, 100);
+        float[] p2 = DeployMapMath.project(90, 50, 0, 0, 100, 100, 0, 0, 100, 100);
+        assertTrue(p2[0] > p1[0], "更大的世界 X(更东)应映射到更右的屏幕 X");
+    }
+
+    @Test
+    void largerWorldZMapsFurtherDown() {
+        float[] p1 = DeployMapMath.project(50, 10, 0, 0, 100, 100, 0, 0, 100, 100);
+        float[] p2 = DeployMapMath.project(50, 90, 0, 0, 100, 100, 0, 0, 100, 100);
+        assertTrue(p2[1] > p1[1], "更大的世界 Z(更南)应映射到更下的屏幕 Y(北上南下惯例)");
+    }
+
+    @Test
+    void projectOnAlreadyFittedRectIsIdempotent() {
+        float[] r = DeployMapMath.fittedRect(0, 0, 200, 100, 5, 5, 100, 100);
+        float[] direct = DeployMapMath.project(150, 75, 0, 0, 200, 100, 5, 5, 100, 100);
+        float[] viaFitted = DeployMapMath.project(150, 75, 0, 0, 200, 100, r[0], r[1], r[2], r[3]);
+        assertEquals(direct[0], viaFitted[0], EPS);
+        assertEquals(direct[1], viaFitted[1], EPS);
+    }
+
+    // ---------------- driftOffset ----------------
+
+    @Test
+    void driftAtZeroTimeAndZeroPhaseMatchesSinCosBaseline() {
+        float[] d = DeployMapMath.driftOffset(0L, 0f);
+        assertEquals(0f, d[0], EPS, "sin(0)=0");
+        assertEquals(1.6f, d[1], EPS, "cos(0)=1 * 1.6");
+    }
+
+    @Test
+    void driftMagnitudeNeverExceedsAmplitude() {
+        for (long t = 0; t < 20000; t += 337) {
+            float[] d = DeployMapMath.driftOffset(t, 1.23f);
+            assertTrue(Math.abs(d[0]) <= 1.601f, "dx 幅度应不超过 1.6");
+            assertTrue(Math.abs(d[1]) <= 1.601f, "dy 幅度应不超过 1.6");
+        }
+    }
+
+    // ---------------- pulsePhase ----------------
+
+    @Test
+    void pulsePhaseAtZeroIsHalf() {
+        assertEquals(0.5f, DeployMapMath.pulsePhase(0L), EPS);
+    }
+
+    @Test
+    void pulsePhaseStaysWithinUnitRange() {
+        for (long t = 0; t < 10000; t += 91) {
+            float p = DeployMapMath.pulsePhase(t);
+            assertTrue(p >= 0f && p <= 1f, "脉冲相位应恒在[0,1]: " + p);
+        }
+    }
+
+    // ---------------- edgeFadeAlpha ----------------
+
+    @Test
+    void edgeFadeAlphaZeroAtBothEnds() {
+        assertEquals(0f, DeployMapMath.edgeFadeAlpha(0f), EPS);
+        assertEquals(0f, DeployMapMath.edgeFadeAlpha(1f), EPS);
+    }
+
+    @Test
+    void edgeFadeAlphaPeaksAtMidpoint() {
+        assertEquals(0.65f, DeployMapMath.edgeFadeAlpha(0.5f), EPS);
+    }
+
+    @Test
+    void edgeFadeAlphaMonotonicRiseThenFall() {
+        float a0 = DeployMapMath.edgeFadeAlpha(0.1f);
+        float a1 = DeployMapMath.edgeFadeAlpha(0.3f);
+        float a2 = DeployMapMath.edgeFadeAlpha(0.5f);
+        float a3 = DeployMapMath.edgeFadeAlpha(0.7f);
+        float a4 = DeployMapMath.edgeFadeAlpha(0.9f);
+        assertTrue(a0 < a1 && a1 < a2, "前半段应单调递增");
+        assertTrue(a2 > a3 && a3 > a4, "后半段应单调递减");
+    }
+
+    @Test
+    void edgeFadeAlphaClampsOutOfRangeInput() {
+        assertEquals(0f, DeployMapMath.edgeFadeAlpha(-1f), EPS);
+        assertEquals(0f, DeployMapMath.edgeFadeAlpha(2f), EPS);
+    }
+}
