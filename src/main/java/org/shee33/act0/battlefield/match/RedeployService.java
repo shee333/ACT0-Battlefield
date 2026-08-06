@@ -54,6 +54,12 @@ public final class RedeployService {
 
     private final int redeployDelayTicks;
     private final int spawnProtectionTicks;
+    /**
+     * 部署界面左上角"动态模式标签"展示用的对局模式名（如"征服模式"/"突破模式"），由
+     * {@link ConquestMatch}/{@link BreakthroughMatch} 构造本类时传入——本 mod 一场对局从始至终
+     * 只对应单一模式，这里只是一个只读展示字符串，不参与任何判定逻辑。
+     */
+    private final String matchModeName;
 
     // --- State owned by RedeployService ---
     private final Map<UUID, Long> redeployReadyTick = new LinkedHashMap<>();
@@ -103,7 +109,8 @@ public final class RedeployService {
             Map<UUID, Long> lastHurtTick,
             Consumer<UUID> cancelRevive,
             int spawnProtectionTicks,
-            int redeployDelayTicks) {
+            int redeployDelayTicks,
+            String matchModeName) {
         this.server = level.getServer();
         this.level = level;
         this.data = data;
@@ -117,6 +124,7 @@ public final class RedeployService {
         this.cancelRevive = cancelRevive;
         this.spawnProtectionTicks = spawnProtectionTicks;
         this.redeployDelayTicks = redeployDelayTicks;
+        this.matchModeName = matchModeName;
     }
 
     // ---- Query helpers for ConquestMatch ----
@@ -348,6 +356,9 @@ public final class RedeployService {
         }
         org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
         boolean areaExplicit = data.areaOverride().isSet();
+        // 地图名：直接取存档/世界名(server.properties 的 level-name)，本 mod 没有独立的"地图轮换"
+        // 系统，一个世界即对应一张固定的对局地图。
+        String mapName = server.getWorldData().getLevelName();
         return new DeployStatusDto(true, canSquad, canPoint, canBase, selected, target, remain,
                 base != null ? base.x() : 0, base != null ? base.y() + 1.0 : 0, base != null ? base.z() : 0,
                 squad != null ? squad.x() : 0, squad != null ? squad.y() + 1.0 : 0, squad != null ? squad.z() : 0,
@@ -356,7 +367,8 @@ public final class RedeployService {
                 area.minX(), area.minY(), area.minZ(),
                 area.maxX(), area.maxY(), area.maxZ(),
                 areaExplicit,
-                spectateTarget.getOrDefault(id, -1));
+                spectateTarget.getOrDefault(id, -1),
+                matchModeName, mapName);
     }
 
     private List<DeployPointDto> deployPointDtos(Faction faction) {

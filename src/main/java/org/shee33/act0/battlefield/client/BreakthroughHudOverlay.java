@@ -78,6 +78,7 @@ public final class BreakthroughHudOverlay {
         renderFrontSweep(gg, now);
         renderFinalBanner(gg, font, now);
         renderCapturePointBanner(gg, font, hud);
+        BattlefieldHudOverlay.renderDeployConfirmFx(gg, font);
         BattlefieldHudOverlay.renderDeploySpawnFx(gg, font);
         BattlefieldHudOverlay.renderMatchStartFx(gg);
         BattlefieldHudOverlay.renderDownedSelfFeedback(gg, font);

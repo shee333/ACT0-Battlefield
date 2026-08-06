@@ -65,10 +65,24 @@ public final class BattlefieldHudOverlay {
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
         renderCornerHud(gg, font, hud);
+        renderDeployConfirmFx(gg, font);
         renderDeploySpawnFx(gg, font);
         renderMatchStartFx(gg);
         renderDownedSelfFeedback(gg, font);
         renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
+    }
+
+    /**
+     * 部署确认转场：全屏白闪 + "正在部署"文字，与 {@code ClientDeployPan} 驱动的 900ms 相机平滑
+     * 过场同步播放，退场时机与 {@link #renderDeploySpawnFx} 的黑幕淡出天然咬合(见
+     * {@code DeployConfirmFx} 类文档)。渲染顺序故意排在 {@link #renderDeploySpawnFx} 之前，
+     * 让黑幕(若同帧出现)绘制在白闪之上，视觉上"白闪先退场、黑幕再进场"。
+     *
+     * <p>模式无关：包内可见，供 {@code BreakthroughHudOverlay} 复用，参照
+     * {@link #renderCapturePointBannerCore} 的共享方法模式。
+     */
+    static void renderDeployConfirmFx(GuiGraphics gg, Font font) {
+        DeployConfirmFx.render(gg, font);
     }
 
     /**

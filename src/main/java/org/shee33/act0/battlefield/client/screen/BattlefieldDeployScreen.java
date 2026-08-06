@@ -8,7 +8,9 @@ import org.shee33.act0.battlefield.client.BattlefieldDeployWorldOverlay;
 import org.shee33.act0.battlefield.client.BattlefieldKeyMappings;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
+import org.shee33.act0.battlefield.client.DeployConfirmFx;
 import org.shee33.act0.battlefield.client.DeployMapPanel;
+import org.shee33.act0.battlefield.client.DeployModeLabel;
 import org.shee33.act0.battlefield.client.DeployWeaponPanel;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
@@ -47,6 +49,7 @@ public final class BattlefieldDeployScreen extends Screen {
         super(Component.literal("部署"));
         DeployMapPanel.onOpened();
         DeployWeaponPanel.onOpened();
+        DeployModeLabel.onOpened();
     }
 
     public void onDeployUpdated() {
@@ -65,6 +68,7 @@ public final class BattlefieldDeployScreen extends Screen {
         int ready = st == null ? 0 : Math.max(0, st.readyInTicks());
         String timer = ready > 0 ? "§7可部署倒计时 §f" + ((ready + 19) / 20) + " 秒" : "§a可以部署";
         gg.drawString(font, timer, width / 2 - font.width(timer) / 2, 19, 0xFFFFFFFF, false);
+        DeployModeLabel.render(gg, font, st, 8, 4);
 
         updateSquadSpectate(st);
 
@@ -156,8 +160,12 @@ public final class BattlefieldDeployScreen extends Screen {
             }
             DeployMapPanel.ClickOutcome outcome = DeployMapPanel.handleClick(mouseX, mouseY);
             if (outcome.selection() != null) {
+                DeployStatusDto stBeforeClick = ClientDeployStatus.status();
                 BattlefieldNetwork.CHANNEL.sendToServer(
                         new DeployActionPacket(outcome.selection().kind(), outcome.selection().targetId()));
+                // 倒计时已结束时点击地图标记会让服务端立即确认部署(见 RedeployService#handleDeployAction
+                // 的即时部署分支)，与发包同一帧触发白闪转场，跟随即开始的 900ms 相机过场同步起跑。
+                maybeTriggerDeployConfirmFx(stBeforeClick);
                 return true;
             }
             if (outcome.insideMap()) {
@@ -198,10 +206,21 @@ public final class BattlefieldDeployScreen extends Screen {
             DeployActionPacket.DeployKind kind = selectedKind(st);
             if (kind != null) {
                 BattlefieldNetwork.CHANNEL.sendToServer(new DeployActionPacket(kind, st.selectedTarget()));
+                maybeTriggerDeployConfirmFx(st);
                 return true;
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    /**
+     * 只有倒计时已经归零(服务端会把这次动作当场处理为立即部署)时才触发白闪转场——若倒计时未结束，
+     * 这次动作在服务端只是重新确认选择，不会真的开始 900ms 相机过场，此时播白闪只会显得莫名其妙。
+     */
+    private static void maybeTriggerDeployConfirmFx(DeployStatusDto st) {
+        if (st != null && st.active() && Math.max(0, st.readyInTicks()) <= 0) {
+            DeployConfirmFx.trigger();
+        }
     }
 
     private static DeployActionPacket.DeployKind selectedKind(DeployStatusDto st) {
@@ -221,6 +240,7 @@ public final class BattlefieldDeployScreen extends Screen {
         ClientSquadSpectate.clear();
         DeployMapPanel.onClosed();
         DeployWeaponPanel.onClosed();
+        DeployModeLabel.onClosed();
         super.removed();
     }
 

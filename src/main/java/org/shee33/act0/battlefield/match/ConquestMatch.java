@@ -183,7 +183,7 @@ public final class ConquestMatch {
         squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
         this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
                 downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
-                spawnProtectionTicks, redeployDelayTicks);
+                spawnProtectionTicks, redeployDelayTicks, "征服模式");
     }
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {

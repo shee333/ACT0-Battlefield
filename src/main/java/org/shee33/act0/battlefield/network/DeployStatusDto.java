@@ -7,6 +7,11 @@ import java.util.List;
 
 /**
  * S2C deploy screen state for the tactical overhead deployment map.
+ *
+ * <p>{@code modeName}/{@code mapName}（Wave4 新增）：左上角"动态模式标签"（部署界面动效规格文档
+ * §3.8）展示用的只读静态信息——一场对局从始至终固定不变（本 mod 无地图轮换/模式切换概念，见
+ * {@code RedeployService} 调用处注释），因此只是随每次状态推送顺带下发的两个展示字段，不影响
+ * 既有字段语义。
  */
 public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint, boolean canBase,
                               String selectedKind, String selectedTarget, int readyInTicks,
@@ -19,7 +24,9 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
                               double areaMinX, double areaMinY, double areaMinZ,
                               double areaMaxX, double areaMaxY, double areaMaxZ,
                               boolean areaExplicit,
-                              int spectateEntityId) {
+                              int spectateEntityId,
+                              String modeName,
+                              String mapName) {
 
     private static final int MAX_LIST_ENTRIES = 256;
 
@@ -58,6 +65,8 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         buf.writeDouble(areaMaxZ);
         buf.writeBoolean(areaExplicit);
         buf.writeVarInt(spectateEntityId);
+        buf.writeUtf(modeName);
+        buf.writeUtf(mapName);
     }
 
     public static DeployStatusDto decode(FriendlyByteBuf buf) {
@@ -98,14 +107,17 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         double amaxZ = buf.readDouble();
         boolean areaExplicit = buf.readBoolean();
         int spectateEntityId = buf.readVarInt();
+        String modeName = buf.readUtf();
+        String mapName = buf.readUtf();
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
                 baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates, allies,
-                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit, spectateEntityId);
+                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit, spectateEntityId,
+                modeName, mapName);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
             0, 0, 0, 0, 0, 0, List.of(), List.of(), List.of(),
-            false, 0, 0, 0, 0, 0, 0, false, -1);
+            false, 0, 0, 0, 0, 0, 0, false, -1, "", "");
     }
 }

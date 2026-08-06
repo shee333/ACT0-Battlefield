@@ -197,7 +197,7 @@ public final class BreakthroughMatch {
         squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
         this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
                 downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
-                spawnProtectionTicks, redeployDelayTicks);
+                spawnProtectionTicks, redeployDelayTicks, "突破模式");
         this.captureRules = ConquestRules.builder()
                 .startingTickets(1)
                 .captureSeconds(rules.captureSeconds())

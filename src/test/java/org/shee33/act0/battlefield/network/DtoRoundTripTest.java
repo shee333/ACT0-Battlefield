@@ -58,7 +58,8 @@ class DtoRoundTripTest {
         DeployStatusDto dto = new DeployStatusDto(true, true, true, true, "point", "0", 60,
                 100.0, 64.0, 200.0, 105.0, 64.0, 210.0,
                 List.of(dp), List.of(sm), List.of(ally),
-                true, -50.0, 0.0, -50.0, 150.0, 128.0, 150.0, false, 42);
+                true, -50.0, 0.0, -50.0, 150.0, 128.0, 150.0, false, 42,
+                "征服模式", "解放峰");
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         DeployStatusDto decoded = DeployStatusDto.decode(buf);
@@ -72,6 +73,8 @@ class DtoRoundTripTest {
         assertEquals(1, decoded.allies().size());
         assertEquals("Ally", decoded.allies().get(0).name());
         assertEquals(dto.spectateEntityId(), decoded.spectateEntityId());
+        assertEquals("征服模式", decoded.modeName());
+        assertEquals("解放峰", decoded.mapName());
     }
 
     @Test

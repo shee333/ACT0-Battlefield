@@ -6,6 +6,7 @@ import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
 import org.shee33.act0.battlefield.client.ClientDeployFx;
 import org.shee33.act0.battlefield.client.ClientDownedFeedback;
+import org.shee33.act0.battlefield.client.DeployConfirmFx;
 
 import java.util.function.Supplier;
 
@@ -35,6 +36,9 @@ public final class DeploySpawnFxPacket {
         context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
                 () -> () -> {
                     ClientDownedFeedback.clear();
+                    // 与黑幕淡出同一帧调用，保证白闪转场(DeployConfirmFx)淡出与黑幕淡出天然咬合，
+                    // 不需要额外猜测网络延迟(见 DeployConfirmFx 类文档"与落地反馈衔接"一节)。
+                    DeployConfirmFx.onLanded();
                     ClientDeployFx.trigger(msg.pointLabel);
                 }));
         context.setPacketHandled(true);
