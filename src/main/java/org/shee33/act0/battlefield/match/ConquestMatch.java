@@ -228,7 +228,15 @@ public final class ConquestMatch {
         RelativeTeamSync.reset(id); // 强制下次同步进行全量重建
         squadManager.assignLatecomer(id, faction);
         setupNameTagTeams();
-        beginRedeploy(player, faction);
+        if (startCountdownTicks > 0) {
+            // 开局倒计时期间加入：直接部署到基地等待倒计时结束(与begin()对初始名单的处理一致)，
+            // 不走beginRedeploy()的"重生选点"观战流程——那是为死亡玩家设计的语义，此前误用在
+            // "第一次加入"上会导致中途加入的玩家卡在观战模式，需要自己手动选点才能真正进场。
+            deploy(player, faction);
+            BattlefieldNetwork.sendFireLock(player, true);
+        } else {
+            beginRedeploy(player, faction);
+        }
         broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
         broadcastHud();
         return true;
