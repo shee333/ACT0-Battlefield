@@ -192,6 +192,8 @@ public final class BattlefieldRoomBrowserAnimator {
     /** 实时变动行整行蓝色高亮衰减 600ms，α 0.06→0。 */
     private static final long HIGHLIGHT_MS = 600L;
     private static final float HIGHLIGHT_ALPHA = 0.06f;
+    /** "已加入"行的常驻绿色薄底透明度：压在悬停(0.04)之下，保证悬停仍是最强的即时反馈。 */
+    private static final float JOINED_TINT_ALPHA = 0.05f;
     /** 星标 outBack 弹跳 320ms：scale 0.6→1 + rotate 72°→0。 */
     private static final long STAR_MS = 320L;
     private static final float STAR_ROTATE_DEG = 72f;
@@ -236,8 +238,28 @@ public final class BattlefieldRoomBrowserAnimator {
     // 导出给 Screen 的类型（跨包边界只走这些，不暴露 Tween）
     // =====================================================================
 
-    /** 加入转场播完后需要真正执行的加入请求 —— Screen 收到后才发命令并关屏。 */
-    public record JoinRequest(String roomKey, boolean breakthrough) {
+    /** 玩家对某个房间发起的动作。 */
+    public enum RoomAction {
+        JOIN,
+        LEAVE
+    }
+
+    /**
+     * 反馈动效播完后需要 Screen 真正执行的房间动作。
+     *
+     * <p>加入与退出走**同一个出口**（而不是 {@code pollPendingJoin} + {@code pollPendingLeave} 两条
+     * 队列）：两者互斥、永远不会同时待发，单队列从类型上就排除了"两个意图同时 pending、谁先执行"
+     * 这种歧义；用枚举而非 {@code boolean leave} 是为了让 Screen 侧的分支自解释。
+     */
+    public record RoomActionRequest(String roomKey, boolean breakthrough, RoomAction action) {
+
+        /**
+         * 加入后要关掉浏览器（玩家进战场了），退出后不关（通常还想接着浏览别的房间）。
+         * 这条 UX 策略放在请求对象上，Screen 就不必自己再判断一遍动作类型。
+         */
+        public boolean closesBrowser() {
+            return action == RoomAction.JOIN;
+        }
     }
 
     // =====================================================================
@@ -288,7 +310,13 @@ public final class BattlefieldRoomBrowserAnimator {
     private String joinKey = "";
     private String joinMapName = "";
     private boolean joinBreakthrough;
-    private JoinRequest pendingJoin;
+
+    /** 退出只有按压回弹反馈,没有三段式转场 —— 这里记的是"回弹播完、该发退出命令"的时刻。 */
+    private long leaveFireAtMs = -1L;
+    private String leaveKey = "";
+    private boolean leaveBreakthrough;
+
+    private RoomActionRequest pendingAction;
 
     // ---- 本帧布局/命中缓存（handleClick 只认这份，与 DeployMapPanel 同款手法） ----
     private final List<Hit> hits = new ArrayList<>();
@@ -355,15 +383,18 @@ public final class BattlefieldRoomBrowserAnimator {
         }
     }
 
-    /** busy 锁（文档 §1.3）：加入转场 / FLIP 排序期间锁定其余交互。 */
+    /**
+     * busy 锁（文档 §1.3）：加入转场 / FLIP 排序期间锁定其余交互。
+     * 退出的 220ms 回弹窗口也计入,否则连点会把 {@code leave} 命令发两次。
+     */
     public boolean isBusy() {
-        return joinActive || Tween.now() < sortBusyUntilMs;
+        return joinActive || leaveFireAtMs >= 0L || Tween.now() < sortBusyUntilMs;
     }
 
-    /** 加入转场播完后取走一次加入请求（取走即清空）；未就绪返回 {@code null}。 */
-    public JoinRequest pollPendingJoin() {
-        JoinRequest out = pendingJoin;
-        pendingJoin = null;
+    /** 反馈动效播完后取走一次待执行动作（取走即清空）；未就绪返回 {@code null}。 */
+    public RoomActionRequest pollPendingAction() {
+        RoomActionRequest out = pendingAction;
+        pendingAction = null;
         return out;
     }
 
@@ -399,7 +430,7 @@ public final class BattlefieldRoomBrowserAnimator {
                     return true;
                 }
                 if (h.hasJoin && inRect(mx, my, h.jx, h.jy, h.jw, h.jh)) {
-                    startJoin(h.key, now);
+                    startRoomAction(h.key, now);
                     return true;
                 }
                 if (inRect(mx, my, h.mx, h.my, h.mw, h.mh)) {
@@ -495,8 +526,13 @@ public final class BattlefieldRoomBrowserAnimator {
         }
         if (joinActive && now - joinOverlayStartMs >= JOIN_TOTAL_MS) {
             joinActive = false;
-            pendingJoin = new JoinRequest(joinKey, joinBreakthrough);
+            pendingAction = new RoomActionRequest(joinKey, joinBreakthrough, RoomAction.JOIN);
             collapseExpanded(now);
+        }
+        if (leaveFireAtMs >= 0L && now >= leaveFireAtMs) {
+            leaveFireAtMs = -1L;
+            pendingAction = new RoomActionRequest(leaveKey, leaveBreakthrough, RoomAction.LEAVE);
+            // 手风琴刻意保持展开：退出后服务端会立刻推新快照，玩家能原地看到按钮变回"加 入"。
         }
     }
 
@@ -717,6 +753,12 @@ public final class BattlefieldRoomBrowserAnimator {
         float hoverV = r.hovering ? r.hover.easedT(now) : 1f - r.hover.easedT(now);
         int indent = ROW_PAD_X + Math.round(HOVER_INDENT * (expanded ? 1f : hoverV));
 
+        boolean joined = r.dto.viewerIn();
+        // "已加入"常驻绿色薄底 —— 靠色相与白色悬停/展开底色区分,叠加时也不会互相抹掉。
+        if (joined) {
+            gg.fill(contentX, rowY, contentX + contentW, rowY + ROW_H,
+                    withAlpha(joinedMarkerColor(), JOINED_TINT_ALPHA * alpha));
+        }
         // 行底色：悬停 0.04 / 展开 0.06（doc §1.3）。
         float bgA = expanded ? 0.06f : 0.04f * hoverV;
         if (bgA > 0.002f) {
@@ -726,6 +768,11 @@ public final class BattlefieldRoomBrowserAnimator {
         if (r.highlight.isRunning() && !r.highlight.isDone(now)) {
             float hv = 1f - r.highlight.easedT(now);
             gg.fill(contentX, rowY, contentX + contentW, rowY + ROW_H, withAlpha(ACCENT, HIGHLIGHT_ALPHA * hv * alpha));
+        }
+        // 左缘 2px 竖条同一个槽位承载两种语义,颜色区分:绿=已加入(常驻)，蓝=展开中。展开条后画,
+        // 因此展开一个已加入的行时蓝条会盖住绿条 —— 此时手风琴里的红色"退 出"按钮已是更强的信号。
+        if (joined) {
+            gg.fill(contentX, rowY, contentX + 2, rowY + ROW_H, withAlpha(joinedMarkerColor(), alpha));
         }
         // 展开指示条：2px，scaleY 0→1（原点居中）。
         float accentV = r.accentUp ? r.accent.easedT(now) : 1f - r.accent.easedT(now);
@@ -802,12 +849,11 @@ public final class BattlefieldRoomBrowserAnimator {
         int tx = x + THUMB_W + 6;
         int avail = Math.max(16, colNameW - THUMB_W - 6);
         gg.drawString(font, fit(font, r.dto.displayName(), avail), tx, rowY + 4, withAlpha(TEXT, alpha), false);
-        boolean running = r.dto.running();
-        String tag = running
-                ? "运行中 · " + formatElapsed(r.dto.elapsedSeconds())
-                : "等待中 · 还差 " + waitingShortfall(r.dto.cur(), r.dto.max()) + " 人";
-        int tagColor = running ? withAlpha(TEXT, alpha * 0.35f) : withAlpha(GREEN, alpha * 0.75f);
-        gg.drawString(font, fit(font, tag, avail), tx, rowY + 15, tagColor, false);
+        boolean joined = r.dto.viewerIn();
+        int tagColor = joined
+                ? withAlpha(joinedMarkerColor(), alpha * 0.9f)
+                : (r.dto.running() ? withAlpha(TEXT, alpha * 0.35f) : withAlpha(GREEN, alpha * 0.75f));
+        gg.drawString(font, fit(font, rowTagText(r.dto), avail), tx, rowY + 15, tagColor, false);
     }
 
     private void drawSimpleCell(GuiGraphics gg, Font font, String text, int x, int rowY, int w, float alpha) {
@@ -860,7 +906,7 @@ public final class BattlefieldRoomBrowserAnimator {
         } else {
             drawWaitingDetail(gg, font, r, x0, top, alpha, since);
         }
-        drawJoinButton(gg, font, now, r, btnX, btnY, alpha);
+        drawActionButton(gg, font, now, r, btnX, btnY, alpha);
         gg.disableScissor();
 
         hit.hasJoin = hh >= ACC_H - 6;
@@ -922,20 +968,24 @@ public final class BattlefieldRoomBrowserAnimator {
         gg.drawString(font, text, x0, top + 26, withAlpha(GREEN, alpha * v), false);
     }
 
-    /** 手风琴内加入按钮：ACCENT 实心（替代文档金色）+ 按压回弹 + 扫光。永远可点（本仓库无满员/排队）。 */
-    private void drawJoinButton(GuiGraphics gg, Font font, long now, Row r, int x, int y, float alpha) {
+    /**
+     * 手风琴内主按钮：按 {@code viewerIn} 在「加 入」(ACCENT 蓝) 与「退 出」(BRAVO 红) 之间二选一，
+     * 两态共用同一套按压回弹 + 扫光反馈，手感一致。永远可点（本仓库无满员/排队）。
+     */
+    private void drawActionButton(GuiGraphics gg, Font font, long now, Row r, int x, int y, float alpha) {
         float sc = 1f;
         if (r.press.isRunning() && !r.press.isDone(now)) {
             sc = 0.92f + 0.08f * r.press.easedT(now);
         }
+        boolean joined = r.dto.viewerIn();
         PoseStack pose = gg.pose();
         pose.pushPose();
         pose.translate(x + JOIN_BTN_W / 2f, y + JOIN_BTN_H / 2f, 0f);
         pose.scale(sc, sc, 1f);
         int hw = JOIN_BTN_W / 2;
         int hh = JOIN_BTN_H / 2;
-        gg.fill(-hw, -hh, hw, hh, withAlpha(ACCENT, alpha));
-        String label = "加 入";
+        gg.fill(-hw, -hh, hw, hh, withAlpha(actionButtonColor(joined), alpha));
+        String label = actionButtonLabel(joined);
         gg.drawString(font, label, -font.width(label) / 2, -4, withAlpha(STAGE_BG_DEEP, alpha), false);
         if (r.sweep.isRunning() && !r.sweep.isDone(now)) {
             drawSweep(gg, r.sweep.easedT(now), -hw, -hh, JOIN_BTN_W, JOIN_BTN_H, alpha);
@@ -1196,13 +1246,23 @@ public final class BattlefieldRoomBrowserAnimator {
         row.accordionOpenedAtMs = -1L;
     }
 
-    private void startJoin(String key, long now) {
+    /**
+     * 手风琴内主按钮的点击入口。按 {@code viewerIn} 分流成加入/退出两条语义完全不同的路径：
+     * 加入是"进战场"的仪式（三段式转场 + 关屏），退出只是一次列表内操作（回弹反馈 + 留在浏览器）。
+     */
+    private void startRoomAction(String key, long now) {
         Row row = findRow(key);
-        if (row == null || joinActive) {
+        if (row == null || joinActive || leaveFireAtMs >= 0L) {
             return;
         }
         row.press.start(now, PRESS_MS, Tween.Ease.OUT_BACK);
         row.sweep.start(now, SWEEP_MS, Tween.Ease.OUT_CUBIC);
+        if (row.dto.viewerIn()) {
+            leaveKey = key;
+            leaveBreakthrough = row.dto.breakthrough();
+            leaveFireAtMs = now + PRESS_MS;
+            return;
+        }
         joinActive = true;
         joinKey = key;
         joinMapName = row.dto.mapName();
@@ -1268,7 +1328,9 @@ public final class BattlefieldRoomBrowserAnimator {
 
     /** 新快照落到某一行上：变化的字段播滚轮 + 条宽补间，整行播高亮衰减。 */
     private void applyUpdate(Row r, BattlefieldRoomDto nd, long now) {
-        boolean changed = false;
+        // 自己的成员身份变化(加入/退出生效)也算一次"数据变动",顺带播那 600ms 行高亮 ——
+        // 退出命令的回执因此有了明确的视觉落点,而不是按钮悄无声息地变回"加 入"。
+        boolean changed = nd.viewerIn() != r.dto.viewerIn();
         if (nd.cur() != r.dto.cur() || nd.max() != r.dto.max()) {
             r.players.set(playersText(nd), rollDirection(r.dto.cur(), nd.cur()), now);
             r.miniFrom = shownFill(r, now);
@@ -1470,6 +1532,21 @@ public final class BattlefieldRoomBrowserAnimator {
         return Mth.clamp(d.cur() / (float) d.max(), 0f, 1f);
     }
 
+    /** 主按钮文案：已在房间内 → 退出，否则 → 加入。 */
+    static String actionButtonLabel(boolean viewerIn) {
+        return viewerIn ? "退 出" : "加 入";
+    }
+
+    /** 主按钮底色：退出用 BRAVO 红（用户明确要求红色），加入沿用 ACCENT 蓝。 */
+    static int actionButtonColor(boolean viewerIn) {
+        return viewerIn ? BRAVO : ACCENT;
+    }
+
+    /** 行内"已加入"标识色 —— 绿 = 良好/成功，与悬停(白)/展开(蓝)/实时变动(蓝)三种既有高亮不撞色。 */
+    static int joinedMarkerColor() {
+        return GREEN;
+    }
+
     /** 迷你人数条三档配色:{@code <75%} 蓝 / {@code ≥75%} 橙黄 / 满 红（金色档换成本仓库橙黄）。 */
     static int playersFillColor(float pct) {
         if (pct >= 1f) {
@@ -1562,6 +1639,17 @@ public final class BattlefieldRoomBrowserAnimator {
     /** 人数列文案。本仓库无排队数,所以没有 demo 里的 {@code " +q"} 后缀。 */
     static String playersText(BattlefieldRoomDto d) {
         return d.cur() + "/" + d.max();
+    }
+
+    /**
+     * 对局名下方的标签行。{@code viewerIn} 时前置「已加入 · 」—— 这是用户要的那句"已在房间内"提示，
+     * 与左缘绿条、绿色薄底一起构成未展开时也能一眼看出的三重线索。
+     */
+    static String rowTagText(BattlefieldRoomDto d) {
+        String base = d.running()
+                ? "运行中 · " + formatElapsed(d.elapsedSeconds())
+                : "等待中 · 还差 " + waitingShortfall(d.cur(), d.max()) + " 人";
+        return d.viewerIn() ? "已加入 · " + base : base;
     }
 
     /** 已进行时长 mm:ss。 */

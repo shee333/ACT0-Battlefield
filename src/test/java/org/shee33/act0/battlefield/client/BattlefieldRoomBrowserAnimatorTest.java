@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BattlefieldRoomBrowserAnimatorTest {
@@ -15,6 +17,103 @@ class BattlefieldRoomBrowserAnimatorTest {
                                             int cur, int max, int t1, int t2, int tmax) {
         return new BattlefieldRoomDto(key, "战役 " + key, breakthrough, "解放峰", running,
                 cur, max, false, "PAX ARMATA", "KATO 16", t1, t2, tmax, 0);
+    }
+
+    private static BattlefieldRoomDto membership(boolean viewerIn, boolean running, boolean breakthrough,
+                                                  int cur, int max, int elapsedSeconds) {
+        return new BattlefieldRoomDto("bf@overworld", "战役", breakthrough, "解放峰", running,
+                cur, max, viewerIn, "PAX ARMATA", "KATO 16", 300, 280, 600, elapsedSeconds);
+    }
+
+    // ---------------- 已加入 / 退出：按钮派生 ----------------
+
+    @Test
+    void buttonLabelFlipsToLeaveWhenViewerIsAlreadyInTheRoom() {
+        assertEquals("加 入", BattlefieldRoomBrowserAnimator.actionButtonLabel(false));
+        assertEquals("退 出", BattlefieldRoomBrowserAnimator.actionButtonLabel(true));
+    }
+
+    @Test
+    void leaveButtonIsBravoRedAndJoinButtonIsAlphaBlue() {
+        assertEquals(0xFF4FA8FF, BattlefieldRoomBrowserAnimator.actionButtonColor(false), "加入沿用 ALPHA 蓝");
+        assertEquals(0xFFD94A4A, BattlefieldRoomBrowserAnimator.actionButtonColor(true), "退出必须是 BRAVO 红");
+    }
+
+    @Test
+    void bothButtonStatesAreVisuallyDistinctAndNeverGold() {
+        int join = BattlefieldRoomBrowserAnimator.actionButtonColor(false);
+        int leave = BattlefieldRoomBrowserAnimator.actionButtonColor(true);
+        assertTrue(join != leave, "两态必须一眼分得出来");
+        assertTrue(join != 0xFFFFD76A && leave != 0xFFFFD76A, "本仓库不继承 Arcade 的金色 #ffd76a");
+    }
+
+    @Test
+    void joinedMarkerIsGreenAndDoesNotCollideWithExistingRowHighlights() {
+        int marker = BattlefieldRoomBrowserAnimator.joinedMarkerColor();
+        assertEquals(0xFF6EE27E, marker, "已加入标识用本仓库的成功绿");
+        assertTrue(marker != BattlefieldRoomBrowserAnimator.actionButtonColor(false),
+                "不能与展开蓝条/实时变动蓝色高亮撞色");
+        assertTrue(marker != BattlefieldRoomBrowserAnimator.actionButtonColor(true), "不能与退出红撞色");
+        assertTrue(marker != 0xFFFFFFFF, "不能与白色悬停底撞色");
+        assertTrue(marker != 0xFFFFD76A, "不能是金色");
+    }
+
+    // ---------------- 已加入：行内提示文案 ----------------
+
+    @Test
+    void runningRowGetsJoinedPrefixOnlyWhenViewerIsIn() {
+        assertEquals("运行中 · 1:05",
+                BattlefieldRoomBrowserAnimator.rowTagText(membership(false, true, false, 20, 64, 65)));
+        assertEquals("已加入 · 运行中 · 1:05",
+                BattlefieldRoomBrowserAnimator.rowTagText(membership(true, true, false, 20, 64, 65)));
+    }
+
+    @Test
+    void waitingRowGetsJoinedPrefixToo() {
+        assertEquals("等待中 · 还差 4 人",
+                BattlefieldRoomBrowserAnimator.rowTagText(membership(false, false, false, 4, 8, 0)));
+        assertEquals("已加入 · 等待中 · 还差 4 人",
+                BattlefieldRoomBrowserAnimator.rowTagText(membership(true, false, false, 4, 8, 0)));
+    }
+
+    @Test
+    void joinedPrefixIsPresentForBothModes() {
+        assertTrue(BattlefieldRoomBrowserAnimator.rowTagText(membership(true, true, true, 8, 32, 10))
+                .startsWith("已加入 · "));
+        assertTrue(BattlefieldRoomBrowserAnimator.rowTagText(membership(true, false, true, 8, 32, 0))
+                .startsWith("已加入 · "));
+    }
+
+    // ---------------- 加入 / 退出意图不会混淆 ----------------
+
+    @Test
+    void joinClosesTheBrowserButLeaveKeepsItOpen() {
+        var join = new BattlefieldRoomBrowserAnimator.RoomActionRequest(
+                "bf@overworld", false, BattlefieldRoomBrowserAnimator.RoomAction.JOIN);
+        var leave = new BattlefieldRoomBrowserAnimator.RoomActionRequest(
+                "bf@overworld", false, BattlefieldRoomBrowserAnimator.RoomAction.LEAVE);
+        assertTrue(join.closesBrowser(), "加入后玩家进战场,浏览器应关闭");
+        assertFalse(leave.closesBrowser(), "退出后玩家通常还想继续浏览,不应关闭");
+    }
+
+    @Test
+    void sameRoomWithDifferentIntentsAreNotEqual() {
+        var join = new BattlefieldRoomBrowserAnimator.RoomActionRequest(
+                "bf@overworld", true, BattlefieldRoomBrowserAnimator.RoomAction.JOIN);
+        var leave = new BattlefieldRoomBrowserAnimator.RoomActionRequest(
+                "bf@overworld", true, BattlefieldRoomBrowserAnimator.RoomAction.LEAVE);
+        assertNotEquals(join, leave, "同一房间的加入与退出必须是两个可区分的意图");
+        assertEquals(join.roomKey(), leave.roomKey());
+        assertEquals(join.breakthrough(), leave.breakthrough());
+    }
+
+    @Test
+    void breakthroughFlagSurvivesOnBothIntentsSoCommandRoutingStaysCorrect() {
+        for (BattlefieldRoomBrowserAnimator.RoomAction a : BattlefieldRoomBrowserAnimator.RoomAction.values()) {
+            assertTrue(new BattlefieldRoomBrowserAnimator.RoomActionRequest("bt@nether", true, a).breakthrough(),
+                    "突破房的命令前缀依赖这个标记,不能在任一意图上丢失");
+            assertFalse(new BattlefieldRoomBrowserAnimator.RoomActionRequest("bf@overworld", false, a).breakthrough());
+        }
     }
 
     // ---------------- 滚动：可视行数 / 夹紧 / 可达性 ----------------

@@ -20,6 +20,8 @@ import org.shee33.act0.battlefield.match.BreakthroughMatch;
 import java.util.Arrays;
 import java.util.List;
 
+import org.shee33.act0.battlefield.Act0Battlefield;
+
 import static org.shee33.act0.battlefield.Act0Battlefield.BREAKTHROUGH_MANAGER;
 
 /**
@@ -250,6 +252,7 @@ public final class BreakthroughCommand {
 
         BREAKTHROUGH_MANAGER.leaveLobby(player.getUUID());
         BREAKTHROUGH_MANAGER.broadcastStatus(player.getServer());
+        Act0Battlefield.broadcastRoomList(player.getServer());
         feedback(c, "§7已退出突破模式候选名单。");
         return 1;
     }

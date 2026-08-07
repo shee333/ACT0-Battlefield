@@ -241,6 +241,9 @@ public final class BattlefieldCommand {
             return 1;
         }
         Act0Battlefield.manager().leaveLobby(player.getUUID());
+        // 退出候选名单同样要刷新对局浏览器（leaveMatch 内部已自带广播，这条路径此前漏了，
+        // 导致玩家从浏览器点\"退出\"后要等下一次 2 秒轮询列表才更新）。
+        Act0Battlefield.broadcastRoomList(player.getServer());
         feedback(c, "§7已退出候选名单。");
         return 1;
     }
