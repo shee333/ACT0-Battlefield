@@ -27,6 +27,23 @@ public final class ClientBattlefieldRoomList {
         }
     }
 
+    /**
+     * 打开对局浏览器；已经打开时不重新构造（避免重播开场级联动效）。
+     *
+     * <p>这段开屏逻辑刻意放在 {@code client} 包而不是网络包里：网络包类在<b>服务端</b>也会被
+     * 加载并做字节码校验，一旦包内直接出现 {@code Minecraft}/{@code Screen} 子类的类型引用
+     * （例如 {@code instanceof BattlefieldRoomBrowserScreen}），专用服务端就会因为
+     * {@code NoClassDefFoundError: net/minecraft/client/gui/screens/Screen} 拒绝加载整个模组。
+     * 与 {@code SyncDeployPacket} → {@code ClientDeployStatus} 等既有 S2C 包同一套惯例：
+     * 网络包只经 {@code DistExecutor} 调用本包静态方法，绝不自己触碰客户端类型。
+     */
+    public static void openBrowser() {
+        Minecraft mc = Minecraft.getInstance();
+        if (!(mc.screen instanceof BattlefieldRoomBrowserScreen)) {
+            mc.setScreen(new BattlefieldRoomBrowserScreen());
+        }
+    }
+
     public static List<BattlefieldRoomDto> rooms() {
         return rooms;
     }
