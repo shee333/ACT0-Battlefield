@@ -44,6 +44,9 @@ public final class BattlefieldData extends SavedData {
     /** 命名预设：当前布场（据点+基地+区域）的快照，存于主 NBT 的 {@code presets} 子节点下。 */
     private final Map<String, CompoundTag> presets = new LinkedHashMap<>();
 
+    /** 管理员为当前世界命名的地图名，供对局浏览器展示；空字符串表示未命名。 */
+    private String mapName = "";
+
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
                 BattlefieldData::load, BattlefieldData::new, NAME);
@@ -140,6 +143,30 @@ public final class BattlefieldData extends SavedData {
     @Nullable
     public BaseSpawn base(Faction faction) {
         return faction == Faction.ALPHA ? alphaBase : bravoBase;
+    }
+
+    // ---- 地图命名 ----
+
+    public void setMapName(String name) {
+        this.mapName = name != null ? name : "";
+        setDirty();
+    }
+
+    /** 当前世界的地图名；未命名返回空字符串（由调用方决定占位显示）。 */
+    public String mapName() {
+        return mapName;
+    }
+
+    // ---- 就绪判定（对局浏览器"等待中"房间与 start() 前置校验共用） ----
+
+    /** 征服模式所需的最小布场：至少 1 个据点 + 两阵营基地都已设置。 */
+    public boolean isConquestReady() {
+        return !points.isEmpty() && alphaBase != null && bravoBase != null;
+    }
+
+    /** 突破模式在征服模式的基础上还要求至少登记 1 个 sector。 */
+    public boolean isBreakthroughReady() {
+        return isConquestReady() && !sectors.isEmpty();
     }
 
     // ---- 战斗区域 ----
@@ -265,6 +292,9 @@ public final class BattlefieldData extends SavedData {
             }
             tag.put("presets", pt);
         }
+        if (!mapName.isEmpty()) {
+            tag.putString("mapName", mapName);
+        }
         return tag;
     }
 
@@ -302,6 +332,9 @@ public final class BattlefieldData extends SavedData {
             for (String key : pt.getAllKeys()) {
                 data.presets.put(key, pt.getCompound(key).copy());
             }
+        }
+        if (tag.contains("mapName")) {
+            data.mapName = tag.getString("mapName");
         }
         return data;
     }

@@ -69,6 +69,10 @@ public final class BattlefieldCommand {
                         .then(Commands.literal("set")
                                 .then(Commands.literal("alpha").executes(c -> setBase(c, Faction.ALPHA)))
                                 .then(Commands.literal("bravo").executes(c -> setBase(c, Faction.BRAVO)))))
+                .then(Commands.literal("map").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("name")
+                                .then(Commands.argument("name", StringArgumentType.greedyString())
+                                        .executes(BattlefieldCommand::setMapName))))
                 .then(Commands.literal("point").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("list").executes(BattlefieldCommand::listPoints))
                         .then(Commands.literal("radius")
@@ -295,6 +299,14 @@ public final class BattlefieldCommand {
         BattlefieldData.get(level).setBase(faction, new BattlefieldData.BaseSpawn(
                 player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot()));
         feedback(c, "§a已把 " + faction.coloredName() + " §a的基地设在你当前位置。");
+        return 1;
+    }
+
+    private static int setMapName(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        String name = StringArgumentType.getString(c, "name");
+        BattlefieldData.get(level).setMapName(name);
+        feedback(c, "§a已将当前世界地图命名为 §e" + name);
         return 1;
     }
 

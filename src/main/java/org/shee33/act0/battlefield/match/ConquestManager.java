@@ -4,6 +4,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
@@ -19,6 +20,8 @@ import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.command.BattlefieldCommand;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
@@ -29,8 +32,10 @@ import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.ActionPacket;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
-import org.shee33.act0.battlefield.network.BattlefieldStatusDto;
+import org.shee33.act0.battlefield.network.BattlefieldRoomDto;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.server.MinecraftServer;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -62,8 +67,8 @@ public final class ConquestManager {
     private final Path templateBasePath = Path.of("config", "act0_battlefield", "templates");
 
     /** 每玩家上次"加入候选名单"的时间戳，节流JOIN_ALPHA/JOIN_BRAVO——这两个动作会触发
-     * {@link #broadcastStatus}向所有在线玩家广播状态快照，恶意客户端spam切边会打出
-     * N倍广播放大攻击（P1安全修复）。 */
+     * {@link Act0Battlefield#broadcastRoomList}向所有在线玩家广播房间列表快照，恶意客户端
+     * spam切边会打出N倍广播放大攻击（P1安全修复）。 */
     private final Map<UUID, Long> lastLobbyJoinMs = new LinkedHashMap<>();
     private static final long LOBBY_JOIN_MIN_INTERVAL_MS = 200L;
 
@@ -73,7 +78,8 @@ public final class ConquestManager {
 
     public void join(ServerPlayer player, Faction faction) {
         lobbyFor(player.serverLevel()).put(player.getUUID(), faction);
-        broadcastStatus(player.getServer());
+        Act0Battlefield.broadcastRoomList(player.getServer());
+        tryAutoStart(player.serverLevel());
     }
 
     /** 将当前世界所有在线玩家均衡加入候选名单，方便管理员一键开局。 */
@@ -106,9 +112,10 @@ public final class ConquestManager {
             player.sendSystemMessage(Component.literal("§6你已被加入大战场候选名单：" + target.coloredName()));
             added++;
         }
-        broadcastStatus(operator.getServer());
+        Act0Battlefield.broadcastRoomList(operator.getServer());
         operator.sendSystemMessage(Component.literal("§a已将当前世界 §e" + added
                 + " §a名玩家加入候选名单 §7(北大西洋公约 " + alpha + " / 无邦军团 " + bravo + ")"));
+        tryAutoStart(level);
         return added;
     }
 
@@ -129,7 +136,7 @@ public final class ConquestManager {
             lobbyWorlds.keySet().removeIf(key -> !activeByWorld.containsKey(key)
                     || activeByWorld.get(key).isEnded());
         }
-        broadcastStatus(player.getServer());
+        Act0Battlefield.broadcastRoomList(player.getServer());
         return ok;
     }
 
@@ -166,37 +173,72 @@ public final class ConquestManager {
         return null;
     }
 
-    /** 供 ACT0-Arcade 游戏浏览器反射读取的大战场对局行。 */
-    public List<String[]> browserRows(ServerPlayer viewer) {
-        List<String[]> rows = new ArrayList<>();
-        for (Map.Entry<ResourceKey<Level>, ConquestMatch> e : activeByWorld.entrySet()) {
-            ConquestMatch match = e.getValue();
-            if (match.isEnded()) {
+    /**
+     * 对局浏览器快照：涵盖"运行中"的对局与"地图已布置完毕、正等待玩家凑够人数"的待命世界
+     * （见 {@link BattlefieldData#isConquestReady()}）。待命世界的人数取自其候选名单大小，
+     * 对局结束后 {@code activeByWorld} 摘除该 key，只要布场数据还在，下次快照就会自然把它
+     * 重新归为待命行——不需要额外的"结束后转回等待中"代码。
+     */
+    public List<BattlefieldRoomDto> snapshotRooms(MinecraftServer server, UUID viewerId) {
+        List<BattlefieldRoomDto> rows = new ArrayList<>();
+        int minPlayers = BattlefieldConfig.MIN_PLAYERS_TO_START.get();
+        for (ServerLevel level : server.getAllLevels()) {
+            ResourceKey<Level> key = level.dimension();
+            ConquestMatch match = activeByWorld.get(key);
+            if (match != null && !match.isEnded()) {
+                rows.add(new BattlefieldRoomDto(
+                        "bf@" + key.location(),
+                        battleNames.getOrDefault(key, defaultBattleName(key)),
+                        false,
+                        mapNameOrFallback(level, key),
+                        true,
+                        match.totalMembers(),
+                        minPlayers,
+                        match.contains(viewerId),
+                        Faction.ALPHA.coloredName(),
+                        Faction.BRAVO.coloredName(),
+                        match.displayTickets(Faction.ALPHA),
+                        match.displayTickets(Faction.BRAVO),
+                        match.startingTicketsHint(),
+                        match.elapsedSeconds()));
                 continue;
             }
-                String battleName = battleNames.getOrDefault(e.getKey(), defaultBattleName(e.getKey()));
-            rows.add(new String[]{
-                    "bf@" + e.getKey().location(),
-                    "大战场 · " + battleName,
-                    e.getKey().location().toString(),
-                    "-",
-                    Integer.toString(match.totalMembers()),
-                    Integer.toString(match.capacityHint()),
-                    "进行中",
-                    Boolean.toString(match.contains(viewer.getUUID())),
-                    "true",
-                    match.participantNames(),
-                    Integer.toString(match.elapsedSeconds())
-            });
+            BattlefieldData data = BattlefieldData.get(level);
+            if (!data.isConquestReady()) {
+                continue;
+            }
+            Map<UUID, Faction> lobby = lobbies.get(key);
+            int cur = lobby != null ? lobby.size() : 0;
+            boolean viewerIn = lobby != null && lobby.containsKey(viewerId);
+            rows.add(new BattlefieldRoomDto(
+                    "bf@" + key.location(),
+                    defaultBattleName(key),
+                    false,
+                    mapNameOrFallback(level, key),
+                    false,
+                    cur,
+                    minPlayers,
+                    viewerIn,
+                    Faction.ALPHA.coloredName(),
+                    Faction.BRAVO.coloredName(),
+                    0, 0, 0, 0));
         }
         return rows;
+    }
+
+    private static String mapNameOrFallback(ServerLevel level, ResourceKey<Level> key) {
+        String name = BattlefieldData.get(level).mapName();
+        return name.isBlank() ? key.location().toString() : name;
     }
 
     public void quickJoin(ServerPlayer player, String key) {
         ResourceKey<Level> levelKey = resolveQuickJoinKey(key);
         ConquestMatch match = levelKey != null ? activeByWorld.get(levelKey) : activeFor(player.serverLevel());
         if (match == null || match.isEnded()) {
-            player.displayClientMessage(Component.literal("§c该大战场不存在或已结束"), true);
+            // 没有进行中对局：这个 key 可能对应一个"地图已布置完毕、正等待玩家"的待命世界——
+            // 加入方式等价于候选名单加入(随机分配阵营)，凑够人数后自动开局，与浏览器"等待中"
+            // 行点击加入的语义保持一致。
+            quickJoinStandby(player, key);
             return;
         }
         if (match.contains(player.getUUID())) {
@@ -255,6 +297,64 @@ public final class ConquestManager {
         return raw;
     }
 
+    /** {@link #quickJoin}在key没有对应进行中对局时的降级路径：加入待命世界的候选名单。 */
+    private void quickJoinStandby(ServerPlayer player, String key) {
+        MinecraftServer server = player.getServer();
+        ServerLevel standbyLevel = resolveStandbyLevel(server, key, player.serverLevel());
+        if (standbyLevel == null || !BattlefieldData.get(standbyLevel).isConquestReady()) {
+            player.displayClientMessage(Component.literal("§c该大战场不存在或已结束"), true);
+            return;
+        }
+        Map<UUID, Faction> lobby = lobbyFor(standbyLevel);
+        if (lobby.containsKey(player.getUUID())) {
+            player.displayClientMessage(Component.literal("§e你已在候选名单中"), true);
+            return;
+        }
+        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
+        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
+        Faction faction = LatecomerAssignment.randomFaction(alphaCount, Integer.MAX_VALUE, bravoCount, Integer.MAX_VALUE);
+        if (faction == null) {
+            player.displayClientMessage(Component.literal("§c该大战场已满员"), true);
+            return;
+        }
+        lobby.put(player.getUUID(), faction);
+        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
+        Act0Battlefield.broadcastRoomList(server);
+        tryAutoStart(standbyLevel);
+    }
+
+    /** 把 {@code "bf@<dimension>"} 或裸维度字符串解析为已加载的 {@link ServerLevel}；空 key 回退到调用者当前世界。 */
+    @Nullable
+    private ServerLevel resolveStandbyLevel(MinecraftServer server, String key, ServerLevel fallbackLevel) {
+        String raw = normalizeQuickJoinKey(key);
+        if (raw.isBlank()) {
+            return fallbackLevel;
+        }
+        if (raw.startsWith("bf@")) {
+            raw = raw.substring(3).trim();
+        }
+        ResourceLocation loc = ResourceLocation.tryParse(raw);
+        if (loc == null) {
+            return null;
+        }
+        return server.getLevel(ResourceKey.create(Registries.DIMENSION, loc));
+    }
+
+    /** 候选名单凑够{@link BattlefieldConfig#MIN_PLAYERS_TO_START}人且地图已布置完毕时自动开局。 */
+    private void tryAutoStart(ServerLevel level) {
+        if (activeFor(level) != null) {
+            return;
+        }
+        Map<UUID, Faction> lobby = lobbies.get(level.dimension());
+        if (lobby == null || !BattlefieldData.get(level).isConquestReady()) {
+            return;
+        }
+        if (lobby.size() < BattlefieldConfig.MIN_PLAYERS_TO_START.get()) {
+            return;
+        }
+        start(level, ConquestRules.standard());
+    }
+
     private Map<UUID, Faction> lobbyFor(ServerLevel level) {
         return lobbies.computeIfAbsent(level.dimension(), ignored -> new LinkedHashMap<>());
     }
@@ -295,11 +395,8 @@ public final class ConquestManager {
         }
         BattlefieldData data = BattlefieldData.get(level);
         List<ControlPointDef> defs = data.points();
-        if (defs.isEmpty()) {
-            return "§c该世界尚未布置任何据点。";
-        }
-        if (data.base(Faction.ALPHA) == null || data.base(Faction.BRAVO) == null) {
-            return "§c两个阵营的基地出生点都需先设置。";
+        if (!data.isConquestReady()) {
+            return "§c该世界尚未布置完毕（据点/双方基地未设置）。";
         }
         if (templateName == null || templateName.isBlank()) {
             tryAutoSaveDefaultTemplate(level, data);
@@ -363,7 +460,8 @@ public final class ConquestManager {
                     }
                     lastLobbyJoinMs.put(player.getUUID(), now);
                     lobbyFor(player.serverLevel()).put(player.getUUID(), ActionPacket.factionOf(action));
-                    broadcastStatus(player.getServer());
+                    Act0Battlefield.broadcastRoomList(player.getServer());
+                    tryAutoStart(player.serverLevel());
                     return;
                 }
             }
@@ -376,7 +474,7 @@ public final class ConquestManager {
                     if (err != null) {
                         player.sendSystemMessage(Component.literal(err));
                     } else {
-                        broadcastStatus(player.getServer());
+                        Act0Battlefield.broadcastRoomList(player.getServer());
                         return;
                     }
                 }
@@ -386,7 +484,7 @@ public final class ConquestManager {
                     player.sendSystemMessage(Component.literal("§c只有管理员可以停止。"));
                 } else {
                     stop(player.serverLevel());
-                    broadcastStatus(player.getServer());
+                    Act0Battlefield.broadcastRoomList(player.getServer());
                     return;
                 }
             }
@@ -401,13 +499,12 @@ public final class ConquestManager {
             case REFRESH -> {
             }
         }
-        // 单人即时反馈（刷新自己的界面）
-        BattlefieldNetwork.sendStatus(player, false, snapshotFor(player));
+        Act0Battlefield.broadcastRoomList(player.getServer());
     }
 
-    /** 主动为玩家打开加入界面。 */
+    /** 主动为玩家打开对局浏览器（该玩家自己所在客户端未必已开屏，需要显式一跳网络包）。 */
     public void openFor(ServerPlayer player) {
-        BattlefieldNetwork.sendStatus(player, true, snapshotFor(player));
+        BattlefieldNetwork.sendOpenBrowser(player);
     }
 
     private void openArcadeLoadout(ServerPlayer player) {
@@ -423,53 +520,7 @@ public final class ConquestManager {
         }
     }
 
-    /** 为某玩家构建一份状态快照。 */
-    public BattlefieldStatusDto snapshotFor(ServerPlayer player) {
-        boolean canManage = player.hasPermissions(2);
-        UUID id = player.getUUID();
-        ConquestMatch active = activeFor(player.serverLevel());
-        if (active != null) {
-            int my = factionToCode(active.factionOf(id));
-            return new BattlefieldStatusDto(true, canManage, my,
-                    active.memberCount(Faction.ALPHA), active.memberCount(Faction.BRAVO),
-                    active.displayTickets(Faction.ALPHA), active.displayTickets(Faction.BRAVO),
-                    active.ownedPoints(Faction.ALPHA), active.ownedPoints(Faction.BRAVO),
-                    active.totalPoints());
-        }
-        Map<UUID, Faction> lobby = lobbyFor(player.serverLevel());
-        Faction mine = lobby.get(id);
-        int alpha = 0;
-        int bravo = 0;
-        for (Faction f : lobby.values()) {
-            if (f == Faction.ALPHA) {
-                alpha++;
-            } else {
-                bravo++;
-            }
-        }
-        return new BattlefieldStatusDto(false, canManage, factionToCode(mine),
-                alpha, bravo, 0, 0, 0, 0, 0);
-    }
 
-    private static int factionToCode(@Nullable Faction f) {
-        if (f == Faction.ALPHA) {
-            return 1;
-        }
-        if (f == Faction.BRAVO) {
-            return 2;
-        }
-        return 0;
-    }
-
-    /** 向所有在线玩家刷新状态（仅刷新已打开的界面）。 */
-    public void broadcastStatus(@Nullable net.minecraft.server.MinecraftServer server) {
-        if (server == null) {
-            return;
-        }
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            BattlefieldNetwork.sendStatus(p, false, snapshotFor(p));
-        }
-    }
 
     // ---- 事件 ----
 
@@ -528,7 +579,7 @@ public final class ConquestManager {
                 battleNames.remove(key);
                 lobbyWorlds.remove(key);
             }
-            broadcastStatus(server);
+            Act0Battlefield.broadcastRoomList(server);
         }
     }
 

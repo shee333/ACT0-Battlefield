@@ -1,6 +1,8 @@
 package org.shee33.act0.battlefield;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModLoadingContext;
@@ -12,8 +14,13 @@ import org.shee33.act0.battlefield.match.BreakthroughManager;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.match.MatchChatHandler;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
+import org.shee33.act0.battlefield.network.BattlefieldRoomDto;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
 import org.slf4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * ACT0-Battlefield 主模组类。
@@ -59,5 +66,22 @@ public final class Act0Battlefield {
     /** 全局征服对局管理器入口，供命令层使用。 */
     public static ConquestManager manager() {
         return MANAGER;
+    }
+
+    /** 对局浏览器快照：合并征服与突破两个管理器各自的房间行。 */
+    public static List<BattlefieldRoomDto> snapshotAllRooms(MinecraftServer server, UUID viewerId) {
+        List<BattlefieldRoomDto> rows = new ArrayList<>(MANAGER.snapshotRooms(server, viewerId));
+        rows.addAll(BREAKTHROUGH_MANAGER.snapshotRooms(server, viewerId));
+        return rows;
+    }
+
+    /** 向所有在线玩家推送各自视角下的对局浏览器房间列表快照。 */
+    public static void broadcastRoomList(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            BattlefieldNetwork.sendRoomList(player, snapshotAllRooms(server, player.getUUID()));
+        }
     }
 }

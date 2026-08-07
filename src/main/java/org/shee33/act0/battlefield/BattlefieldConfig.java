@@ -28,6 +28,7 @@ public final class BattlefieldConfig {
     public static final ForgeConfigSpec.IntValue DOWNED_DURATION_TICKS;
     public static final ForgeConfigSpec.IntValue REVIVE_DURATION_TICKS;
     public static final ForgeConfigSpec.DoubleValue TICKET_PER_DEATH;
+    public static final ForgeConfigSpec.IntValue MIN_PLAYERS_TO_START;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -72,6 +73,11 @@ public final class BattlefieldConfig {
         TICKET_PER_DEATH = builder
                 .comment("Tickets lost per player death (also configurable via ConquestRules)")
                 .defineInRange("ticketPerDeath", 1.0, 0.0, 100.0);
+        MIN_PLAYERS_TO_START = builder
+                .comment("Combined ALPHA+BRAVO lobby size that auto-starts a match on a fully "
+                        + "configured world (points + both bases set). Also used as the displayed "
+                        + "room capacity in the battle browser.")
+                .defineInRange("minPlayersToStart", 8, 2, 64);
         builder.pop();
 
         builder.push("performance");

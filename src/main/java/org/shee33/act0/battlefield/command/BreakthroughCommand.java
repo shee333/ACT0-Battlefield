@@ -46,6 +46,10 @@ public final class BreakthroughCommand {
                     .then(Commands.literal("set")
                         .then(Commands.literal("attacker").executes(c -> setBase(c, Faction.ALPHA)))
                         .then(Commands.literal("defender").executes(c -> setBase(c, Faction.BRAVO)))))
+                .then(Commands.literal("map").requires(s -> s.hasPermission(2))
+                    .then(Commands.literal("name")
+                        .then(Commands.argument("name", StringArgumentType.greedyString())
+                            .executes(BreakthroughCommand::setMapName))))
                 .then(buildStartBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                     .executes(BreakthroughCommand::stop))
@@ -136,6 +140,13 @@ public final class BreakthroughCommand {
         BattlefieldData.get(level).setBase(faction, new BattlefieldData.BaseSpawn(
                 player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot()));
         feedback(c, "§a已把 " + faction.coloredName() + " §a的基地设在你当前位置。");
+        return 1;
+    }
+
+    private static int setMapName(CommandContext<CommandSourceStack> c) {
+        String name = StringArgumentType.getString(c, "name");
+        BattlefieldData.get(c.getSource().getLevel()).setMapName(name);
+        feedback(c, "§a已将当前世界地图命名为 §e" + name);
         return 1;
     }
 

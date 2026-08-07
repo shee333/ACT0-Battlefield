@@ -1712,7 +1712,18 @@ public final class BreakthroughMatch {
     }
 
     public int capacityHint() {
-        return 64;
+        return BattlefieldConfig.MIN_PLAYERS_TO_START.get();
+    }
+
+    /** 某阵营剩余票数（取整）：进攻方(ALPHA)=攻击方剩余票数，防守方(BRAVO)没有票池永远返回0
+     * (突破模式本就只有进攻方会因死亡损失票数)，供对局浏览器换算票数对峙条比例。 */
+    public int displayTickets(Faction faction) {
+        return faction == Faction.ALPHA ? (int) Math.ceil(attackerTickets) : 0;
+    }
+
+    /** 起始票数（取整），供对局浏览器换算票数对峙条比例。 */
+    public int startingTicketsHint() {
+        return rules.startingTickets();
     }
 
     /** 某阵营当前参战人数。 */

@@ -41,9 +41,6 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncHudPacket.class,
                 SyncHudPacket::encode, SyncHudPacket::decode, SyncHudPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, SyncStatusPacket.class,
-                SyncStatusPacket::encode, SyncStatusPacket::decode, SyncStatusPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, ActionPacket.class,
                 ActionPacket::encode, ActionPacket::decode, ActionPacket::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
@@ -104,6 +101,15 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, DeploySlotOverridePacket.class,
             DeploySlotOverridePacket::encode, DeploySlotOverridePacket::decode, DeploySlotOverridePacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, RequestBattlefieldRoomListPacket.class,
+            RequestBattlefieldRoomListPacket::encode, RequestBattlefieldRoomListPacket::decode,
+            RequestBattlefieldRoomListPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, SyncBattlefieldRoomListPacket.class,
+            SyncBattlefieldRoomListPacket::encode, SyncBattlefieldRoomListPacket::decode,
+            SyncBattlefieldRoomListPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, OpenBattlefieldBrowserPacket.class,
+            OpenBattlefieldBrowserPacket::encode, OpenBattlefieldBrowserPacket::decode,
+            OpenBattlefieldBrowserPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /** 向玩家推送 HUD 内容。 */
@@ -215,12 +221,13 @@ public final class BattlefieldNetwork {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleResultPacket(result));
     }
 
-    /**
-     * 向玩家下发状态快照。
-     *
-     * @param open {@code true}=玩家主动开屏（界面未开则打开）；{@code false}=仅刷新已开界面。
-     */
-    public static void sendStatus(ServerPlayer player, boolean open, BattlefieldStatusDto status) {
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncStatusPacket(open, status));
+    /** 向玩家推送对局浏览器房间列表快照。 */
+    public static void sendRoomList(ServerPlayer player, List<BattlefieldRoomDto> rooms) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattlefieldRoomListPacket(rooms));
+    }
+
+    /** 告知玩家打开对局浏览器（战地终端物品/命令等服务端触发点）。 */
+    public static void sendOpenBrowser(ServerPlayer player) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new OpenBattlefieldBrowserPacket());
     }
 }

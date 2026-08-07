@@ -19,13 +19,18 @@ import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
+import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.command.BreakthroughCommand;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
+import org.shee33.act0.battlefield.network.BattlefieldRoomDto;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -63,6 +68,8 @@ public final class BreakthroughManager {
     public void join(ServerLevel level, ServerPlayer player, Faction faction) {
         lobbyFor(level).put(player.getUUID(), faction);
         broadcastStatus(player.getServer());
+        Act0Battlefield.broadcastRoomList(player.getServer());
+        tryAutoStart(level);
     }
 
     public void leaveLobby(UUID id) {
@@ -86,6 +93,7 @@ public final class BreakthroughManager {
             matchStartedTick.keySet().removeIf(key -> !activeByWorld.containsKey(key));
         }
         broadcastStatus(player.getServer());
+        Act0Battlefield.broadcastRoomList(player.getServer());
         return ok;
     }
 
@@ -122,31 +130,61 @@ public final class BreakthroughManager {
         return null;
     }
 
-    /** 供 ACT0-Arcade 游戏浏览器反射读取的突破对局行。 */
-    public List<String[]> browserRows(ServerPlayer viewer) {
-        List<String[]> rows = new ArrayList<>();
-        for (Map.Entry<ResourceKey<Level>, BreakthroughMatch> e : activeByWorld.entrySet()) {
-            BreakthroughMatch match = e.getValue();
-            if (match.isEnded()) {
+    /**
+     * 对局浏览器快照：涵盖"运行中"的对局与"地图已布置完毕、正等待玩家凑够人数"的待命世界
+     * （见 {@link BattlefieldData#isBreakthroughReady()}）。与 {@link ConquestManager#snapshotRooms}
+     * 同一套实现模式。
+     */
+    public List<BattlefieldRoomDto> snapshotRooms(MinecraftServer server, UUID viewerId) {
+        List<BattlefieldRoomDto> rows = new ArrayList<>();
+        int minPlayers = BattlefieldConfig.MIN_PLAYERS_TO_START.get();
+        for (ServerLevel level : server.getAllLevels()) {
+            ResourceKey<Level> key = level.dimension();
+            BreakthroughMatch match = activeByWorld.get(key);
+            if (match != null && !match.isEnded()) {
+                rows.add(new BattlefieldRoomDto(
+                        "bt@" + key.location(),
+                        battleNames.getOrDefault(key, defaultBattleName(key)),
+                        true,
+                        mapNameOrFallback(level, key),
+                        true,
+                        match.totalMembers(),
+                        minPlayers,
+                        match.contains(viewerId),
+                        Faction.ALPHA.coloredName(),
+                        Faction.BRAVO.coloredName(),
+                        match.displayTickets(Faction.ALPHA),
+                        match.displayTickets(Faction.BRAVO),
+                        match.startingTicketsHint(),
+                        elapsedSecondsFor(key, server)));
                 continue;
             }
-            String battleName = battleNames.getOrDefault(e.getKey(), defaultBattleName(e.getKey()));
-            int elapsed = elapsedSecondsFor(e.getKey(), viewer.getServer());
-            rows.add(new String[]{
-                    "bt@" + e.getKey().location(),
-                    "突破 · " + battleName,
-                    e.getKey().location().toString(),
-                    "-",
-                    Integer.toString(match.totalMembers()),
-                    Integer.toString(match.capacityHint()),
-                    "进行中",
-                    Boolean.toString(match.contains(viewer.getUUID())),
-                    "true",
-                    participantNamesFor(match, viewer.getServer()),
-                    Integer.toString(elapsed)
-            });
+            BattlefieldData data = BattlefieldData.get(level);
+            if (!data.isBreakthroughReady()) {
+                continue;
+            }
+            Map<UUID, Faction> lobby = lobbies.get(key);
+            int cur = lobby != null ? lobby.size() : 0;
+            boolean viewerIn = lobby != null && lobby.containsKey(viewerId);
+            rows.add(new BattlefieldRoomDto(
+                    "bt@" + key.location(),
+                    defaultBattleName(key),
+                    true,
+                    mapNameOrFallback(level, key),
+                    false,
+                    cur,
+                    minPlayers,
+                    viewerIn,
+                    Faction.ALPHA.coloredName(),
+                    Faction.BRAVO.coloredName(),
+                    0, 0, 0, 0));
         }
         return rows;
+    }
+
+    private static String mapNameOrFallback(ServerLevel level, ResourceKey<Level> key) {
+        String name = BattlefieldData.get(level).mapName();
+        return name.isBlank() ? key.location().toString() : name;
     }
 
     private int elapsedSecondsFor(ResourceKey<Level> key, @Nullable MinecraftServer server) {
@@ -182,7 +220,9 @@ public final class BreakthroughManager {
         ResourceKey<Level> levelKey = resolveQuickJoinKey(key);
         BreakthroughMatch match = levelKey != null ? activeByWorld.get(levelKey) : activeFor(player.serverLevel());
         if (match == null || match.isEnded()) {
-            player.displayClientMessage(Component.literal("§c该突破对局不存在或已结束"), true);
+            // 没有进行中对局：这个 key 可能对应一个待命世界，加入方式等价于候选名单加入
+            // （随机分配阵营），凑够人数后自动开局（与 ConquestManager#quickJoin 同一套模式）。
+            quickJoinStandby(player, key);
             return;
         }
         if (match.contains(player.getUUID())) {
@@ -244,6 +284,64 @@ public final class BreakthroughManager {
         return lobbies.computeIfAbsent(level.dimension(), ignored -> new LinkedHashMap<>());
     }
 
+    /** {@link #quickJoin}在key没有对应进行中对局时的降级路径：加入待命世界的候选名单。 */
+    private void quickJoinStandby(ServerPlayer player, String key) {
+        MinecraftServer server = player.getServer();
+        ServerLevel standbyLevel = resolveStandbyLevel(server, key, player.serverLevel());
+        if (standbyLevel == null || !BattlefieldData.get(standbyLevel).isBreakthroughReady()) {
+            player.displayClientMessage(Component.literal("§c该突破对局不存在或已结束"), true);
+            return;
+        }
+        Map<UUID, Faction> lobby = lobbyFor(standbyLevel);
+        if (lobby.containsKey(player.getUUID())) {
+            player.displayClientMessage(Component.literal("§e你已在候选名单中"), true);
+            return;
+        }
+        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
+        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
+        Faction faction = LatecomerAssignment.randomFaction(alphaCount, Integer.MAX_VALUE, bravoCount, Integer.MAX_VALUE);
+        if (faction == null) {
+            player.displayClientMessage(Component.literal("§c该突破对局已满员"), true);
+            return;
+        }
+        lobby.put(player.getUUID(), faction);
+        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
+        Act0Battlefield.broadcastRoomList(server);
+        tryAutoStart(standbyLevel);
+    }
+
+    /** 把 {@code "bt@<dimension>"} 或裸维度字符串解析为已加载的 {@link ServerLevel}；空 key 回退到调用者当前世界。 */
+    @Nullable
+    private ServerLevel resolveStandbyLevel(MinecraftServer server, String key, ServerLevel fallbackLevel) {
+        String raw = normalizeQuickJoinKey(key);
+        if (raw.isBlank()) {
+            return fallbackLevel;
+        }
+        if (raw.startsWith("bt@")) {
+            raw = raw.substring(3).trim();
+        }
+        ResourceLocation loc = ResourceLocation.tryParse(raw);
+        if (loc == null) {
+            return null;
+        }
+        return server.getLevel(ResourceKey.create(Registries.DIMENSION, loc));
+    }
+
+    /** 候选名单凑够{@link BattlefieldConfig#MIN_PLAYERS_TO_START}人且地图已布置完毕时自动开局。 */
+    private void tryAutoStart(ServerLevel level) {
+        if (activeFor(level) != null) {
+            return;
+        }
+        Map<UUID, Faction> lobby = lobbies.get(level.dimension());
+        if (lobby == null || !BattlefieldData.get(level).isBreakthroughReady()) {
+            return;
+        }
+        if (lobby.size() < BattlefieldConfig.MIN_PLAYERS_TO_START.get()) {
+            return;
+        }
+        start(level, BreakthroughRules.standard());
+    }
+
     /**
      * 用当前候选名单开局，使用默认战役名。
      *
@@ -282,14 +380,8 @@ public final class BreakthroughManager {
         }
         BattlefieldData data = BattlefieldData.get(level);
         List<ControlPointDef> defs = data.points();
-        if (defs.isEmpty()) {
-            return "§c该世界尚未布置任何据点。";
-        }
-        if (data.base(Faction.ALPHA) == null || data.base(Faction.BRAVO) == null) {
-            return "§c两个阵营的基地出生点都需先设置。";
-        }
-        if (data.sectors().isEmpty()) {
-            return "§c尚未登记任何突破模式区域（sector）。";
+        if (!data.isBreakthroughReady()) {
+            return "§c该世界尚未布置完毕（据点/双方基地/突破区域未设置）。";
         }
         // 模板维度集成尚未启用：直接在大厅世界中开局。
         ServerLevel matchLevel = level;
@@ -400,6 +492,7 @@ public final class BreakthroughManager {
                 matchStartedTick.remove(key);
             }
             broadcastStatus(server);
+            Act0Battlefield.broadcastRoomList(server);
         }
     }
 

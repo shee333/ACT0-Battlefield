@@ -2075,7 +2075,12 @@ public final class ConquestMatch {
     }
 
     public int capacityHint() {
-        return 64;
+        return BattlefieldConfig.MIN_PLAYERS_TO_START.get();
+    }
+
+    /** 起始票数（取整），供对局浏览器换算票数对峙条比例。 */
+    public int startingTicketsHint() {
+        return (int) Math.ceil(rules.startingTickets());
     }
 
     public int elapsedSeconds() {
