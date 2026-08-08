@@ -283,8 +283,7 @@ public final class BreakthroughMatch {
         cancelRevive(id);
         lastHudHash.remove(id);
         callHelpCooldownUntil.remove(id);
-        squadManager.onPlayerLeave(id);
-        squadManager.buildSquads();
+        squadManager.removeMember(id);
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
@@ -1654,7 +1653,8 @@ public final class BreakthroughMatch {
         hp = Math.max(0, Math.min(100, hp));
         boolean downed = downedUntil.containsKey(player.getUUID());
         squad.add(new SquadMateHudDto(player.getGameProfile().getName(), hp,
-                player.isAlive() || downed, self, downed, isSquadLeader));
+                player.isAlive() || downed, self, downed, isSquadLeader,
+                player.getX(), player.getZ()));
     }
 
     // ---- 呼吸回血 ----

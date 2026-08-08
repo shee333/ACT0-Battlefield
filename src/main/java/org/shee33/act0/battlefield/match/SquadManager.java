@@ -172,6 +172,52 @@ public final class SquadManager {
     }
 
     /**
+     * 玩家退出对局时的增量移除，与 {@link #buildSquads()} 的"全量清空重建"相对。
+     *
+     * <p>此前退出走的是 {@code onPlayerLeave} + {@code buildSquads()}：后者会清空所有映射并按
+     * {@link #factionOf} 的迭代顺序从头重新编号。中途有人退出时，排在他后面的每个玩家都会往前
+     * 挤一位，跨越小队边界的那些人直接被换到别的小队去——打着打着队友突然全换人。这与
+     * {@link #assignLatecomer} 刻意避免全量重建的初衷正好相反。
+     *
+     * <p>本方法只动退出者自己：从 {@link #squadOf}/{@link #squads} 摘除；若他是队长，则由剩余
+     * 成员中的第一个顺延接任（与 {@link #buildSquads()} "第一个成员即队长"的规则一致）；若小队
+     * 因此空了，则连同小队编号、队长、待处理的命令请求与生效中的命令一并清理。其余玩家的
+     * squadOf/squads/squadLeaders 一律不动。
+     *
+     * @param playerId 退出对局的玩家 UUID
+     */
+    public void removeMember(UUID playerId) {
+        Integer squadId = squadOf.remove(playerId);
+        if (squadId == null) {
+            return;
+        }
+        LinkedHashSet<UUID> members = squads.get(squadId);
+        if (members != null) {
+            members.remove(playerId);
+        }
+        Map<UUID, Long> requests = orderRequests.get(squadId);
+        if (requests != null) {
+            requests.remove(playerId);
+        }
+        if (members == null || members.isEmpty()) {
+            squads.remove(squadId);
+            squadLeaders.remove(squadId);
+            orderRequests.remove(squadId);
+            activeOrders.remove(squadId);
+            return;
+        }
+        if (playerId.equals(squadLeaders.get(squadId))) {
+            squadLeaders.put(squadId, members.iterator().next());
+            // 队长换人后，原队长任内积压的命令请求已无意义——新队长应从干净状态开始，
+            // 否则旧请求的计时会继续走，可能立刻把某个队员自动提为队长。
+            if (requests != null) {
+                requests.clear();
+            }
+            activeOrders.remove(squadId);
+        }
+    }
+
+    /**
      * 给指定阵营找一个尚未被占用的小队编号，沿用 {@link #buildSquads()} 同样的编号规则
      * （ALPHA 从 1 起、BRAVO 从 101 起，逐个探测直到找到空位）。
      */
@@ -274,14 +320,6 @@ public final class SquadManager {
 
     public Map<Integer, SquadOrder> getActiveOrders() {
         return activeOrders;
-    }
-
-    /** Clear any active order when a player leaves the match. */
-    void onPlayerLeave(UUID playerId) {
-        Integer squadId = squadOf.get(playerId);
-        if (squadId != null && isSquadLeader(playerId)) {
-            activeOrders.remove(squadId);
-        }
     }
 
     // ---- Squad spawn / deploy methods ----

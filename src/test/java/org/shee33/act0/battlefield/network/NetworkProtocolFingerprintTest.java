@@ -9,9 +9,11 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,15 +30,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class NetworkProtocolFingerprintTest {
 
-    private static final Path SOURCE =
-            Path.of("src/main/java/org/shee33/act0/battlefield/network/BattlefieldNetwork.java");
+    private static final Path NETWORK_DIR = Path.of("src/main/java/org/shee33/act0/battlefield/network");
+    private static final Path SOURCE = NETWORK_DIR.resolve("BattlefieldNetwork.java");
 
-    /** 改动包表后，请连同 PROTOCOL 一起更新此处。 */
-    private static final String EXPECTED_PROTOCOL = "10";
+    /** 改动包表或任何包的 payload 结构后，请连同 PROTOCOL 一起更新此处。 */
+    private static final String EXPECTED_PROTOCOL = "11";
 
     /** 包表指纹（index:ClassName:DIRECTION 逐行拼接后的 SHA-256）。 */
     private static final String EXPECTED_FINGERPRINT =
             "c99e98cabf320e7eaf8fd7515ca36c28b55523f8c5846639db9d579d64f4c9a6";
+
+    /** 线格式指纹（network 包下每个文件的 buf.writeXxx / 嵌套 encode 调用序列）。 */
+    private static final String EXPECTED_WIRE_FORMAT =
+            "0b0ca979160d8f12ce21cf135cde8e6218dd156c6639fbc7be40d8ba38fce4b2";
 
     @Test
     void packetTableMatchesFingerprint() throws IOException {
@@ -47,6 +53,23 @@ class NetworkProtocolFingerprintTest {
                         + "与旧客户端的兼容性，必须同时 bump BattlefieldNetwork.PROTOCOL 并更新本测试的\n"
                         + "EXPECTED_PROTOCOL / EXPECTED_FINGERPRINT 常量。\n\n"
                         + "当前包表：\n  " + String.join("\n  ", table) + "\n");
+    }
+
+    /**
+     * 锁住线格式。包表指纹只覆盖 (索引, 类名, 方向)，对"包还是那个包、但字段变了"完全无感——
+     * 而这正是 ACT0-Arcade 给 RoomDto 加四个字段却没 bump 的那类破坏。这里改抓每个文件里
+     * {@code buf.writeXxx} 与嵌套 {@code .encode(buf)} 的调用序列，即真正的字节流布局：
+     * 字段增删改一定会变，重命名局部变量或调整缩进则不会。
+     */
+    @Test
+    void wireFormatMatchesFingerprint() throws IOException {
+        List<String> wire = readWireFormat();
+        assertTrue(wire.size() > 10, "线格式解析失败，只解析出 " + wire.size() + " 项");
+        assertEquals(EXPECTED_WIRE_FORMAT, sha256(String.join("\n", wire)),
+                "\n\n包的 payload 结构已变更（字段增删或类型改变），旧客户端会读错字节流。\n"
+                        + "必须 bump BattlefieldNetwork.PROTOCOL 并更新本测试的 EXPECTED_PROTOCOL /\n"
+                        + "EXPECTED_WIRE_FORMAT 常量。\n\n"
+                        + "当前线格式：\n  " + String.join("\n  ", wire) + "\n");
     }
 
     @Test
@@ -75,6 +98,30 @@ class NetworkProtocolFingerprintTest {
             table.add(index++ + ":" + m.group(1) + ":" + m.group(2));
         }
         return table;
+    }
+
+    private static final Pattern WIRE_TOKEN =
+            Pattern.compile("buf\\.(write\\w+)\\(|(\\w+)\\.encode\\(buf\\)");
+
+    private static List<String> readWireFormat() throws IOException {
+        List<Path> files;
+        try (Stream<Path> stream = Files.list(NETWORK_DIR)) {
+            files = stream.filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .toList();
+        }
+        List<String> lines = new ArrayList<>();
+        for (Path file : files) {
+            Matcher m = WIRE_TOKEN.matcher(Files.readString(file, StandardCharsets.UTF_8));
+            List<String> tokens = new ArrayList<>();
+            while (m.find()) {
+                tokens.add(m.group(1) != null ? m.group(1) : "encode:" + m.group(2));
+            }
+            if (!tokens.isEmpty()) {
+                lines.add(file.getFileName() + "=" + String.join(",", tokens));
+            }
+        }
+        return lines;
     }
 
     private static String sha256(String s) {

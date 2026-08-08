@@ -142,4 +142,90 @@ class SquadManagerTest {
         }
         assertEquals(2, chosen.size(), "多次试验后应同时观察到两个候选小队都被随机选中过");
     }
+
+    /**
+     * 核心回归：退出必须是增量的。此前退出走 buildSquads() 全量重建，5 人(4+1)的阵营里第 1 人
+     * 退出后，第 5 人会从第二队被挤回第一队——队友无故换人。
+     */
+    @Test
+    void removeMemberDoesNotReshuffleRemainingPlayers() {
+        Map<UUID, Faction> factionOf = new LinkedHashMap<>();
+        UUID[] alphas = new UUID[5];
+        for (int i = 0; i < 5; i++) {
+            alphas[i] = UUID.randomUUID();
+            factionOf.put(alphas[i], Faction.ALPHA);
+        }
+        SquadManager sm = new SquadManager(4, factionOf);
+        sm.buildSquads();
+
+        int[] before = new int[5];
+        for (int i = 0; i < 5; i++) {
+            before[i] = sm.squadIdOf(alphas[i]);
+        }
+        assertNotEquals(before[0], before[4], "前置条件：第 5 人应在第二个小队");
+
+        factionOf.remove(alphas[0]);
+        sm.removeMember(alphas[0]);
+
+        assertEquals(0, sm.squadIdOf(alphas[0]), "退出者应已被摘除");
+        for (int i = 1; i < 5; i++) {
+            assertEquals(before[i], sm.squadIdOf(alphas[i]),
+                    "第 " + (i + 1) + " 人的小队编号不应因他人退出而改变");
+        }
+    }
+
+    @Test
+    void removeMemberPromotesNextMemberWhenLeaderLeaves() {
+        Map<UUID, Faction> factionOf = new LinkedHashMap<>();
+        UUID a1 = UUID.randomUUID();
+        UUID a2 = UUID.randomUUID();
+        factionOf.put(a1, Faction.ALPHA);
+        factionOf.put(a2, Faction.ALPHA);
+        SquadManager sm = new SquadManager(4, factionOf);
+        sm.buildSquads();
+        int squadId = sm.squadIdOf(a1);
+        assertTrue(sm.isSquadLeader(a1), "前置条件：首个成员应为队长");
+        sm.setOrder(squadId, new SquadManager.SquadOrder(7, true));
+
+        factionOf.remove(a1);
+        sm.removeMember(a1);
+
+        assertTrue(sm.isSquadLeader(a2), "队长退出后应由剩余成员顺延接任");
+        assertEquals(squadId, sm.squadIdOf(a2), "顺延不应改变小队编号");
+        assertEquals(null, sm.getOrder(squadId), "原队长的命令应随其退出而失效");
+    }
+
+    @Test
+    void removeMemberCleansUpEmptiedSquad() {
+        Map<UUID, Faction> factionOf = new LinkedHashMap<>();
+        UUID only = UUID.randomUUID();
+        factionOf.put(only, Faction.ALPHA);
+        SquadManager sm = new SquadManager(4, factionOf);
+        sm.buildSquads();
+        int squadId = sm.squadIdOf(only);
+        sm.setOrder(squadId, new SquadManager.SquadOrder(3, false));
+
+        factionOf.remove(only);
+        sm.removeMember(only);
+
+        assertTrue(sm.getSquads().isEmpty(), "空掉的小队应被清理");
+        assertEquals(null, sm.getOrder(squadId), "空小队的命令应一并清理");
+        assertEquals(0, sm.squadIdOf(only));
+    }
+
+    /** 未分队/已退出的玩家重复调用不得抛异常，退出流程可能因重连等原因触发多次。 */
+    @Test
+    void removeMemberIsIdempotent() {
+        Map<UUID, Faction> factionOf = new LinkedHashMap<>();
+        UUID a1 = UUID.randomUUID();
+        factionOf.put(a1, Faction.ALPHA);
+        SquadManager sm = new SquadManager(4, factionOf);
+        sm.buildSquads();
+
+        sm.removeMember(a1);
+        sm.removeMember(a1);
+        sm.removeMember(UUID.randomUUID());
+
+        assertEquals(0, sm.squadIdOf(a1));
+    }
 }
