@@ -1,5 +1,7 @@
 package org.shee33.act0.battlefield.client;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
@@ -8,6 +10,7 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.integration.TaczGunBridge;
 
 import java.util.Set;
 
@@ -39,17 +42,38 @@ public final class VanillaHudSuppressor {
         if (!inMatch()) {
             return;
         }
-        if (SUPPRESSED.contains(event.getOverlay())) {
+        if (SUPPRESSED.contains(event.getOverlay()) || isTaczAmmoHud(event.getOverlay())) {
             event.setCanceled(true);
         }
     }
 
-    /** 开火即准心扩散（规格 §4.2）。用输入事件而非挥手动画，近战与远程一致。 */
+    /**
+     * 只屏蔽 TaCZ 自己的<b>弹药 HUD</b>（我们的武器栏已经显示同样的信息，两份会打架）。
+     *
+     * <p>刻意按 id 精确匹配而不是"整个 tacz 命名空间一刀切"：TaCZ 还注册了瞄准镜等覆盖层，
+     * 那些屏蔽掉会直接破坏开镜观感。宁可漏屏蔽（最多多出一处重复读数）也不能误伤。
+     */
+    private static boolean isTaczAmmoHud(NamedGuiOverlay overlay) {
+        if (overlay == null || overlay.id() == null) {
+            return false;
+        }
+        return "tacz".equals(overlay.id().getNamespace()) && overlay.id().getPath().contains("hud");
+    }
+
+    /**
+     * 近战挥击的准心扩散。TaCZ 枪械的开火不走这条路径，由 {@code CombatHudOverlay} 按弹匣
+     * 数下降检测——这里若不排除枪械，开镜点射会被扩散两次。
+     */
     @SubscribeEvent
     public static void onAttack(InputEvent.InteractionKeyMappingTriggered event) {
-        if (event.isAttack() && inMatch()) {
-            CombatFeedbackAnimator.onFire(Tween.now());
+        if (!event.isAttack() || !inMatch()) {
+            return;
         }
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player != null && TaczGunBridge.isGun(player.getMainHandItem())) {
+            return;
+        }
+        CombatFeedbackAnimator.onFire(Tween.now());
     }
 
     private static boolean inMatch() {

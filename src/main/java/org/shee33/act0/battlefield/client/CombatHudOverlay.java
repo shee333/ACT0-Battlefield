@@ -11,6 +11,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
+import org.shee33.act0.battlefield.integration.TaczGunBridge;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import java.util.List;
@@ -72,6 +73,7 @@ public final class CombatHudOverlay {
 
         int selfHpPct = selfHealthPct(player);
         trackSelfDamage(selfHpPct, now);
+        trackGunFire(player, now);
         CombatFeedbackAnimator.pollHitFeedback(now);
         KillPromptAnimator.poll(player.getGameProfile().getName(), now);
 
@@ -123,6 +125,8 @@ public final class CombatHudOverlay {
         wasShown = false;
         // 不清零会让下次进场时把"上局最后血量→本局满血"当成一次掉血，凭空抖一下屏。
         lastSelfHpPct = -1;
+        lastMagCount = -1;
+        ClientGunStatus.clear();
         KillPromptAnimator.clear();
         WeaponBarAnimator.clear();
         HealthPanelAnimator.clear();
@@ -130,6 +134,20 @@ public final class CombatHudOverlay {
     }
 
     private static int lastSelfHpPct = -1;
+    private static int lastMagCount = -1;
+
+    /**
+     * 开火检测：以 TaCZ 弹匣数下降为准，而不是原版攻击键。TaCZ 的射击走它自己的输入链，
+     * 攻击键映射不保证触发；弹匣少一发则是"确实打出去了一发"的确凿信号，且连发武器每发
+     * 都会各触发一次准心扩散，与规格 §4.2「开火 → 准心扩散」的语义一致。
+     */
+    private static void trackGunFire(LocalPlayer player, long now) {
+        int mag = TaczGunBridge.currentAmmo(player.getMainHandItem());
+        if (mag >= 0 && lastMagCount > mag) {
+            CombatFeedbackAnimator.onFire(now);
+        }
+        lastMagCount = mag;
+    }
 
     private static void trackSelfDamage(int hpPct, long now) {
         if (lastSelfHpPct >= 0 && hpPct < lastSelfHpPct) {

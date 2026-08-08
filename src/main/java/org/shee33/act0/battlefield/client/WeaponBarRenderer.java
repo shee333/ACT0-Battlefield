@@ -12,12 +12,10 @@ import net.minecraft.world.item.ItemStack;
  * <ul>
  *   <li>demo 的槽内是灰色剪影占位块，文档原话"留待渲染实际物品图标"——这里直接渲染
  *       {@link ItemStack} 真实图标，未选中槽用半透明黑罩压暗来还原"剪影亮度 0.18→0.60"的层级。</li>
- *   <li>demo 有 {@code mag/cur/res} 弹匣模型，本模组没有枪械/弹药系统（{@code ArcadeLoadoutBridge}
- *       只是把 dummy ammo 反射写进 Arcade 物品）。因此弹药位映射到真实 MC 数据：可堆叠物显示
- *       {@code ×N}、有耐久的显示 {@code 耐久/上限}、其余显示 {@code ∞}，与规格"枪 cur/res、
+ *   <li>弹药位与换弹进度条接的是 <b>TaCZ 真实数据</b>（见 {@link ClientGunStatus}）：枪械显示
+ *       {@code 弹匣/备弹}、换弹时进度条走真实剩余时间。非 TaCZ 物品按原版语义回退
+ *       （可堆叠 {@code ×N}、有耐久显示剩余耐久、其余 {@code ∞}），与规格"枪 cur/res、
  *       近战 ∞、道具 ×N"的信息层级一一对应。</li>
- *   <li>demo 的"打空自动换弹"进度条改由真实的<b>物品冷却</b>驱动（{@code ItemCooldowns}）——
- *       那是 MC 里唯一真实存在的"这把武器正忙"信号。没有冷却时条不显示，不伪造进度。</li>
  * </ul>
  */
 final class WeaponBarRenderer {
@@ -78,21 +76,7 @@ final class WeaponBarRenderer {
         int sel = player.getInventory().selected;
         ItemStack stack = player.getInventory().getItem(sel);
         String name = stack.isEmpty() ? "空槽位" : stack.getHoverName().getString();
-        WeaponBarAnimator.select(sel, name, ammoTextFor(stack), now);
-    }
-
-    /** 弹药位文本，映射到真实 MC 数据（见类文档）。 */
-    static String ammoTextFor(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return "—";
-        }
-        if (stack.getCount() > 1) {
-            return "×" + stack.getCount();
-        }
-        if (stack.isDamageableItem()) {
-            return String.valueOf(stack.getMaxDamage() - stack.getDamageValue());
-        }
-        return "∞";
+        WeaponBarAnimator.select(sel, name, ClientGunStatus.ammoText(player, stack), now);
     }
 
     private static void drawSlot(GuiGraphics gg, Font font, LocalPlayer player, int index,
@@ -153,7 +137,7 @@ final class WeaponBarRenderer {
         drawScaled(gg, font, cur, rightX, ammoY + dir * ammoH * (1f - roll), 1.6f, 0xFFFFFFFF, 1f);
         gg.disableScissor();
 
-        float cooldown = ClientWeaponCooldown.progress();
+        float cooldown = ClientGunStatus.progress();
         int barY = baseline - 6;
         gg.fill(rightX - INFO_W, barY, rightX, barY + 1, 0x1FFFFFFF);
         if (cooldown > 0f) {
