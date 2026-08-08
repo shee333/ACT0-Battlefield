@@ -18,7 +18,17 @@ import java.util.Optional;
  */
 public final class BattlefieldNetwork {
 
-    private static final String PROTOCOL = "9";
+    /**
+     * 通道协议版本。<b>任何改动包表都必须 +1</b>——不只是增删包，调整注册顺序、改动某个包的
+     * payload 结构同样算。忘记 bump 的后果不是"报个错"：两端版本字符串相同 → 握手放行 →
+     * 玩家正常进服 → 之后每个包都按错位的索引解码。0.1.74 把 SyncStatusPacket 从表中间删掉
+     * 却没 bump，旧客户端一按 B 键（ActionPacket，旧索引 2）就被服务端当成 SyncBattleHudPacket
+     * （新索引 2，S2C），方向校验抛 IllegalStateException 直接断线；更糟的是 SpotEnemyPacket
+     * 错位后落到另一个 C2S 包上，方向校验放行、拿错误字节流静默解码，日志里什么都查不到。
+     *
+     * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
+     */
+    private static final String PROTOCOL = "10";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
