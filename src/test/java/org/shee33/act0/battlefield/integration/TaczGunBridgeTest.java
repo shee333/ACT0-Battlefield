@@ -13,8 +13,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
  * 空着、换弹条不动，日志里一个字都没有。所以把每个目标名钉在这里，改动必须是刻意的。
  * 名称依据 TaCZ 仓库 {@code MCModderAnchor/TACZ} 分支 {@code 1.20.1}（tag 1.1.8-hotfix）核对。
  *
- * <p><b>二、TaCZ 缺席时优雅降级。</b>测试 classpath 上没有 TaCZ，跑的正是玩家没装 TaCZ 的
- * 分支：桥必须整体不可用、取值返回约定默认值，且绝不抛异常——它在每帧 HUD 渲染路径上。
+ * <p><b>二、空输入安全。</b>桥在每帧 HUD 渲染路径上被调用，一次抛出就是满屏报错。
+ *
+ * <p>对着真实 TaCZ jar 的解析验证在 {@code TaczGunBridgeRealJarTest}——本类不依赖 TaCZ
+ * 是否在 classpath 上，两边断言互不冲突。
  */
 class TaczGunBridgeTest {
 
@@ -56,11 +58,6 @@ class TaczGunBridgeTest {
         assertEquals("getStateType", TaczGunBridge.M_GET_STATE_TYPE);
         assertEquals("getCountDown", TaczGunBridge.M_GET_COUNT_DOWN);
         assertEquals("isReloading", TaczGunBridge.M_IS_RELOADING);
-    }
-
-    @Test
-    void unavailableWithoutTacz() {
-        assertFalse(TaczGunBridge.isAvailable(), "测试 classpath 无 TaCZ，桥应报告不可用");
     }
 
     /**

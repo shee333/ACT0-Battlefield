@@ -64,6 +64,15 @@ dependencies {
 
     // Unit tests for the MC-free conquest core (tickets / capture / rules).
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+
+    // TaCZ 仅用于 TaczGunBridgeRealJarTest 的反射解析验证，且仅在 jar 存在时挂载：
+    // 反射拼错方法名不会报错、只会静默失灵，这是唯一能对着真实 jar 抓到它的手段。
+    // 不是运行期依赖(mod 侧是反射软依赖)，也不进产物；jar 不在时该测试自动跳过，
+    // 因此别的机器上克隆本仓库不受影响。
+    def taczJar = rootProject.file('../tacz-1.20.1-1.1.8-hotfix.jar')
+    if (taczJar.exists()) {
+        testRuntimeOnly files(taczJar)
+    }
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

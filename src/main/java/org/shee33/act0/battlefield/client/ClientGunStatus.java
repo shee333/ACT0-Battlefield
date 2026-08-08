@@ -44,9 +44,9 @@ final class ClientGunStatus {
         if (TaczGunBridge.isGun(stack)) {
             int mag = TaczGunBridge.currentAmmo(stack);
             if (mag >= 0) {
-                // TaCZ 官方 HUD 对闭膛枪械会把已上膛那发计入弹匣数。判定膛类型要再穿三层反射
-                // 取 GunData，这里改用等价的直接信号：有膛内弹就 +1，与官方显示对齐。
-                if (TaczGunBridge.hasBulletInBarrel(stack)) {
+                // 与 TaCZ 官方 HUD 同口径：闭膛枪械把已上膛那发计入弹匣数，开膛枪械不计
+                // （开膛没有独立的膛内一发）。
+                if (TaczGunBridge.hasBulletInBarrel(stack) && !TaczGunBridge.isOpenBolt(stack)) {
                     mag += 1;
                 }
                 int reserve = reserveFor(player, stack);

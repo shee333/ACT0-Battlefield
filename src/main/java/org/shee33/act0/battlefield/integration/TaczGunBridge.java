@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.integration;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -40,6 +41,12 @@ public final class TaczGunBridge {
     private static Method boxIsCreative;
     private static Method boxIsAllTypeCreative;
 
+    private static Method gunGetGunId;
+    private static Method timelessGetClientGunIndex;
+    private static Method clientIndexGetGunData;
+    private static Method gunDataGetBolt;
+    private static Object openBoltConstant;
+
     private static Method operatorFromLivingEntity;
     private static Method operatorGetSynReloadState;
     private static Method reloadStateGetStateType;
@@ -70,6 +77,15 @@ public final class TaczGunBridge {
     static final String M_GET_STATE_TYPE = "getStateType";
     static final String M_GET_COUNT_DOWN = "getCountDown";
     static final String M_IS_RELOADING = "isReloading";
+    static final String CLASS_TIMELESS_API = "com.tacz.guns.api.TimelessAPI";
+    static final String CLASS_CLIENT_GUN_INDEX = "com.tacz.guns.client.resource.index.ClientGunIndex";
+    static final String CLASS_GUN_DATA = "com.tacz.guns.resource.pojo.data.gun.GunData";
+    static final String CLASS_BOLT = "com.tacz.guns.resource.pojo.data.gun.Bolt";
+    static final String M_GET_GUN_ID = "getGunId";
+    static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
+    static final String M_GET_GUN_DATA = "getGunData";
+    static final String M_GET_BOLT = "getBolt";
+    static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
 
     private static final boolean AVAILABLE;
 
@@ -89,6 +105,21 @@ public final class TaczGunBridge {
         gunUseDummyAmmo = optional(iGunClass, M_USE_DUMMY_AMMO, ItemStack.class);
         gunGetDummyAmmoAmount = optional(iGunClass, M_DUMMY_AMMO_AMOUNT, ItemStack.class);
         gunUseInventoryAmmo = optional(iGunClass, M_USE_INVENTORY_AMMO, ItemStack.class);
+
+        try {
+            gunGetGunId = iGunClass == null ? null : iGunClass.getMethod(M_GET_GUN_ID, ItemStack.class);
+            Class<?> timelessApi = Class.forName(CLASS_TIMELESS_API);
+            timelessGetClientGunIndex = timelessApi.getMethod(M_GET_CLIENT_GUN_INDEX, ResourceLocation.class);
+            clientIndexGetGunData = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_GUN_DATA);
+            gunDataGetBolt = Class.forName(CLASS_GUN_DATA).getMethod(M_GET_BOLT);
+            for (Object constant : Class.forName(CLASS_BOLT).getEnumConstants()) {
+                if (ENUM_OPEN_BOLT.equals(((Enum<?>) constant).name())) {
+                    openBoltConstant = constant;
+                }
+            }
+        } catch (Throwable ignored) {
+            openBoltConstant = null;
+        }
 
         try {
             iAmmoClass = Class.forName(CLASS_I_AMMO);
@@ -164,6 +195,36 @@ public final class TaczGunBridge {
             return v instanceof Integer i ? i : -1;
         } catch (Throwable e) {
             return -1;
+        }
+    }
+
+    /**
+     * 该枪是否为开膛待击（OPEN_BOLT）。开膛枪械没有"独立的膛内一发"，TaCZ 官方 HUD 因此
+     * 不把 {@link #hasBulletInBarrel} 计入弹匣显示数。
+     *
+     * <p>取值链是 {@code IGun.getGunId → TimelessAPI.getClientGunIndex → ClientGunIndex
+     * .getGunData → GunData.getBolt}，纯客户端资源索引。任何一环解析不到都返回 false，
+     * 退回"按闭膛处理"——绝大多数枪械是闭膛，这是更接近正确的默认。
+     */
+    public static boolean isOpenBolt(ItemStack stack) {
+        Object gun = iGun(stack);
+        if (gun == null || gunGetGunId == null || timelessGetClientGunIndex == null
+                || clientIndexGetGunData == null || gunDataGetBolt == null || openBoltConstant == null) {
+            return false;
+        }
+        try {
+            Object gunId = gunGetGunId.invoke(gun, stack);
+            if (gunId == null) {
+                return false;
+            }
+            Object optional = timelessGetClientGunIndex.invoke(null, gunId);
+            if (!(optional instanceof java.util.Optional<?> opt) || opt.isEmpty()) {
+                return false;
+            }
+            Object gunData = clientIndexGetGunData.invoke(opt.get());
+            return gunData != null && openBoltConstant.equals(gunDataGetBolt.invoke(gunData));
+        } catch (Throwable e) {
+            return false;
         }
     }
 
