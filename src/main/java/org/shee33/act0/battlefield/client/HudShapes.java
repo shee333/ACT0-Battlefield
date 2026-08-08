@@ -125,6 +125,73 @@ final class HudShapes {
         ringArc(gg, cx, cy, radius, thickness, 1f, argb, alphaMul);
     }
 
+    /**
+     * 斜切四边形(平行四边形)——作战 HUD 规格 §4.1 的 −8° 武器槽卡片与金色下划线滑块。
+     *
+     * <p>对应 CSS 的 {@code transform: skewX(deg)}：以矩形<b>垂直中心</b>为不动轴，上边右移、
+     * 下边左移各 {@code (h/2)·tan(-deg)}。选中槽是"以底边为锚向上生长"的，若改用底边做不动轴，
+     * 生长时整张卡片会横向漂移，因此这里固定用中心轴，与 CSS skew 的行为一致。
+     */
+    static void fillSkewedRect(GuiGraphics gg, float x, float y, float w, float h,
+                               float skewDeg, int argb, float alphaMul) {
+        if (alphaMul <= 0f || w <= 0f || h <= 0f) {
+            return;
+        }
+        float shift = (h / 2f) * (float) Math.tan(Math.toRadians(-skewDeg));
+        beginDraw();
+        Matrix4f m = gg.pose().last().pose();
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        vertex(bb, m, x + shift, y, argb, alphaMul);
+        vertex(bb, m, x - shift, y + h, argb, alphaMul);
+        vertex(bb, m, x + w - shift, y + h, argb, alphaMul);
+        vertex(bb, m, x + w + shift, y, argb, alphaMul);
+        endDraw(bb);
+    }
+
+    /**
+     * 全屏边缘红晕(规格 §2「受击红晕」)：中心透明、四周渐红的径向渐变。
+     *
+     * <p>{@code GuiGraphics.fill} 只能画纯色矩形，画不了径向渐变，因此用一圈梯形把屏幕边框
+     * 铺满：外圈顶点取目标 alpha、内圈顶点取 0，硬件插值即得到从中心向外渐强的效果。
+     * {@code inset} 是透明区半径占比(规格为 55%)。
+     */
+    static void edgeVignette(GuiGraphics gg, int screenW, int screenH, int argb, float alphaMul, float inset) {
+        if (alphaMul <= 0f) {
+            return;
+        }
+        float ix = screenW * inset / 2f;
+        float iy = screenH * inset / 2f;
+        float cx = screenW / 2f;
+        float cy = screenH / 2f;
+        float l = cx - ix;
+        float r = cx + ix;
+        float t = cy - iy;
+        float b = cy + iy;
+
+        beginDraw();
+        Matrix4f m = gg.pose().last().pose();
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        // 上/下/左/右四条渐变带：外缘不透明、内缘全透。
+        quadFade(bb, m, 0, 0, screenW, 0, r, t, l, t, argb, alphaMul);
+        quadFade(bb, m, 0, screenH, screenW, screenH, r, b, l, b, argb, alphaMul);
+        quadFade(bb, m, 0, 0, 0, screenH, l, b, l, t, argb, alphaMul);
+        quadFade(bb, m, screenW, 0, screenW, screenH, r, b, r, t, argb, alphaMul);
+        endDraw(bb);
+    }
+
+    /** 前两点为外缘(取 alpha)、后两点为内缘(取 0)的渐隐四边形。 */
+    private static void quadFade(BufferBuilder bb, Matrix4f m,
+                                 float ox1, float oy1, float ox2, float oy2,
+                                 float ix2, float iy2, float ix1, float iy1,
+                                 int argb, float alphaMul) {
+        vertex(bb, m, ox1, oy1, argb, alphaMul);
+        vertex(bb, m, ox2, oy2, argb, alphaMul);
+        vertex(bb, m, ix2, iy2, argb, 0f);
+        vertex(bb, m, ix1, iy1, argb, 0f);
+    }
+
     /** 简易水平条(用于据点行内的压力/进度指示,矩形所以仍走 {@code GuiGraphics.fill} 即可,这里只是集中放置)。 */
     static void flatBar(GuiGraphics gg, int x, int y, int w, int h, int fillW, int bgColor, int fillColor, float alphaMul) {
         gg.fill(x, y, x + w, y + h, withAlpha(bgColor, alphaMul));

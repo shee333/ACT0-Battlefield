@@ -611,6 +611,21 @@ public final class ConquestMatch {
         return victimFaction != null && attackerFaction != null && victimFaction != attackerFaction;
     }
 
+    /**
+     * 向攻击者推送准心命中标记。此前 {@code HitFeedbackPacket} 全链路只差这一步：包已注册、
+     * 客户端处理器已接好，但服务端从未发送过，命中反馈因此一直是死的。
+     *
+     * @param attackerId 攻击者；为空或已离线时静默跳过
+     */
+    public void sendHitMarker(@Nullable UUID attackerId) {
+        if (attackerId == null) {
+            return;
+        }
+        ServerPlayer attacker = player(attackerId);
+        if (attacker != null) {
+            BattlefieldNetwork.sendHitFeedback(attacker, false);
+        }
+    }
 
     /** 是否应取消某玩家受到的伤害：部署中/出生保护/友伤/倒地均取消。 */
     public boolean shouldCancelDamage(UUID victimId, @Nullable UUID attackerId) {

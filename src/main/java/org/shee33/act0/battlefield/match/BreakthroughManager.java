@@ -525,6 +525,9 @@ public final class BreakthroughManager {
             event.setCanceled(true);
             return;
         }
+        if (active.isEnemyHit(victim.getUUID(), attacker)) {
+            active.sendHitMarker(attacker);
+        }
         active.onHurt(victim.getUUID(), attacker);
     }
 

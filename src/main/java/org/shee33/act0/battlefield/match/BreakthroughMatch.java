@@ -977,6 +977,27 @@ public final class BreakthroughMatch {
         }
     }
 
+    /** 与 {@code ConquestMatch#isEnemyHit} 对称：攻守双方分属不同阵营才算有效命中。 */
+    public boolean isEnemyHit(UUID victimId, @Nullable UUID attackerId) {
+        if (victimId == null || attackerId == null || victimId.equals(attackerId)) {
+            return false;
+        }
+        Faction victimFaction = factionOf.get(victimId);
+        Faction attackerFaction = factionOf.get(attackerId);
+        return victimFaction != null && attackerFaction != null && victimFaction != attackerFaction;
+    }
+
+    /** 与 {@code ConquestMatch#sendHitMarker} 对称：向攻击者推送准心命中标记。 */
+    public void sendHitMarker(@Nullable UUID attackerId) {
+        if (attackerId == null) {
+            return;
+        }
+        ServerPlayer attacker = player(attackerId);
+        if (attacker != null) {
+            BattlefieldNetwork.sendHitFeedback(attacker, false);
+        }
+    }
+
     public boolean shouldCancelDamage(UUID victimId, @Nullable UUID attackerId) {
         if (!factionOf.containsKey(victimId)) {
             return false;

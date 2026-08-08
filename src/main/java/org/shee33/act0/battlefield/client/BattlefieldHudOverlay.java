@@ -12,7 +12,6 @@ import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.CapturePointEventPacket;
 import org.shee33.act0.battlefield.network.ControlPointHudDto;
 import org.shee33.act0.battlefield.network.DownedMateDto;
-import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import java.util.List;
 
@@ -64,7 +63,6 @@ public final class BattlefieldHudOverlay {
         renderKillFeed(gg, font, hud.myFaction());
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
-        renderCornerHud(gg, font, hud);
         renderDeployConfirmFx(gg, font);
         renderDeploySpawnFx(gg, font);
         renderMatchStartFx(gg);
@@ -199,34 +197,6 @@ public final class BattlefieldHudOverlay {
         gg.drawCenteredString(font, text, centerX, y + 4, 0xFFFFFFFF);
     }
 
-    private static void renderHitFeedback(GuiGraphics gg, Font font) {
-        if (!ClientHitFeedback.active()) {
-            return;
-        }
-        long age = System.currentTimeMillis() - ClientHitFeedback.startedMs();
-        float lifeMs = ClientHitFeedback.isKill() ? 880.0f : 650.0f;
-        float t = Math.max(0f, Math.min(1f, age / lifeMs));
-        float fade = 1.0f - t;
-
-        int centerX = gg.guiWidth() / 2;
-        int centerY = gg.guiHeight() / 2;
-        int x = centerX - 42;
-        int y = centerY + 20;
-
-        boolean kill = ClientHitFeedback.isKill();
-        String marker = kill ? "KILL +100" : "HIT";
-        int main = withAlpha(kill ? RED : BLUE, fade);
-
-        gg.pose().pushPose();
-        gg.pose().translate(x, y, 420);
-        gg.drawString(font, marker, 0, 0, main, false);
-
-        int barW = Math.max(18, font.width(marker) + 6);
-        int bar = Math.max(1, Math.round(barW * fade));
-        gg.fill(0, 11, bar, 12, main);
-        gg.pose().popPose();
-    }
-
     private static int withAlpha(int color, float alpha) {
         int a = Math.max(0, Math.min(255, Math.round(255 * alpha)));
         return (color & 0x00FFFFFF) | (a << 24);
@@ -255,7 +225,6 @@ public final class BattlefieldHudOverlay {
         // 中央据点图标（A/B/C...）
         renderPointRow(gg, font, hud.points(), hud.myFaction(), center, top + 28,
                 hud.squadOrderPointId(), hud.squadOrderAttack());
-        renderStreakCounter(gg, font, hud.streak());
     }
 
     private static void drawScaledText(GuiGraphics gg, Font font, String text, int x, int y, int color, float scale) {
@@ -564,67 +533,4 @@ public final class BattlefieldHudOverlay {
         }
     }
 
-    /** 连杀计数器：准星下方白色数字。 */
-    private static void renderStreakCounter(GuiGraphics gg, Font font, int streak) {
-        if (streak < 2) {
-            return;
-        }
-        int cx = gg.guiWidth() / 2;
-        int cy = gg.guiHeight() / 2;
-        String text = String.valueOf(streak);
-        gg.drawString(font, text, cx - font.width(text) / 2, cy + 28, 0xFFFFFFFF, false);
-    }
-
-    /** 左下角常驻 HUD 组件：票数 + 小队状态，无需按 Tab 即可看到。 */
-    private static void renderCornerHud(GuiGraphics gg, Font font, BattleHudDto hud) {
-        List<SquadMateHudDto> squad = hud.squad();
-
-        final int panelW = 160;
-        final int panelH = 32;
-        final int margin = 4;
-        final int borderColor = 0x443A3A3A;
-        final int bg60 = 0x99101418;
-        int x = margin;
-        int y = gg.guiHeight() - panelH - margin;
-
-        gg.fill(x, y, x + panelW, y + panelH, bg60);
-        int accent = factionColor(hud.myFaction(), hud.myFaction());
-        gg.fill(x, y, x + panelW, y + 1, accent);
-        gg.fill(x, y + 1, x + 1, y + panelH, borderColor);
-        gg.fill(x + panelW - 1, y + 1, x + panelW, y + panelH, borderColor);
-        gg.fill(x, y + panelH - 1, x + panelW, y + panelH, borderColor);
-
-        int alphaColor = factionColor(1, hud.myFaction());
-        int bravoColor = factionColor(2, hud.myFaction());
-
-        int cx = x + 6;
-        gg.drawString(font, "ALPHA ", cx, y + 4, TEXT_DIM, false);
-        cx += font.width("ALPHA ");
-        gg.drawString(font, String.valueOf(hud.alphaTickets()), cx, y + 4, alphaColor, false);
-        cx += font.width(String.valueOf(hud.alphaTickets()));
-        gg.drawString(font, " | ", cx, y + 4, TEXT_DIM, false);
-        cx += font.width(" | ");
-        gg.drawString(font, String.valueOf(hud.bravoTickets()), cx, y + 4, bravoColor, false);
-        cx += font.width(String.valueOf(hud.bravoTickets()));
-        gg.drawString(font, " BRAVO", cx, y + 4, TEXT_DIM, false);
-
-        if (!squad.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            int maxSquad = Math.min(5, squad.size());
-            for (int i = 0; i < maxSquad; i++) {
-                SquadMateHudDto mate = squad.get(i);
-                if (i > 0) {
-                    sb.append(" · ");
-                }
-                if (mate.isSquadLeader()) {
-                    sb.append("★");
-                }
-                if (mate.downed()) {
-                    sb.append("[倒地]");
-                }
-                sb.append(mate.self() ? "你" : mate.name());
-            }
-            drawScaledText(gg, font, sb.toString(), x + 6, y + 19, TEXT_DIM, 0.85f);
-        }
-    }
 }

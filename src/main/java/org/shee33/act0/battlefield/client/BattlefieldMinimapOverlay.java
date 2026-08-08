@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * BF 风格小地图：右下角 100x100 面板，显示据点菱形、小队队友点位与玩家自身朝向箭头。
+ * BF 风格小地图：左下角方形面板，显示据点菱形、小队队友点位与玩家自身朝向箭头。
  *
  * <p>使用 {@link RenderGuiEvent.Post} 每帧绘制。世界坐标以玩家为中心投影到小地图坐标
  * （1 像素 = 2 格，半径 50 格）。地图北朝上固定不转，玩家箭头随视角旋转——取舍理由见
@@ -34,9 +34,9 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class BattlefieldMinimapOverlay {
 
-    private static final int SIZE = 100;
-    private static final int MARGIN_RIGHT = 8;
-    private static final int MARGIN_BOTTOM = 8;
+    /** 尺寸与边距跟随 {@link CombatHudOverlay}，保证队友面板正好贴在小地图右侧。 */
+    private static final int SIZE = CombatHudOverlay.minimapSize();
+    private static final int MARGIN = CombatHudOverlay.margin();
     private static final double SCALE = 0.5; // 1 px = 2 blocks → 50-block radius
     private static final int INSET = 3;
 
@@ -69,8 +69,8 @@ public final class BattlefieldMinimapOverlay {
         }
 
         GuiGraphics gg = event.getGuiGraphics();
-        int mapX = gg.guiWidth() - SIZE - MARGIN_RIGHT;
-        int mapY = gg.guiHeight() - SIZE - MARGIN_BOTTOM;
+        int mapX = MARGIN;
+        int mapY = gg.guiHeight() - SIZE - MARGIN;
         renderMinimap(gg, mc.font, mapX, mapY, player, markers, squad);
     }
 
