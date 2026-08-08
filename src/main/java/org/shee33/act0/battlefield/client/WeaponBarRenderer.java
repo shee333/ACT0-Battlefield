@@ -116,8 +116,13 @@ final class WeaponBarRenderer {
     private static void drawInfoBlock(GuiGraphics gg, Font font, int rightX, int baseline, long now) {
         int nameY = baseline - 34;
         int lineH = 9;
+        // GuiGraphics.enableScissor 的裁剪矩形不跟随 PoseStack 变换，而这里正处在受击抖动的
+        // translate 之下。若不把抖动补偿进裁剪坐标，受击那 200ms 内文字会被裁歪、缺一块。
+        float[] shake = CombatFeedbackAnimator.shakeOffset(now);
+        int sx = Math.round(shake[0]);
+        int sy = Math.round(shake[1]);
         // 遮罩换字：裁剪出一行高的窗口，旧名上出、新名下入。
-        gg.enableScissor(rightX - INFO_W - 4, nameY, rightX, nameY + lineH + 1);
+        gg.enableScissor(rightX - INFO_W - 4 + sx, nameY + sy, rightX + sx, nameY + lineH + 1 + sy);
         String name = WeaponBarAnimator.weaponName();
         float off = WeaponBarAnimator.nameOffsetRatio(now) * lineH;
         gg.drawString(font, name, rightX - font.width(name), Math.round(nameY + off),
@@ -126,7 +131,7 @@ final class WeaponBarRenderer {
 
         int ammoY = baseline - 22;
         int ammoH = 12;
-        gg.enableScissor(rightX - INFO_W - 4, ammoY, rightX, ammoY + ammoH);
+        gg.enableScissor(rightX - INFO_W - 4 + sx, ammoY + sy, rightX + sx, ammoY + ammoH + sy);
         float roll = WeaponBarAnimator.ammoRoll(now);
         int dir = WeaponBarAnimator.ammoDir();
         String cur = WeaponBarAnimator.ammoText();

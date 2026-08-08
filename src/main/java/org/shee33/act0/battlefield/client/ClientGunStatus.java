@@ -17,7 +17,7 @@ final class ClientGunStatus {
 
     private static int cachedReserve = -1;
     private static long reserveComputedAtMs;
-    private static ItemStack reserveCachedFor = ItemStack.EMPTY;
+    private static int reserveCachedSlot = -1;
 
     /** 本次换弹观测到的最大剩余时间，用作进度条分母（TaCZ 不下发总时长）。 */
     private static long reloadTotalMs;
@@ -28,7 +28,8 @@ final class ClientGunStatus {
 
     static void clear() {
         cachedReserve = -1;
-        reserveCachedFor = ItemStack.EMPTY;
+        reserveCachedSlot = -1;
+        reserveComputedAtMs = 0L;
         reloadTotalMs = 0L;
         wasReloading = false;
     }
@@ -62,14 +63,19 @@ final class ClientGunStatus {
         return "∞";
     }
 
+    /**
+     * 缓存键用<b>快捷栏槽位</b>而不是 ItemStack 内容比对。TaCZ 把余弹存在物品 NBT 里，每开一枪
+     * NBT 就变，用 {@code isSameItemSameTags} 做键会导致射击期间每帧都失配，进而每帧对整个背包
+     * 做一遍反射扫描——缓存等于没有。槽位变了(换枪)才必须立刻重算，其余情况按 TTL 节流即可。
+     */
     private static int reserveFor(LocalPlayer player, ItemStack stack) {
         long now = System.currentTimeMillis();
-        boolean sameGun = ItemStack.isSameItemSameTags(reserveCachedFor, stack);
-        if (sameGun && now - reserveComputedAtMs < RESERVE_TTL_MS) {
+        int slot = player.getInventory().selected;
+        if (slot == reserveCachedSlot && now - reserveComputedAtMs < RESERVE_TTL_MS) {
             return cachedReserve;
         }
         cachedReserve = TaczGunBridge.reserveAmmo(player, stack);
-        reserveCachedFor = stack.copy();
+        reserveCachedSlot = slot;
         reserveComputedAtMs = now;
         return cachedReserve;
     }

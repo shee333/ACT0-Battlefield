@@ -1,6 +1,8 @@
 package org.shee33.act0.battlefield.client;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 击杀提示状态机 —— 《作战HUD动效规格文档》§3。
@@ -58,17 +60,19 @@ final class KillPromptAnimator {
         if (localName == null || localName.isBlank()) {
             return;
         }
+        // 一次爆头连带、或一梭子同时放倒两人时，两条击杀会在同一帧一起到达。ClientKillFeed 是
+        // 新的在前，若顺着取第一条就 break，较早那条会因为 lastConsumedKillMs 直接跳到最新值而
+        // 被永久跳过，连杀少算。这里反向遍历（旧→新）把本帧所有新击杀依次消费掉。
+        List<ClientKillFeed.Entry> fresh = new ArrayList<>();
         for (ClientKillFeed.Entry e : ClientKillFeed.entries()) {
-            if (!localName.equals(e.killer())) {
-                continue;
+            if (localName.equals(e.killer()) && e.expiresAt() > lastConsumedKillMs) {
+                fresh.add(e);
             }
-            long killMs = e.expiresAt();
-            if (killMs <= lastConsumedKillMs) {
-                continue;
-            }
-            lastConsumedKillMs = killMs;
+        }
+        for (int i = fresh.size() - 1; i >= 0; i--) {
+            ClientKillFeed.Entry e = fresh.get(i);
+            lastConsumedKillMs = Math.max(lastConsumedKillMs, e.expiresAt());
             onKill(e.victim(), now);
-            break;
         }
         if (exitStartMs < 0L && lastKillMs > 0L && now - lastKillMs >= CombatHudMath.KILL_PROMPT_HOLD_MS) {
             exitStartMs = now;

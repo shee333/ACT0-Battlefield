@@ -26,6 +26,8 @@ final class HealthPanelRenderer {
     private static final int BAR_INDENT = 13;
     private static final int MATE_BAR_W = 56;
     private static final int SELF_BAR_W = 84;
+    /** 队友行显示上限，由 {@link CombatHudMath#maxMateRows(int, int, int)} 按小地图高度推导。 */
+    private static final int MAX_MATE_ROWS = CombatHudMath.maxMateRows(84, ROW_H, SELF_ROW_H);
 
     private HealthPanelRenderer() {
     }
@@ -45,6 +47,12 @@ final class HealthPanelRenderer {
 
         int mateBarW = CombatHudMath.squadBarWidth(leftX, maxRightX, BAR_INDENT, MATE_BAR_W);
         int selfBarW = CombatHudMath.squadBarWidth(leftX, maxRightX, BAR_INDENT, SELF_BAR_W);
+
+        // squadSize 可配到 16，而面板是自底向上生长的：不设上限时 16 人小队会长到 200px 以上，
+        // 直接顶进规格明令禁止触碰的顶部票数/据点区。限制在与左侧小地图等高的范围内。
+        if (mates.size() > MAX_MATE_ROWS) {
+            mates = mates.subList(0, MAX_MATE_ROWS);
+        }
 
         Set<String> present = new HashSet<>();
         int totalH = mates.size() * ROW_H + (self != null ? SELF_ROW_H : 0);

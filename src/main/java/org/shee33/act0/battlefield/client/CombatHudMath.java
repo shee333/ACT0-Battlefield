@@ -222,4 +222,14 @@ final class CombatHudMath {
         int room = panelMaxRight - panelLeft - barIndent;
         return Math.max(SQUAD_BAR_MIN_W, Math.min(preferredW, room));
     }
+
+    /**
+     * 队友行显示上限：面板自底向上生长，必须限制在与左侧小地图等高的范围内。
+     *
+     * <p>{@code squadSize} 是可配项（1~16），不设限时 16 人小队的面板会长到 200px 以上，
+     * 直接顶进规格明令禁止触碰的顶部票数/据点区。至少保留 1 行，否则小屏上会一个队友都看不到。
+     */
+    static int maxMateRows(int availableHeight, int mateRowH, int selfRowH) {
+        return Math.max(1, (availableHeight - selfRowH) / Math.max(1, mateRowH));
+    }
 }

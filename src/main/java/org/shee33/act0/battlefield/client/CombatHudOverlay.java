@@ -126,6 +126,7 @@ public final class CombatHudOverlay {
         // 不清零会让下次进场时把"上局最后血量→本局满血"当成一次掉血，凭空抖一下屏。
         lastSelfHpPct = -1;
         lastMagCount = -1;
+        lastMagSlot = -1;
         ClientGunStatus.clear();
         KillPromptAnimator.clear();
         WeaponBarAnimator.clear();
@@ -135,6 +136,7 @@ public final class CombatHudOverlay {
 
     private static int lastSelfHpPct = -1;
     private static int lastMagCount = -1;
+    private static int lastMagSlot = -1;
 
     /**
      * 开火检测：以 TaCZ 弹匣数下降为准，而不是原版攻击键。TaCZ 的射击走它自己的输入链，
@@ -142,10 +144,14 @@ public final class CombatHudOverlay {
      * 都会各触发一次准心扩散，与规格 §4.2「开火 → 准心扩散」的语义一致。
      */
     private static void trackGunFire(LocalPlayer player, long now) {
+        int slot = player.getInventory().selected;
         int mag = TaczGunBridge.currentAmmo(player.getMainHandItem());
-        if (mag >= 0 && lastMagCount > mag) {
+        // 必须同时比对槽位：换枪时弹匣数会从上一把的余弹跳到新枪的余弹，若只看数值下降，
+        // 从 30 发的步枪切到 17 发的手枪会被误判成开了一枪。
+        if (slot == lastMagSlot && mag >= 0 && lastMagCount > mag) {
             CombatFeedbackAnimator.onFire(now);
         }
+        lastMagSlot = slot;
         lastMagCount = mag;
     }
 

@@ -177,6 +177,28 @@ class CombatHudMathTest {
                 "640 宽下应容得下完整自身血条(84px),实际只有 " + (maxRight - panelLeft));
     }
 
+    /**
+     * squadSize 可配到 16，队友面板自底向上生长。若不限制行数，16 人小队会把面板顶进
+     * 规格明令禁止触碰的顶部票数/据点区。
+     */
+    @Test
+    void mateRowsCappedToMinimapHeight() {
+        int mateRowH = 13;
+        int selfRowH = 17;
+        int minimapH = 84;
+        int cap = CombatHudMath.maxMateRows(minimapH, mateRowH, selfRowH);
+
+        assertTrue(cap * mateRowH + selfRowH <= minimapH,
+                "面板总高 " + (cap * mateRowH + selfRowH) + " 超出小地图高度 " + minimapH);
+        assertTrue(cap >= 3, "默认 4 人小队的 3 名队友必须都显示得下，实际上限 " + cap);
+    }
+
+    @Test
+    void mateRowsAlwaysLeavesAtLeastOne() {
+        assertEquals(1, CombatHudMath.maxMateRows(10, 13, 17), "极端窄高度下也要保留 1 行队友");
+        assertEquals(1, CombatHudMath.maxMateRows(0, 13, 17));
+    }
+
     @Test
     void weaponBarLeftLeavesRoomForItself() {
         int total = CombatHudMath.slotRowWidth() + CombatHudMath.INFO_GAP + CombatHudMath.INFO_W;
