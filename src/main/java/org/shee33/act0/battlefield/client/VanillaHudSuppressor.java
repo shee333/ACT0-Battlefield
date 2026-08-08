@@ -42,22 +42,36 @@ public final class VanillaHudSuppressor {
         if (!inMatch()) {
             return;
         }
-        if (SUPPRESSED.contains(event.getOverlay()) || isTaczAmmoHud(event.getOverlay())) {
+        if (SUPPRESSED.contains(event.getOverlay()) || isReplacedTaczOverlay(event.getOverlay())) {
             event.setCanceled(true);
         }
     }
 
     /**
-     * 只屏蔽 TaCZ 自己的<b>弹药 HUD</b>（我们的武器栏已经显示同样的信息，两份会打架）。
+     * 被作战 HUD 取代的 TaCZ 覆盖层，按<b>精确 id</b> 屏蔽。
      *
-     * <p>刻意按 id 精确匹配而不是"整个 tacz 命名空间一刀切"：TaCZ 还注册了瞄准镜等覆盖层，
-     * 那些屏蔽掉会直接破坏开镜观感。宁可漏屏蔽（最多多出一处重复读数）也不能误伤。
+     * <p>id 取自 TaCZ 1.1.8-hotfix 的 {@code ClientSetupEvent.onRegisterGuiOverlays}，
+     * 命名空间即其 modId {@code tacz}。它一共注册四个覆盖层，这里只屏蔽与我们重复的两个：
+     * <ul>
+     *   <li>{@code tac_gun_hud_overlay} —— 弹药/弹匣读数，已由武器栏取代</li>
+     *   <li>{@code tac_kill_amount_overlay} —— 击杀计数，已由击杀提示取代</li>
+     * </ul>
+     * 保留 {@code tac_heat_bar}（枪管过热，我们没有对应显示）与
+     * {@code tac_interact_key_overlay}（交互按键提示，不重复）。
+     *
+     * <p>刻意不按"整个 tacz 命名空间一刀切"，也不按关键字模糊匹配：前者会连过热条和交互
+     * 提示一起误伤，后者正是之前的写法——{@code contains("hud")} 只碰巧命中弹药层，漏掉了
+     * 击杀计数，导致它和我们的击杀提示同时显示。
      */
-    private static boolean isTaczAmmoHud(NamedGuiOverlay overlay) {
+    private static final Set<String> SUPPRESSED_TACZ_OVERLAYS =
+            Set.of("tac_gun_hud_overlay", "tac_kill_amount_overlay");
+
+    private static boolean isReplacedTaczOverlay(NamedGuiOverlay overlay) {
         if (overlay == null || overlay.id() == null) {
             return false;
         }
-        return "tacz".equals(overlay.id().getNamespace()) && overlay.id().getPath().contains("hud");
+        return "tacz".equals(overlay.id().getNamespace())
+                && SUPPRESSED_TACZ_OVERLAYS.contains(overlay.id().getPath());
     }
 
     /**
