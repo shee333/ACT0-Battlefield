@@ -4,8 +4,13 @@ import net.minecraft.util.Mth;
 
 /**
  * 部署 2D 缩略地图的纯数学部分 —— 参照《部署界面动效规格文档》第2节(布局比例)与
- * §3.2/§3.4(全局漂移循环/十字准星边缘渐隐),不依赖 {@link GuiGraphics}/{@link Tween} 之外的
+ * §3.4(十字准星边缘渐隐),不依赖 {@link GuiGraphics}/{@link Tween} 之外的
  * 任何渐染状态,方便脱离 Minecraft classpath 之外的纯逻辑单独单测。
+ *
+ * <p><b>标记位置必须与真实世界坐标严格一一对应</b>：规格文档 §3.2 的"全局漂移循环"
+ * （每个标记按 sin/cos 持续偏移 ±1.6px）已移除——那套动效是给装饰性元素设计的氛围效果，
+ * 套用在据点/队友这类<b>需要精确定位</b>的标记上会让它们永远对不准实际位置，
+ * 且点击命中判定跟着晃动的标记走，玩家实际选到的目标与看到的位置不符。
  *
  * <p>投影约定:世界 X 对应屏幕横轴(增大向右/东),世界 Z 对应屏幕纵轴(增大向下/南)——
  * 与 {@code BattlefieldMinimapOverlay} 的北上东右惯例一致。战斗区域 AABB 的
@@ -71,19 +76,7 @@ final class DeployMapMath {
         return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
     }
 
-    /**
-     * §3.2 全局漂移循环:{@code dx=sin(t/1400+φ)*1.6, dy=cos(t/1700+φ)*1.6}。
-     * {@code phase} 由调用方按标记 id 派生(见 {@code DeployMapPanel#phaseFor}),
-     * 使漂移在多次渲染帧之间保持稳定而不需要额外持久化状态。
-     */
-    static float[] driftOffset(long nowMs, float phase) {
-        double t = nowMs;
-        float dx = (float) (Math.sin(t / 1400.0 + phase) * 1.6);
-        float dy = (float) (Math.cos(t / 1700.0 + phase) * 1.6);
-        return new float[]{dx, dy};
-    }
-
-    /** §3.2 选中脉冲相位:{@code p = 0.5 + 0.5*sin(t/280)},周期约 1.76s,恒在 [0,1] 内。 */
+    /** 选中脉冲相位:{@code p = 0.5 + 0.5*sin(t/280)},周期约 1.76s,恒在 [0,1] 内。 */
     static float pulsePhase(long nowMs) {
         return 0.5f + 0.5f * (float) Math.sin(nowMs / 280.0);
     }

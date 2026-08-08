@@ -53,16 +53,14 @@ public final class DeployMapPanel {
     private static final float POINT_R = 8.0f;
     private static final float BASE_R = 7.5f;
 
-    // ---- 开场编排(§3.1):四边依次描边(每边190ms,总≈760ms)→填色(420ms)→三波标记压轴弹出 ----
-    private static final long EDGE_DURATION_MS = 190L;
-    private static final long EDGE_STEP_MS = 190L;
-    private static final long FILL_DELAY_MS = EDGE_STEP_MS * 4; // 760ms,四边画完
-    private static final long FILL_DURATION_MS = 420L;
-    private static final long MARKERS_BASE_MS = FILL_DELAY_MS + FILL_DURATION_MS; // 1180ms
+    // ---- 开场编排:同阵营 → 小队 → 据点/基地 三波依次弹出 ----
+    // 区域描边+填色动效已按需求移除，因此标记不再等待"边框画完"(原先要等到 1180ms 才起第一波，
+    // 那个延迟的唯一理由就是让位给边框演出)。现在面板一出现就立刻开始出标记。
+    private static final long MARKERS_BASE_MS = 60L;
     private static final long ALLY_STEP_MS = 40L;
-    private static final long SQUAD_BASE_MS = MARKERS_BASE_MS + 350L;
+    private static final long SQUAD_BASE_MS = MARKERS_BASE_MS + 160L;
     private static final long SQUAD_STEP_MS = 90L;
-    private static final long POINT_BASE_MS = SQUAD_BASE_MS + 350L;
+    private static final long POINT_BASE_MS = SQUAD_BASE_MS + 160L;
     private static final long POP_DURATION_MS = 340L;
 
     private static long openedAtMs = -1L;
@@ -195,8 +193,6 @@ public final class DeployMapPanel {
         float rw = rect[2];
         float rh = rect[3];
 
-        renderAreaBorderAndFill(gg, now, rx, ry, rw, rh);
-
         String key = selectionKey(st);
         if (!key.equals(selectedKey)) {
             selectedKey = key;
@@ -274,74 +270,6 @@ public final class DeployMapPanel {
     }
 
     // =====================================================================
-    // 区域描边+填色(§3.1)
-    // =====================================================================
-
-    private static void renderAreaBorderAndFill(GuiGraphics gg, long now, float rx, float ry, float rw, float rh) {
-        float fillT = fillProgress(now);
-        if (fillT > 0f) {
-            gg.fill((int) rx, (int) ry, (int) (rx + rw), (int) (ry + rh), withAlpha(0xFF4FA8FF, 0.05f * fillT));
-        }
-        int borderColor = DocPalette.FRIEND;
-        // 左→上→右→下 依次描边(§3.1"友先敌后"精神对应到矩形上就是固定绕行顺序,逐步画出边框)。
-        drawPartialH(gg, rx, ry, rw, edgeProgress(now, 0), borderColor);
-        drawPartialV(gg, rx + rw - 1f, ry, rh, edgeProgress(now, 1), borderColor);
-        drawPartialHReverse(gg, rx, ry + rh - 1f, rw, edgeProgress(now, 2), borderColor);
-        drawPartialVReverse(gg, rx, ry, rh, edgeProgress(now, 3), borderColor);
-    }
-
-    private static float edgeProgress(long now, int edgeIndex) {
-        if (openedAtMs < 0L) {
-            return 0f;
-        }
-        long delay = edgeIndex * EDGE_STEP_MS;
-        float raw = (now - openedAtMs - delay) / (float) EDGE_DURATION_MS;
-        return Tween.Ease.OUT_CUBIC.apply(raw);
-    }
-
-    private static float fillProgress(long now) {
-        if (openedAtMs < 0L) {
-            return 0f;
-        }
-        float raw = (now - openedAtMs - FILL_DELAY_MS) / (float) FILL_DURATION_MS;
-        return Tween.Ease.OUT_CUBIC.apply(raw);
-    }
-
-    private static void drawPartialH(GuiGraphics gg, float x, float y, float w, float t, int color) {
-        int len = Math.round(w * Mth.clamp(t, 0f, 1f));
-        if (len <= 0) {
-            return;
-        }
-        gg.fill((int) x, (int) y, (int) x + len, (int) y + 1, color);
-    }
-
-    private static void drawPartialHReverse(GuiGraphics gg, float x, float y, float w, float t, int color) {
-        int len = Math.round(w * Mth.clamp(t, 0f, 1f));
-        if (len <= 0) {
-            return;
-        }
-        int x2 = (int) (x + w);
-        gg.fill(x2 - len, (int) y, x2, (int) y + 1, color);
-    }
-
-    private static void drawPartialV(GuiGraphics gg, float x, float y, float h, float t, int color) {
-        int len = Math.round(h * Mth.clamp(t, 0f, 1f));
-        if (len <= 0) {
-            return;
-        }
-        gg.fill((int) x, (int) y, (int) x + 1, (int) y + len, color);
-    }
-
-    private static void drawPartialVReverse(GuiGraphics gg, float x, float y, float h, float t, int color) {
-        int len = Math.round(h * Mth.clamp(t, 0f, 1f));
-        if (len <= 0) {
-            return;
-        }
-        int y2 = (int) (y + h);
-        gg.fill((int) x, y2 - len, (int) x + 1, y2, color);
-    }
-
-    // =====================================================================
     // 标记:同阵营(不可交互)
     // =====================================================================
 
@@ -354,9 +282,8 @@ public final class DeployMapPanel {
                 continue;
             }
             float[] p = DeployMapMath.project(a.x(), a.z(), st.areaMinX(), st.areaMinZ(), st.areaMaxX(), st.areaMaxZ(), rx, ry, rw, rh);
-            float[] drift = DeployMapMath.driftOffset(now, phaseFor("ally:" + a.id()));
-            float cx = p[0] + drift[0];
-            float cy = p[1] + drift[1];
+            float cx = p[0];
+            float cy = p[1];
             float r = ALLY_R * pop;
             gg.fill((int) (cx - r), (int) (cy - r), (int) (cx + r), (int) (cy + r), withAlpha(DocPalette.FRIEND, 0.85f));
         }
@@ -377,9 +304,8 @@ public final class DeployMapPanel {
             }
             String key = "squad:" + m.id();
             float[] p = DeployMapMath.project(m.x(), m.z(), st.areaMinX(), st.areaMinZ(), st.areaMaxX(), st.areaMaxZ(), rx, ry, rw, rh);
-            float[] drift = DeployMapMath.driftOffset(now, phaseFor(key));
-            float cx = p[0] + drift[0];
-            float cy = p[1] + drift[1];
+            float cx = p[0];
+            float cy = p[1];
             boolean selected = m.deployable() && key.equals(selectedKey) && !dismissed;
             boolean hoveredNow = m.deployable() && !selected && isNear(mouseX, mouseY, cx, cy, 10f);
             float hoverV = selected ? 1f : (m.deployable() ? updateHover(key, hoveredNow, now) : 0f);
@@ -421,9 +347,8 @@ public final class DeployMapPanel {
             }
             String key = "point:" + pt.id();
             float[] p = DeployMapMath.project(pt.x(), pt.z(), st.areaMinX(), st.areaMinZ(), st.areaMaxX(), st.areaMaxZ(), rx, ry, rw, rh);
-            float[] drift = DeployMapMath.driftOffset(now, phaseFor(key));
-            float cx = p[0] + drift[0];
-            float cy = p[1] + drift[1];
+            float cx = p[0];
+            float cy = p[1];
             boolean interactive = pt.deployable();
             boolean selected = interactive && key.equals(selectedKey) && !dismissed;
             boolean hoveredNow = interactive && !selected && isNear(mouseX, mouseY, cx, cy, POINT_R + 2f);
@@ -476,9 +401,8 @@ public final class DeployMapPanel {
         }
         String key = "base:";
         float[] p = DeployMapMath.project(st.baseX(), st.baseZ(), st.areaMinX(), st.areaMinZ(), st.areaMaxX(), st.areaMaxZ(), rx, ry, rw, rh);
-        float[] drift = DeployMapMath.driftOffset(now, phaseFor(key));
-        float cx = p[0] + drift[0];
-        float cy = p[1] + drift[1];
+        float cx = p[0];
+        float cy = p[1];
         boolean selected = key.equals(selectedKey) && !dismissed;
         boolean hoveredNow = !selected && isNear(mouseX, mouseY, cx, cy, BASE_R + 3f);
         float hoverV = selected ? 1f : updateHover(key, hoveredNow, now);
@@ -524,13 +448,7 @@ public final class DeployMapPanel {
         return dx * dx + dy * dy <= r * r;
     }
 
-    /** §3.2 微漂移相位:由标记 key 的哈希派生,无需额外持久化"每标记随机相位"状态。 */
-    private static float phaseFor(String key) {
-        int h = key.hashCode() & 0x7fffffff;
-        return (h % 1000) / 1000f * (float) (Math.PI * 2.0);
-    }
-
-    /** §3.1 三波错峰弹出:{@code scale 0→1},outBack,{@code delayMs} 由调用方按类别/序号算好传入。 */
+    /** 三波错峰弹出:{@code scale 0→1},outBack,{@code delayMs} 由调用方按类别/序号算好传入。 */
     private static float popScale(long now, long delayMs) {
         if (openedAtMs < 0L) {
             return 0f;

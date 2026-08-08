@@ -106,24 +106,6 @@ class DeployMapMathTest {
         assertEquals(direct[1], viaFitted[1], EPS);
     }
 
-    // ---------------- driftOffset ----------------
-
-    @Test
-    void driftAtZeroTimeAndZeroPhaseMatchesSinCosBaseline() {
-        float[] d = DeployMapMath.driftOffset(0L, 0f);
-        assertEquals(0f, d[0], EPS, "sin(0)=0");
-        assertEquals(1.6f, d[1], EPS, "cos(0)=1 * 1.6");
-    }
-
-    @Test
-    void driftMagnitudeNeverExceedsAmplitude() {
-        for (long t = 0; t < 20000; t += 337) {
-            float[] d = DeployMapMath.driftOffset(t, 1.23f);
-            assertTrue(Math.abs(d[0]) <= 1.601f, "dx 幅度应不超过 1.6");
-            assertTrue(Math.abs(d[1]) <= 1.601f, "dy 幅度应不超过 1.6");
-        }
-    }
-
     // ---------------- pulsePhase ----------------
 
     @Test
