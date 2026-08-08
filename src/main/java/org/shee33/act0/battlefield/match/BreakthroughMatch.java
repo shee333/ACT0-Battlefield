@@ -1035,6 +1035,9 @@ public final class BreakthroughMatch {
 
     private void enterDowned(ServerPlayer p, Faction f, @Nullable UUID killerId) {
         UUID id = p.getUUID();
+        // 自己被打倒的同一刻就中断自己正在进行的救援（tickRevives 下一 tick 也会兜住，
+        // 但那会让"倒地了却还在读救援进度"多显示一帧）。
+        cancelRevive(id);
         long until = server.getTickCount() + downedDurationTicks;
         downedUntil.put(id, until);
         downedLastGoodY.put(id, p.getY());
@@ -1131,7 +1134,10 @@ public final class BreakthroughMatch {
             UUID targetId = revivingTarget.get(reviverId);
             ServerPlayer reviver = player(reviverId);
             ServerPlayer target = player(targetId);
+            // 救援者中途被打倒同样要立刻中断（发起时校验过一次不够——救援持续数秒，期间完全
+            // 可能挨枪倒地）。
             if (reviver == null || target == null || !downedUntil.containsKey(targetId)
+                    || downedUntil.containsKey(reviverId)
                     || target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
                 toCancel.add(reviverId);
                 continue;
@@ -1173,10 +1179,17 @@ public final class BreakthroughMatch {
         }
     }
 
+    /**
+     * 中断某人正在进行的救援。幂等：只有确实存在进行中的救援才会提示"救援中断"——否则
+     * 每个从未救人的玩家在退出/倒地时都会莫名收到一条中断提示。
+     */
     private void cancelRevive(UUID reviverId) {
         revivingTarget.remove(reviverId);
-        revivingStarted.remove(reviverId);
+        boolean wasReviving = revivingStarted.remove(reviverId) != null;
         revivingHeartbeat.remove(reviverId);
+        if (!wasReviving) {
+            return;
+        }
         ServerPlayer reviver = player(reviverId);
         if (reviver != null) {
             reviver.displayClientMessage(Component.literal("§c救援中断"), true);
@@ -1197,6 +1210,10 @@ public final class BreakthroughMatch {
             if (revivingStarted.containsKey(reviverId)) {
                 cancelRevive(reviverId);
             }
+            return;
+        }
+        // 倒地的人救不了别人：自己都躺在地上等人扶，没有任何理由还能把队友拉起来。
+        if (downedUntil.containsKey(reviverId)) {
             return;
         }
         if (!(level.getEntity(targetEntityId) instanceof ServerPlayer target)) {
