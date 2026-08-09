@@ -313,16 +313,17 @@ class BattlefieldRoomBrowserAnimatorTest {
 
     // ---------------- 「还差 N 人开局」 ----------------
 
+    /** 差额的分母是<b>自动开始人数</b>，不是人数上限——等待阶段要回答的是"还差几人开打"。 */
     @Test
-    void waitingShortfallIsRemainingSeats() {
+    void waitingShortfallCountsDownToAutoStart() {
         assertEquals(6, BattlefieldRoomBrowserAnimator.waitingShortfall(2, 8));
         assertEquals(0, BattlefieldRoomBrowserAnimator.waitingShortfall(8, 8));
     }
 
     @Test
-    void waitingShortfallClampsAtZeroWhenOverCapacity() {
+    void waitingShortfallClampsAtZeroPastThreshold() {
         assertEquals(0, BattlefieldRoomBrowserAnimator.waitingShortfall(12, 8),
-                "本仓库没有容量硬限制,人数超过 max 时不应出现负数文案");
+                "人数已超过开局阈值(此时正等待开局tick)，不应出现负数文案");
     }
 
     // ---------------- 对峙条比例 = 票数/tmax × 50% ----------------

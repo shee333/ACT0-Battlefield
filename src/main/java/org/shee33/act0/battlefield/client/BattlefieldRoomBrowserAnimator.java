@@ -5,6 +5,7 @@ import com.mojang.math.Axis;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
+import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BattlefieldRoomDto;
 import org.shee33.act0.battlefield.network.RequestBattlefieldRoomListPacket;
@@ -1511,9 +1512,15 @@ public final class BattlefieldRoomBrowserAnimator {
         return oldY - newY;
     }
 
-    /** 「还差 N 人开局」:非负差额。 */
-    static int waitingShortfall(int cur, int max) {
-        return Math.max(0, max - cur);
+    /**
+     * 「还差 N 人开局」:非负差额。分母是<b>自动开始人数</b>而非人数上限——等待阶段玩家关心的
+     * 是还差几人开打，不是还剩几个席位。
+     *
+     * <p>委派给 {@link MatchCapacity#shortfall}，与服务端判定自动开局用的是同一份实现，
+     * 免得两边各算各的、日后漂移出"显示还差 0 人却不开局"这种矛盾。
+     */
+    static int waitingShortfall(int cur, int minToStart) {
+        return MatchCapacity.shortfall(cur, minToStart);
     }
 
     /** 对峙条半宽占比:{@code 票数/tmax × 50%}（文档 §3.4）。 */
