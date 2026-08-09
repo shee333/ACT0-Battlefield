@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.Sector;
 
 import javax.annotation.Nullable;
@@ -46,6 +47,12 @@ public final class BattlefieldData extends SavedData {
 
     /** 管理员为当前世界命名的地图名，供对局浏览器展示；空字符串表示未命名。 */
     private String mapName = "";
+
+    /** 该地图的自动开始人数；{@code 0} 表示跟随全局配置（见 {@link MatchCapacity#resolve}）。 */
+    private int minPlayersToStart;
+
+    /** 该地图的对局人数上限；{@code 0} 表示跟随全局配置。 */
+    private int maxPlayers;
 
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
@@ -155,6 +162,48 @@ public final class BattlefieldData extends SavedData {
     /** 当前世界的地图名；未命名返回空字符串（由调用方决定占位显示）。 */
     public String mapName() {
         return mapName;
+    }
+
+    // ---- 按地图自定义的人数规则 ----
+
+    /**
+     * 设置该地图的自动开始人数。
+     *
+     * @param value 人数；{@code <= 0} 表示清除自定义、跟随全局配置
+     */
+    public void setMinPlayersToStart(int value) {
+        this.minPlayersToStart = Math.max(0, value);
+        setDirty();
+    }
+
+    /** 原始设置值；{@code 0} 表示未设置。生效值请用 {@link #effectiveMinPlayers(int)}。 */
+    public int minPlayersToStartRaw() {
+        return minPlayersToStart;
+    }
+
+    /**
+     * 设置该地图的对局人数上限。
+     *
+     * @param value 人数；{@code <= 0} 表示清除自定义、跟随全局配置
+     */
+    public void setMaxPlayers(int value) {
+        this.maxPlayers = Math.max(0, value);
+        setDirty();
+    }
+
+    /** 原始设置值；{@code 0} 表示未设置。生效值请用 {@link #effectiveMaxPlayers(int)}。 */
+    public int maxPlayersRaw() {
+        return maxPlayers;
+    }
+
+    /** 该地图实际生效的自动开始人数：设过就用地图的，否则用传入的全局默认。 */
+    public int effectiveMinPlayers(int globalDefault) {
+        return MatchCapacity.resolve(minPlayersToStart, globalDefault);
+    }
+
+    /** 该地图实际生效的人数上限：设过就用地图的，否则用传入的全局默认。 */
+    public int effectiveMaxPlayers(int globalDefault) {
+        return MatchCapacity.resolve(maxPlayers, globalDefault);
     }
 
     // ---- 就绪判定（对局浏览器"等待中"房间与 start() 前置校验共用） ----
@@ -292,6 +341,12 @@ public final class BattlefieldData extends SavedData {
             }
             tag.put("presets", pt);
         }
+        if (minPlayersToStart > 0) {
+            tag.putInt("minPlayersToStart", minPlayersToStart);
+        }
+        if (maxPlayers > 0) {
+            tag.putInt("maxPlayers", maxPlayers);
+        }
         if (!mapName.isEmpty()) {
             tag.putString("mapName", mapName);
         }
@@ -333,6 +388,8 @@ public final class BattlefieldData extends SavedData {
                 data.presets.put(key, pt.getCompound(key).copy());
             }
         }
+        data.minPlayersToStart = Math.max(0, tag.getInt("minPlayersToStart"));
+        data.maxPlayers = Math.max(0, tag.getInt("maxPlayers"));
         if (tag.contains("mapName")) {
             data.mapName = tag.getString("mapName");
         }

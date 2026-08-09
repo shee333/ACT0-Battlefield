@@ -12,7 +12,9 @@ import net.minecraft.network.FriendlyByteBuf;
  * @param mapName        地图名；服务端保证非空（未命名时已回退填充维度名）
  * @param running        {@code true}=运行中，{@code false}=等待中
  * @param cur            当前人数：等待中=候选名单人数，运行中=参战人数
- * @param max            人数上限（{@code BattlefieldConfig.MIN_PLAYERS_TO_START}）
+ * @param max            对局人数上限（按地图自定义，未设时回退全局配置）
+ * @param minToStart     自动开始所需人数（按地图自定义，未设时回退全局配置）。与 {@code max}
+ *                       是两个独立概念：前者是"满了就进不来"，后者是"够了就开打"
  * @param viewerIn       接收者是否已在该候选名单/对局中
  * @param faction1Name   阵营1（ALPHA）显示名
  * @param faction2Name   阵营2（BRAVO）显示名
@@ -29,6 +31,7 @@ public record BattlefieldRoomDto(
         boolean running,
         int cur,
         int max,
+        int minToStart,
         boolean viewerIn,
         String faction1Name,
         String faction2Name,
@@ -45,6 +48,7 @@ public record BattlefieldRoomDto(
         buf.writeBoolean(running);
         buf.writeVarInt(cur);
         buf.writeVarInt(max);
+        buf.writeVarInt(minToStart);
         buf.writeBoolean(viewerIn);
         buf.writeUtf(faction1Name);
         buf.writeUtf(faction2Name);
@@ -61,6 +65,7 @@ public record BattlefieldRoomDto(
                 buf.readBoolean(),
                 buf.readUtf(),
                 buf.readBoolean(),
+                buf.readVarInt(),
                 buf.readVarInt(),
                 buf.readVarInt(),
                 buf.readBoolean(),

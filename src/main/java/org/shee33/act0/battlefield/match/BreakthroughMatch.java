@@ -977,6 +977,11 @@ public final class BreakthroughMatch {
         }
     }
 
+    /** 该对局所在世界，供管理器按地图取人数规则。 */
+    public ServerLevel level() {
+        return level;
+    }
+
     /** 与 {@code ConquestMatch#isEnemyHit} 对称：攻守双方分属不同阵营才算有效命中。 */
     public boolean isEnemyHit(UUID victimId, @Nullable UUID attackerId) {
         if (victimId == null || attackerId == null || victimId.equals(attackerId)) {

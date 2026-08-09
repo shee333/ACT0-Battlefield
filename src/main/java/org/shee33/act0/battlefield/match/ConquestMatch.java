@@ -602,6 +602,11 @@ public final class ConquestMatch {
         }
     }
 
+    /** 该对局所在世界，供管理器按地图取人数规则。 */
+    public ServerLevel level() {
+        return level;
+    }
+
     public boolean isEnemyHit(UUID victimId, @Nullable UUID attackerId) {
         if (victimId == null || attackerId == null || victimId.equals(attackerId)) {
             return false;

@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.match.BreakthroughMatch;
@@ -21,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.BattlefieldConfig;
 
 import static org.shee33.act0.battlefield.Act0Battlefield.BREAKTHROUGH_MANAGER;
 
@@ -51,13 +53,18 @@ public final class BreakthroughCommand {
                 .then(Commands.literal("map").requires(s -> s.hasPermission(2))
                     .then(Commands.literal("name")
                         .then(Commands.argument("name", StringArgumentType.greedyString())
-                            .executes(BreakthroughCommand::setMapName))))
+                            .executes(BreakthroughCommand::setMapName)))
+                    .then(Commands.literal("minplayers")
+                        .then(Commands.argument("value", IntegerArgumentType.integer(0, 128))
+                            .executes(BreakthroughCommand::setMinPlayers)))
+                    .then(Commands.literal("maxplayers")
+                        .then(Commands.argument("value", IntegerArgumentType.integer(0, 128))
+                            .executes(BreakthroughCommand::setMaxPlayers)))
+                    .then(Commands.literal("info").executes(BreakthroughCommand::mapInfo)))
                 .then(buildStartBranch())
                 .then(Commands.literal("stop").requires(s -> s.hasPermission(2))
                     .executes(BreakthroughCommand::stop))
-                .then(Commands.literal("join")
-                    .then(Commands.literal("attacker").executes(c -> join(c, Faction.ALPHA)))
-                    .then(Commands.literal("defender").executes(c -> join(c, Faction.BRAVO))))
+                .then(Commands.literal("join").executes(BreakthroughCommand::join))
                 .then(Commands.literal("quickjoin")
                     .then(Commands.argument("battle", StringArgumentType.greedyString())
                         .executes(BreakthroughCommand::quickJoin)))
@@ -223,11 +230,69 @@ public final class BreakthroughCommand {
         return stopped ? 1 : 0;
     }
 
+    /** 设置本地图的自动开始人数；{@code 0} 表示清除自定义、跟随全局配置。与征服模式同构。 */
+    private static int setMinPlayers(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        int value = IntegerArgumentType.getInteger(c, "value");
+        BattlefieldData data = BattlefieldData.get(level);
+        if (value > 0) {
+            String error = MatchCapacity.validate(value, data.effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get()));
+            if (error != null) {
+                feedback(c, "§c" + error);
+                return 0;
+            }
+        }
+        data.setMinPlayersToStart(value);
+        feedback(c, value > 0
+                ? "§a本地图自动开始人数已设为 §e" + value
+                : "§7本地图自动开始人数已清除，跟随全局配置（当前 "
+                        + BattlefieldConfig.MIN_PLAYERS_TO_START.get() + "）");
+        Act0Battlefield.broadcastRoomList(c.getSource().getServer());
+        return 1;
+    }
+
+    /** 设置本地图的对局人数上限；{@code 0} 表示清除自定义、跟随全局配置。 */
+    private static int setMaxPlayers(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        int value = IntegerArgumentType.getInteger(c, "value");
+        BattlefieldData data = BattlefieldData.get(level);
+        if (value > 0) {
+            String error = MatchCapacity.validate(
+                    data.effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get()), value);
+            if (error != null) {
+                feedback(c, "§c" + error);
+                return 0;
+            }
+        }
+        data.setMaxPlayers(value);
+        feedback(c, value > 0
+                ? "§a本地图人数上限已设为 §e" + value
+                : "§7本地图人数上限已清除，跟随全局配置（当前 " + BattlefieldConfig.MAX_PLAYERS.get() + "）");
+        Act0Battlefield.broadcastRoomList(c.getSource().getServer());
+        return 1;
+    }
+
+    /** 展示本地图当前生效的人数规则。 */
+    private static int mapInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData data = BattlefieldData.get(level);
+        int min = data.effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get());
+        int max = data.effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get());
+        feedback(c, "§7地图 §e" + (data.mapName().isBlank() ? level.dimension().location() : data.mapName()));
+        feedback(c, "§7自动开始人数：§e" + min + (data.minPlayersToStartRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
+        feedback(c, "§7人数上限：§e" + max + (data.maxPlayersRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
+        return 1;
+    }
+
     // ---- 公共 ----
 
-    private static int join(CommandContext<CommandSourceStack> c, Faction faction) throws CommandSyntaxException {
+    private static int join(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         ServerPlayer player = c.getSource().getPlayerOrException();
-        BREAKTHROUGH_MANAGER.join(player.serverLevel(), player, faction);
+        Faction faction = BREAKTHROUGH_MANAGER.join(player.serverLevel(), player);
+        if (faction == null) {
+            feedback(c, "§c该突破对局已满员，无法加入。");
+            return 0;
+        }
         feedback(c, "§a已加入 " + faction.coloredName() + "§a，等待开局。");
         return 1;
     }

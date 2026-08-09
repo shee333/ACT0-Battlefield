@@ -27,6 +27,7 @@ import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
+import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
@@ -66,7 +67,7 @@ public final class ConquestManager {
     /** 地图模板根路径。 */
     private final Path templateBasePath = Path.of("config", "act0_battlefield", "templates");
 
-    /** 每玩家上次"加入候选名单"的时间戳，节流JOIN_ALPHA/JOIN_BRAVO——这两个动作会触发
+    /** 每玩家上次"加入候选名单"的时间戳，节流 JOIN——该动作会触发
      * {@link Act0Battlefield#broadcastRoomList}向所有在线玩家广播房间列表快照，恶意客户端
      * spam切边会打出N倍广播放大攻击（P1安全修复）。 */
     private final Map<UUID, Long> lastLobbyJoinMs = new LinkedHashMap<>();
@@ -76,10 +77,20 @@ public final class ConquestManager {
 
     // ---- 候选名单 ----
 
-    public void join(ServerPlayer player, Faction faction) {
-        lobbyFor(player.serverLevel()).put(player.getUUID(), faction);
+    /**
+     * 加入当前世界的候选名单，阵营由服务端随机分配（玩家不再自行选边）。
+     *
+     * @return 分到的阵营；名单已满返回 {@code null}
+     */
+    @Nullable
+    public Faction join(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        if (!joinLobby(player, level)) {
+            return null;
+        }
         Act0Battlefield.broadcastRoomList(player.getServer());
-        tryAutoStart(player.serverLevel());
+        tryAutoStart(level);
+        return lobbyFor(level).get(player.getUUID());
     }
 
     /** 将当前世界所有在线玩家均衡加入候选名单，方便管理员一键开局。 */
@@ -100,8 +111,15 @@ public final class ConquestManager {
             }
         }
         int added = 0;
+        int max = maxPlayersFor(level);
         for (ServerPlayer player : level.players()) {
             leaveLobby(player.getUUID());
+            // 批量加入同样受该地图人数上限约束，否则管理员一键加人会让对局人数越过上限，
+            // 与普通加入路径的行为不一致。
+            if (!MatchCapacity.hasRoom(lobby.size(), max)) {
+                operator.sendSystemMessage(Component.literal("§e已达该地图人数上限 " + max + "，其余玩家未加入。"));
+                break;
+            }
             Faction target = alpha <= bravo ? Faction.ALPHA : Faction.BRAVO;
             lobby.put(player.getUUID(), target);
             if (target == Faction.ALPHA) {
@@ -181,8 +199,9 @@ public final class ConquestManager {
      */
     public List<BattlefieldRoomDto> snapshotRooms(MinecraftServer server, UUID viewerId) {
         List<BattlefieldRoomDto> rows = new ArrayList<>();
-        int minPlayers = BattlefieldConfig.MIN_PLAYERS_TO_START.get();
         for (ServerLevel level : server.getAllLevels()) {
+            int minPlayers = minPlayersFor(level);
+            int maxPlayers = maxPlayersFor(level);
             ResourceKey<Level> key = level.dimension();
             ConquestMatch match = activeByWorld.get(key);
             if (match != null && !match.isEnded()) {
@@ -193,6 +212,7 @@ public final class ConquestManager {
                         mapNameOrFallback(level, key),
                         true,
                         match.totalMembers(),
+                        maxPlayers,
                         minPlayers,
                         match.contains(viewerId),
                         Faction.ALPHA.coloredName(),
@@ -217,6 +237,7 @@ public final class ConquestManager {
                     mapNameOrFallback(level, key),
                     false,
                     cur,
+                    maxPlayers,
                     minPlayers,
                     viewerIn,
                     Faction.ALPHA.coloredName(),
@@ -245,13 +266,8 @@ public final class ConquestManager {
             player.displayClientMessage(Component.literal("§e你已在该大战场中"), true);
             return;
         }
-        // 中途加入随机分配阵营（不再是"人数少的一方优先"）。本 mod 目前没有"每阵营人数上限"
-        // 配置概念——capacityHint() 只是给游戏浏览器展示用的固定值 64，从未在加入流程中被
-        // 拿来做人数校验——所以这里把 cap 传 Integer.MAX_VALUE，退化为纯 50/50 随机；
-        // randomFaction() 的容量约束分支仍保留，未来真的引入人数上限时无需再改这里。
-        Faction faction = LatecomerAssignment.randomFaction(
-                match.memberCount(Faction.ALPHA), Integer.MAX_VALUE,
-                match.memberCount(Faction.BRAVO), Integer.MAX_VALUE);
+        // 中途加入随机分配阵营，并执行该地图的人数上限（上限来源见 assignFactionForMatch）。
+        Faction faction = assignFactionForMatch(match.level(), match);
         if (faction == null) {
             player.displayClientMessage(Component.literal("§c该大战场已满员"), true);
             return;
@@ -310,14 +326,11 @@ public final class ConquestManager {
             player.displayClientMessage(Component.literal("§e你已在候选名单中"), true);
             return;
         }
-        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
-        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
-        Faction faction = LatecomerAssignment.randomFaction(alphaCount, Integer.MAX_VALUE, bravoCount, Integer.MAX_VALUE);
-        if (faction == null) {
+        if (!joinLobby(player, standbyLevel)) {
             player.displayClientMessage(Component.literal("§c该大战场已满员"), true);
             return;
         }
-        lobby.put(player.getUUID(), faction);
+        Faction faction = lobby.get(player.getUUID());
         player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
         Act0Battlefield.broadcastRoomList(server);
         tryAutoStart(standbyLevel);
@@ -340,7 +353,7 @@ public final class ConquestManager {
         return server.getLevel(ResourceKey.create(Registries.DIMENSION, loc));
     }
 
-    /** 候选名单凑够{@link BattlefieldConfig#MIN_PLAYERS_TO_START}人且地图已布置完毕时自动开局。 */
+    /** 候选名单凑够该地图的自动开始人数（见 {@link #minPlayersFor}）且地图已布置完毕时自动开局。 */
     private void tryAutoStart(ServerLevel level) {
         if (activeFor(level) != null) {
             return;
@@ -349,10 +362,65 @@ public final class ConquestManager {
         if (lobby == null || !BattlefieldData.get(level).isConquestReady()) {
             return;
         }
-        if (lobby.size() < BattlefieldConfig.MIN_PLAYERS_TO_START.get()) {
+        if (lobby.size() < minPlayersFor(level)) {
             return;
         }
         start(level, ConquestRules.standard());
+    }
+
+    /** 该世界生效的自动开始人数（地图自定义优先，未设则用全局配置）。 */
+    public int minPlayersFor(ServerLevel level) {
+        return BattlefieldData.get(level).effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get());
+    }
+
+    /** 该世界生效的对局人数上限（地图自定义优先，未设则用全局配置）。 */
+    public int maxPlayersFor(ServerLevel level) {
+        return BattlefieldData.get(level).effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get());
+    }
+
+    /**
+     * 为加入进行中对局的玩家随机分配阵营，同时执行该地图的人数上限。
+     *
+     * <p>先校验总人数、再按每阵营上限做随机分配：{@link MatchCapacity#perSideCap} 是向上取整的，
+     * 单看单边可能允许两边合计比总上限多 1 个名额，总量校验必须排在前面。
+     *
+     * @return 分到的阵营；已满员返回 {@code null}
+     */
+    @Nullable
+    private Faction assignFactionForMatch(ServerLevel level, ConquestMatch match) {
+        int max = maxPlayersFor(level);
+        if (!MatchCapacity.hasRoom(match.totalMembers(), max)) {
+            return null;
+        }
+        int sideCap = MatchCapacity.perSideCap(max);
+        return LatecomerAssignment.randomFaction(
+                match.memberCount(Faction.ALPHA), sideCap,
+                match.memberCount(Faction.BRAVO), sideCap);
+    }
+
+    /**
+     * 把玩家加入待命世界的候选名单，阵营随机分配。
+     *
+     * @return {@code false} 表示名单已满
+     */
+    private boolean joinLobby(ServerPlayer player, ServerLevel level) {
+        Map<UUID, Faction> lobby = lobbyFor(level);
+        if (lobby.containsKey(player.getUUID())) {
+            return true;
+        }
+        int max = maxPlayersFor(level);
+        if (!MatchCapacity.hasRoom(lobby.size(), max)) {
+            return false;
+        }
+        int sideCap = MatchCapacity.perSideCap(max);
+        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
+        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
+        Faction faction = LatecomerAssignment.randomFaction(alphaCount, sideCap, bravoCount, sideCap);
+        if (faction == null) {
+            return false;
+        }
+        lobby.put(player.getUUID(), faction);
+        return true;
     }
 
     private Map<UUID, Faction> lobbyFor(ServerLevel level) {
@@ -444,10 +512,14 @@ public final class ConquestManager {
     /** 处理加入界面的玩家操作，并回推最新状态。 */
     public void handleAction(ServerPlayer player, ActionPacket.Action action) {
         switch (action) {
-            case JOIN_ALPHA, JOIN_BRAVO -> {
+            case JOIN -> {
                 ConquestMatch active = activeFor(player.serverLevel());
                 if (active != null) {
-                    Faction faction = ActionPacket.factionOf(action);
+                    Faction faction = assignFactionForMatch(player.serverLevel(), active);
+                    if (faction == null) {
+                        player.sendSystemMessage(Component.literal("§c该对局已满员。"));
+                        return;
+                    }
                     if (active.addLatecomer(player, faction)) {
                         return;
                     }
@@ -459,7 +531,10 @@ public final class ConquestManager {
                         return;
                     }
                     lastLobbyJoinMs.put(player.getUUID(), now);
-                    lobbyFor(player.serverLevel()).put(player.getUUID(), ActionPacket.factionOf(action));
+                    if (!joinLobby(player, player.serverLevel())) {
+                        player.sendSystemMessage(Component.literal("§c该大战场候选名单已满。"));
+                        return;
+                    }
                     Act0Battlefield.broadcastRoomList(player.getServer());
                     tryAutoStart(player.serverLevel());
                     return;

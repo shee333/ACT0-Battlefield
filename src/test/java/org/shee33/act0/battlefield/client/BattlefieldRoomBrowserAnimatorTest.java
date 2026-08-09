@@ -13,16 +13,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BattlefieldRoomBrowserAnimatorTest {
 
+    /** 测试用房间。{@code max} 同时充当开局阈值,免得每个用例都要多传一个无关参数。 */
     private static BattlefieldRoomDto room(String key, boolean breakthrough, boolean running,
                                             int cur, int max, int t1, int t2, int tmax) {
         return new BattlefieldRoomDto(key, "战役 " + key, breakthrough, "解放峰", running,
-                cur, max, false, "PAX ARMATA", "KATO 16", t1, t2, tmax, 0);
+                cur, max, max, false, "PAX ARMATA", "KATO 16", t1, t2, tmax, 0);
     }
 
     private static BattlefieldRoomDto membership(boolean viewerIn, boolean running, boolean breakthrough,
                                                   int cur, int max, int elapsedSeconds) {
         return new BattlefieldRoomDto("bf@overworld", "战役", breakthrough, "解放峰", running,
-                cur, max, viewerIn, "PAX ARMATA", "KATO 16", 300, 280, 600, elapsedSeconds);
+                cur, max, max, viewerIn, "PAX ARMATA", "KATO 16", 300, 280, 600, elapsedSeconds);
     }
 
     // ---------------- 已加入 / 退出：按钮派生 ----------------

@@ -25,6 +25,7 @@ import org.shee33.act0.battlefield.command.BreakthroughCommand;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
+import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.BattlefieldRoomDto;
@@ -65,11 +66,20 @@ public final class BreakthroughManager {
 
     // ---- 候选名单 ----
 
-    public void join(ServerLevel level, ServerPlayer player, Faction faction) {
-        lobbyFor(level).put(player.getUUID(), faction);
+    /**
+     * 加入候选名单，阵营由服务端随机分配（玩家不再自行选边）。
+     *
+     * @return 分到的阵营；名单已满返回 {@code null}
+     */
+    @Nullable
+    public Faction join(ServerLevel level, ServerPlayer player) {
+        if (!joinLobby(player, level)) {
+            return null;
+        }
         broadcastStatus(player.getServer());
         Act0Battlefield.broadcastRoomList(player.getServer());
         tryAutoStart(level);
+        return lobbyFor(level).get(player.getUUID());
     }
 
     public void leaveLobby(UUID id) {
@@ -137,8 +147,9 @@ public final class BreakthroughManager {
      */
     public List<BattlefieldRoomDto> snapshotRooms(MinecraftServer server, UUID viewerId) {
         List<BattlefieldRoomDto> rows = new ArrayList<>();
-        int minPlayers = BattlefieldConfig.MIN_PLAYERS_TO_START.get();
         for (ServerLevel level : server.getAllLevels()) {
+            int minPlayers = minPlayersFor(level);
+            int maxPlayers = maxPlayersFor(level);
             ResourceKey<Level> key = level.dimension();
             BreakthroughMatch match = activeByWorld.get(key);
             if (match != null && !match.isEnded()) {
@@ -149,6 +160,7 @@ public final class BreakthroughManager {
                         mapNameOrFallback(level, key),
                         true,
                         match.totalMembers(),
+                        maxPlayers,
                         minPlayers,
                         match.contains(viewerId),
                         Faction.ALPHA.coloredName(),
@@ -173,6 +185,7 @@ public final class BreakthroughManager {
                     mapNameOrFallback(level, key),
                     false,
                     cur,
+                    maxPlayers,
                     minPlayers,
                     viewerIn,
                     Faction.ALPHA.coloredName(),
@@ -229,12 +242,8 @@ public final class BreakthroughManager {
             player.displayClientMessage(Component.literal("§e你已在该突破对局中"), true);
             return;
         }
-        // 中途加入随机分配阵营（不再是"人数少的一方优先"）。理由与 ConquestManager#quickJoin
-        // 一致：本 mod 没有"每阵营人数上限"配置概念，cap 传 Integer.MAX_VALUE 退化为纯 50/50
-        // 随机；randomFaction() 的容量约束分支仍保留，未来引入人数上限时无需再改这里。
-        Faction faction = LatecomerAssignment.randomFaction(
-                match.memberCount(Faction.ALPHA), Integer.MAX_VALUE,
-                match.memberCount(Faction.BRAVO), Integer.MAX_VALUE);
+        // 中途加入随机分配阵营，并执行该地图的人数上限（与 ConquestManager 同构）。
+        Faction faction = assignFactionForMatch(match.level(), match);
         if (faction == null) {
             player.displayClientMessage(Component.literal("§c该突破对局已满员"), true);
             return;
@@ -280,6 +289,59 @@ public final class BreakthroughManager {
         return raw;
     }
 
+    /** 该世界生效的自动开始人数（地图自定义优先，未设则用全局配置）。 */
+    public int minPlayersFor(ServerLevel level) {
+        return BattlefieldData.get(level).effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get());
+    }
+
+    /** 该世界生效的对局人数上限（地图自定义优先，未设则用全局配置）。 */
+    public int maxPlayersFor(ServerLevel level) {
+        return BattlefieldData.get(level).effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get());
+    }
+
+    /**
+     * 为加入进行中对局的玩家随机分配阵营，同时执行该地图的人数上限。总量校验必须排在单边
+     * 分配之前，理由见 {@link MatchCapacity#perSideCap}（单边容量是向上取整的）。
+     *
+     * @return 分到的阵营；已满员返回 {@code null}
+     */
+    @Nullable
+    private Faction assignFactionForMatch(ServerLevel level, BreakthroughMatch match) {
+        int max = maxPlayersFor(level);
+        if (!MatchCapacity.hasRoom(match.totalMembers(), max)) {
+            return null;
+        }
+        int sideCap = MatchCapacity.perSideCap(max);
+        return LatecomerAssignment.randomFaction(
+                match.memberCount(Faction.ALPHA), sideCap,
+                match.memberCount(Faction.BRAVO), sideCap);
+    }
+
+    /**
+     * 把玩家加入待命世界的候选名单，阵营随机分配。
+     *
+     * @return {@code false} 表示名单已满
+     */
+    private boolean joinLobby(ServerPlayer player, ServerLevel level) {
+        Map<UUID, Faction> lobby = lobbyFor(level);
+        if (lobby.containsKey(player.getUUID())) {
+            return true;
+        }
+        int max = maxPlayersFor(level);
+        if (!MatchCapacity.hasRoom(lobby.size(), max)) {
+            return false;
+        }
+        int sideCap = MatchCapacity.perSideCap(max);
+        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
+        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
+        Faction faction = LatecomerAssignment.randomFaction(alphaCount, sideCap, bravoCount, sideCap);
+        if (faction == null) {
+            return false;
+        }
+        lobby.put(player.getUUID(), faction);
+        return true;
+    }
+
     private Map<UUID, Faction> lobbyFor(ServerLevel level) {
         return lobbies.computeIfAbsent(level.dimension(), ignored -> new LinkedHashMap<>());
     }
@@ -297,14 +359,11 @@ public final class BreakthroughManager {
             player.displayClientMessage(Component.literal("§e你已在候选名单中"), true);
             return;
         }
-        int alphaCount = (int) lobby.values().stream().filter(f -> f == Faction.ALPHA).count();
-        int bravoCount = (int) lobby.values().stream().filter(f -> f == Faction.BRAVO).count();
-        Faction faction = LatecomerAssignment.randomFaction(alphaCount, Integer.MAX_VALUE, bravoCount, Integer.MAX_VALUE);
-        if (faction == null) {
+        if (!joinLobby(player, standbyLevel)) {
             player.displayClientMessage(Component.literal("§c该突破对局已满员"), true);
             return;
         }
-        lobby.put(player.getUUID(), faction);
+        Faction faction = lobby.get(player.getUUID());
         player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
         Act0Battlefield.broadcastRoomList(server);
         tryAutoStart(standbyLevel);
@@ -327,7 +386,7 @@ public final class BreakthroughManager {
         return server.getLevel(ResourceKey.create(Registries.DIMENSION, loc));
     }
 
-    /** 候选名单凑够{@link BattlefieldConfig#MIN_PLAYERS_TO_START}人且地图已布置完毕时自动开局。 */
+    /** 候选名单凑够该地图的自动开始人数（见 {@link #minPlayersFor}）且地图已布置完毕时自动开局。 */
     private void tryAutoStart(ServerLevel level) {
         if (activeFor(level) != null) {
             return;
@@ -336,7 +395,7 @@ public final class BreakthroughManager {
         if (lobby == null || !BattlefieldData.get(level).isBreakthroughReady()) {
             return;
         }
-        if (lobby.size() < BattlefieldConfig.MIN_PLAYERS_TO_START.get()) {
+        if (lobby.size() < minPlayersFor(level)) {
             return;
         }
         start(level, BreakthroughRules.standard());

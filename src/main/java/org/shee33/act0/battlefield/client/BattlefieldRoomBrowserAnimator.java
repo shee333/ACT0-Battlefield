@@ -964,7 +964,7 @@ public final class BattlefieldRoomBrowserAnimator {
         }
         gg.drawString(font, r.dto.faction1Name() + "  ‖  " + r.dto.faction2Name(),
                 x0, top + 8, withAlpha(TEXT, alpha * v * 0.45f), false);
-        String text = "等待中 · 还差 " + waitingShortfall(r.dto.cur(), r.dto.max()) + " 人开局";
+        String text = "等待中 · 还差 " + waitingShortfall(r.dto.cur(), r.dto.minToStart()) + " 人开局";
         gg.drawString(font, text, x0, top + 26, withAlpha(GREEN, alpha * v), false);
     }
 
@@ -1331,7 +1331,7 @@ public final class BattlefieldRoomBrowserAnimator {
         // 自己的成员身份变化(加入/退出生效)也算一次"数据变动",顺带播那 600ms 行高亮 ——
         // 退出命令的回执因此有了明确的视觉落点,而不是按钮悄无声息地变回"加 入"。
         boolean changed = nd.viewerIn() != r.dto.viewerIn();
-        if (nd.cur() != r.dto.cur() || nd.max() != r.dto.max()) {
+        if (nd.cur() != r.dto.cur() || nd.max() != r.dto.max() || nd.minToStart() != r.dto.minToStart()) {
             r.players.set(playersText(nd), rollDirection(r.dto.cur(), nd.cur()), now);
             r.miniFrom = shownFill(r, now);
             r.miniTo = fillPct(nd);
@@ -1524,12 +1524,16 @@ public final class BattlefieldRoomBrowserAnimator {
         return Mth.clamp(tickets / (float) ticketsMax, 0f, 1f) * 0.5f;
     }
 
-    /** 迷你人数条填充率。 */
+    /**
+     * 迷你人数条填充率。等待中的房间用"离自动开局还有多远"（分母 minToStart），运行中的用
+     * 容量占比（分母 max）——等待阶段玩家真正关心的是还差几人开打，不是坐了几成席位。
+     */
     static float fillPct(BattlefieldRoomDto d) {
-        if (d.max() <= 0) {
+        int denominator = d.running() ? d.max() : d.minToStart();
+        if (denominator <= 0) {
             return 0f;
         }
-        return Mth.clamp(d.cur() / (float) d.max(), 0f, 1f);
+        return Mth.clamp(d.cur() / (float) denominator, 0f, 1f);
     }
 
     /** 主按钮文案：已在房间内 → 退出，否则 → 加入。 */
@@ -1648,7 +1652,7 @@ public final class BattlefieldRoomBrowserAnimator {
     static String rowTagText(BattlefieldRoomDto d) {
         String base = d.running()
                 ? "运行中 · " + formatElapsed(d.elapsedSeconds())
-                : "等待中 · 还差 " + waitingShortfall(d.cur(), d.max()) + " 人";
+                : "等待中 · 还差 " + waitingShortfall(d.cur(), d.minToStart()) + " 人";
         return d.viewerIn() ? "已加入 · " + base : base;
     }
 
