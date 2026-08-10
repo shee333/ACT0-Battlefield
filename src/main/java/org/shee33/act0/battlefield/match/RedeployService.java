@@ -11,6 +11,7 @@ import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.GameType;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.OverheadViewMath;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
@@ -531,6 +532,15 @@ public final class RedeployService {
         player.setDeltaMovement(0.0, 0.0, 0.0);
     }
 
+    /**
+     * 部署俯瞰相机姿态：正对下方、<b>朝北</b>。
+     *
+     * <p>yaw 必须是 {@link OverheadViewMath#NORTH_UP_YAW}，不能是 0。部署界面同时给玩家看两张
+     * 地图——脚下的真实地形俯视画面，和叠加的 2D 缩略图面板；面板按"北上东右"投影，而 yaw=0 在
+     * Minecraft 里是朝南，正俯视下屏幕上方成了南、右方成了西，两个轴同时相反，玩家看到的就是
+     * 整张缩略图相对实际地形转了 180°。这是曾被连续报告三次的对不上问题的真正根因，
+     * 由 {@code OverheadViewMathTest} 钉死。
+     */
     private BattlefieldData.BaseSpawn deployOverviewSpawn(Faction faction) {
         double minX = Double.MAX_VALUE;
         double maxX = -Double.MAX_VALUE;
@@ -559,15 +569,15 @@ public final class RedeployService {
         if (minX == Double.MAX_VALUE) {
             BattlefieldData.BaseSpawn fallback = data.base(faction);
             if (fallback != null) {
-                return new BattlefieldData.BaseSpawn(fallback.x(), fallback.y() + 64.0, fallback.z(), 0f, 90f);
+                return new BattlefieldData.BaseSpawn(fallback.x(), fallback.y() + 64.0, fallback.z(), OverheadViewMath.NORTH_UP_YAW, OverheadViewMath.STRAIGHT_DOWN_PITCH);
             }
-            return new BattlefieldData.BaseSpawn(0.5, maxY + 64.0, 0.5, 0f, 90f);
+            return new BattlefieldData.BaseSpawn(0.5, maxY + 64.0, 0.5, OverheadViewMath.NORTH_UP_YAW, OverheadViewMath.STRAIGHT_DOWN_PITCH);
         }
         double cx = (minX + maxX) * 0.5;
         double cz = (minZ + maxZ) * 0.5;
         double span = Math.max(maxX - minX, maxZ - minZ);
         double height = Math.max(48.0, Math.min(140.0, span * 0.65 + 32.0));
-        return new BattlefieldData.BaseSpawn(cx + 0.5, maxY + height, cz + 0.5, 0f, 90f);
+        return new BattlefieldData.BaseSpawn(cx + 0.5, maxY + height, cz + 0.5, OverheadViewMath.NORTH_UP_YAW, OverheadViewMath.STRAIGHT_DOWN_PITCH);
     }
 
     // ---- Private: deploy execution ----
