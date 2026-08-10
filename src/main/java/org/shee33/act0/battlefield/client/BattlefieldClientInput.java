@@ -2,6 +2,7 @@ package org.shee33.act0.battlefield.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -14,6 +15,7 @@ import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.ActionPacket;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DownedActionPacket;
+import org.shee33.act0.battlefield.network.MarkPingPacket;
 import org.shee33.act0.battlefield.network.ReviveHeartbeatPacket;
 import org.shee33.act0.battlefield.network.SpotEnemyPacket;
 
@@ -28,7 +30,27 @@ public final class BattlefieldClientInput {
     private static int lastReviveTargetId = -1;
     private static int reviveHeartbeatCooldown;
 
+    /** 标记落点取准星所指位置：命中方块/实体则用命中点，否则沿视线取 64 格处的投影点。 */
+    private static final double PING_FALLBACK_REACH = 64.0;
+
     private BattlefieldClientInput() {}
+
+    private static void sendPing(Minecraft mc) {
+        if (mc.player == null) {
+            return;
+        }
+        double x;
+        double z;
+        if (mc.hitResult != null && mc.hitResult.getType() != HitResult.Type.MISS) {
+            x = mc.hitResult.getLocation().x;
+            z = mc.hitResult.getLocation().z;
+        } else {
+            Vec3 look = mc.player.getLookAngle();
+            x = mc.player.getX() + look.x * PING_FALLBACK_REACH;
+            z = mc.player.getZ() + look.z * PING_FALLBACK_REACH;
+        }
+        BattlefieldNetwork.CHANNEL.sendToServer(new MarkPingPacket(x, z));
+    }
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
@@ -43,6 +65,10 @@ public final class BattlefieldClientInput {
             if (mc.hitResult instanceof EntityHitResult hit && hit.getEntity() instanceof Player) {
                 BattlefieldNetwork.CHANNEL.sendToServer(new SpotEnemyPacket(hit.getEntity().getId()));
             }
+        }
+
+        while (BattlefieldKeyMappings.MARK_PING.consumeClick()) {
+            sendPing(mc);
         }
 
         if (BattlefieldKeyMappings.REVIVE.isDown()

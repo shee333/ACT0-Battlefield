@@ -91,6 +91,9 @@ public final class ConquestMatch {
     private final TicketPool tickets;
     private final List<ControlPointDef> defs;
     private final List<CapturePoint> points;
+    /** 战术标记允许的最远距离（格）：服务端据此丢弃越界坐标。 */
+    private static final double PING_MAX_RANGE = 256.0;
+
     private final Map<UUID, Faction> factionOf = new LinkedHashMap<>();
     private final SquadManager squadManager;
     private final KillTracker killTracker;
@@ -591,6 +594,7 @@ public final class ConquestMatch {
         if (ended || !factionOf.containsKey(victimId)) {
             return;
         }
+        sendDamageDirection(victimId, attackerId);
         lastHurtTick.put(victimId, (long) server.getTickCount());
         ServerPlayer p = player(victimId);
         if (p != null) {
@@ -600,6 +604,51 @@ public final class ConquestMatch {
                 && !downedUntil.containsKey(victimId) && !downedUntil.containsKey(attackerId)) {
             killTracker.recordHit(victimId, attackerId, (long) server.getTickCount());
         }
+    }
+
+    /**
+     * 把战术标记转发给<b>同小队</b>成员（含标记者自己，便于确认标记已生效）。
+     *
+     * <p>会重新校验坐标：不信任客户端给的位置，超出 {@code PING_MAX_RANGE} 直接丢弃，
+     * 否则恶意客户端可以往地图任意角落刷标记。
+     */
+    public void broadcastPing(ServerPlayer from, double x, double z) {
+        UUID id = from.getUUID();
+        if (!factionOf.containsKey(id)) {
+            return;
+        }
+        double dx = x - from.getX();
+        double dz = z - from.getZ();
+        if (dx * dx + dz * dz > PING_MAX_RANGE * PING_MAX_RANGE) {
+            return;
+        }
+        for (UUID mateId : factionOf.keySet()) {
+            if (!mateId.equals(id) && !squadManager.isSameSquad(id, mateId)) {
+                continue;
+            }
+            ServerPlayer mate = player(mateId);
+            if (mate != null) {
+                BattlefieldNetwork.sendPing(mate, x, z);
+            }
+        }
+    }
+
+    /**
+     * 向受击者推送伤害来源方位角。只算方位不发坐标，见
+     * {@code DamageDirectionPacket} 的类文档。
+     */
+    public void sendDamageDirection(UUID victimId, @Nullable UUID attackerId) {
+        if (attackerId == null || attackerId.equals(victimId)) {
+            return;
+        }
+        ServerPlayer victim = player(victimId);
+        ServerPlayer attacker = player(attackerId);
+        if (victim == null || attacker == null) {
+            return;
+        }
+        float bearing = (float) Math.atan2(attacker.getX() - victim.getX(),
+                -(attacker.getZ() - victim.getZ()));
+        BattlefieldNetwork.sendDamageDirection(victim, bearing);
     }
 
     /** 该对局所在世界，供管理器按地图取人数规则。 */

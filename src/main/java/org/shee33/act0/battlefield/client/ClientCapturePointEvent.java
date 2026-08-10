@@ -85,6 +85,17 @@ public final class ClientCapturePointEvent {
         return new Active(active.pointId(), active.kind(), active.factionCode(), age, holdMs);
     }
 
+    /**
+     * 某据点最近一次事件距今的毫秒数；没有记录返回 -1。
+     *
+     * <p>小地图的双波扩散环需要原始年龄而不是归一化强度：第二波要延迟 250ms 起跑，
+     * 而 {@link #minimapPulse} 已经把时间轴压成 0~1 且到 600ms 就归零，拿不回来。
+     */
+    public static long minimapEventAgeMs(int pointId) {
+        Long at = pointPulseAt.get(pointId);
+        return at == null ? -1L : System.currentTimeMillis() - at;
+    }
+
     /** 小地图某据点的一次性提亮强度 [0,1]：600ms 内线性衰减到 0，不循环。 */
     public static float minimapPulse(int pointId) {
         Long at = pointPulseAt.get(pointId);

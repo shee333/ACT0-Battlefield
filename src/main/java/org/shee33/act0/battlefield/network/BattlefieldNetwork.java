@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "12";
+    private static final String PROTOCOL = "13";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -120,6 +120,28 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, OpenBattlefieldBrowserPacket.class,
             OpenBattlefieldBrowserPacket::encode, OpenBattlefieldBrowserPacket::decode,
             OpenBattlefieldBrowserPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, DamageDirectionPacket.class,
+            DamageDirectionPacket::encode, DamageDirectionPacket::decode,
+            DamageDirectionPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, MarkPingPacket.class,
+            MarkPingPacket::encode, MarkPingPacket::decode,
+            MarkPingPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, SyncPingPacket.class,
+            SyncPingPacket::encode, SyncPingPacket::decode,
+            SyncPingPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+    }
+
+    /**
+     * 向受击者推送伤害来源方位角（弧度，正北 0 顺时针）。只发方位、不发坐标，
+     * 小地图"不显示敌人位置"的架构决策因此不破。
+     */
+    public static void sendDamageDirection(ServerPlayer player, float bearingRad) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DamageDirectionPacket(bearingRad));
+    }
+
+    /** 把战术标记同步给某玩家。 */
+    public static void sendPing(ServerPlayer player, double x, double z) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncPingPacket(x, z));
     }
 
     /** 向玩家推送 HUD 内容。 */

@@ -99,6 +99,9 @@ public final class BreakthroughMatch {
      * 与 {@link #focusFor} 判定"本地玩家站立的目标点是否属于当前激活区域"，一次性从 {@link #sectors}
      * 构建（不修改 {@code Sector} 本身，仅在此处做只读反查）。 */
     private final Map<Integer, Integer> pointSectorIndex = new LinkedHashMap<>();
+    /** 战术标记允许的最远距离（格）。 */
+    private static final double PING_MAX_RANGE = 256.0;
+
     private final Map<UUID, Faction> factionOf = new LinkedHashMap<>();
     private final SquadManager squadManager;
     private final KillTracker killTracker;
@@ -966,6 +969,7 @@ public final class BreakthroughMatch {
         if (ended || !factionOf.containsKey(victimId)) {
             return;
         }
+        sendDamageDirection(victimId, attackerId);
         lastHurtTick.put(victimId, (long) server.getTickCount());
         ServerPlayer p = player(victimId);
         if (p != null) {
@@ -975,6 +979,43 @@ public final class BreakthroughMatch {
                 && !downedUntil.containsKey(victimId) && !downedUntil.containsKey(attackerId)) {
             killTracker.recordHit(victimId, attackerId, (long) server.getTickCount());
         }
+    }
+
+    /** 与 {@code ConquestMatch#broadcastPing} 对称：把战术标记转发给同小队成员。 */
+    public void broadcastPing(ServerPlayer from, double x, double z) {
+        UUID id = from.getUUID();
+        if (!factionOf.containsKey(id)) {
+            return;
+        }
+        double dx = x - from.getX();
+        double dz = z - from.getZ();
+        if (dx * dx + dz * dz > PING_MAX_RANGE * PING_MAX_RANGE) {
+            return;
+        }
+        for (UUID mateId : factionOf.keySet()) {
+            if (!mateId.equals(id) && !squadManager.isSameSquad(id, mateId)) {
+                continue;
+            }
+            ServerPlayer mate = player(mateId);
+            if (mate != null) {
+                BattlefieldNetwork.sendPing(mate, x, z);
+            }
+        }
+    }
+
+    /** 与 {@code ConquestMatch#sendDamageDirection} 对称：只推送方位角。 */
+    public void sendDamageDirection(UUID victimId, @Nullable UUID attackerId) {
+        if (attackerId == null || attackerId.equals(victimId)) {
+            return;
+        }
+        ServerPlayer victim = player(victimId);
+        ServerPlayer attacker = player(attackerId);
+        if (victim == null || attacker == null) {
+            return;
+        }
+        float bearing = (float) Math.atan2(attacker.getX() - victim.getX(),
+                -(attacker.getZ() - victim.getZ()));
+        BattlefieldNetwork.sendDamageDirection(victim, bearing);
     }
 
     /** 该对局所在世界，供管理器按地图取人数规则。 */

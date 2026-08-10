@@ -30,6 +30,7 @@ public final class BattlefieldConfig {
     public static final ForgeConfigSpec.DoubleValue TICKET_PER_DEATH;
     public static final ForgeConfigSpec.IntValue MIN_PLAYERS_TO_START;
     public static final ForgeConfigSpec.IntValue MAX_PLAYERS;
+    public static final ForgeConfigSpec.BooleanValue MINIMAP_NORTH_UP;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -84,6 +85,10 @@ public final class BattlefieldConfig {
                         + "set their own via '/battlefield map maxplayers'. Joining is refused once "
                         + "this many players are in the lobby or match.")
                 .defineInRange("maxPlayers", 32, 2, 128);
+        MINIMAP_NORTH_UP = builder
+                .comment("Minimap orientation. false (default) = rotating map, forward is always up. "
+                        + "true = fixed north-up map with a rotating player arrow.")
+                .define("minimapNorthUp", false);
         builder.pop();
 
         builder.push("performance");

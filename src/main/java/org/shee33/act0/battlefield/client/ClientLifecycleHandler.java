@@ -33,6 +33,7 @@ public final class ClientLifecycleHandler {
         BreakthroughFocusAnimator.reset();
         BreakthroughSectorAnimator.reset();
         ClientBattleHud.clear();
+        ClientMinimapEvents.clear();
         ClientBreakthroughHud.clear();
         ClientDeployStatus.clear();
         ClientDeployLoadout.clear();

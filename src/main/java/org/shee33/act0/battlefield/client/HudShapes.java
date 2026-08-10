@@ -120,6 +120,77 @@ final class HudShapes {
         endDraw(bb);
     }
 
+    /**
+     * 任意起始角与跨度的圆环段——小地图的受击方向弧、边缘指示所需。
+     *
+     * <p>与 {@link #ringArc} 的区别：后者恒从 12 点起画"前 N%"，用于进度读数；这里可以指定
+     * 起始方位，用于"朝某个方向的一段弧"。角度以正北为 0、顺时针为正（与
+     * {@code MinimapMath.screenBearing} 同一约定）。
+     */
+    static void ringSegment(GuiGraphics gg, float cx, float cy, float radius, float thickness,
+                            float startDeg, float sweepDeg, int argb, float alphaMul) {
+        if (alphaMul <= 0f || radius <= 0f || sweepDeg == 0f) {
+            return;
+        }
+        beginDraw();
+        Matrix4f m = gg.pose().last().pose();
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        int segs = Math.max(1, (int) Math.ceil(Math.abs(sweepDeg) / 6f));
+        float inner = Math.max(0f, radius - thickness);
+        for (int i = 0; i <= segs; i++) {
+            float deg = -90f + startDeg + sweepDeg * (i / (float) segs);
+            float rad = (float) Math.toRadians(deg);
+            float cos = (float) Math.cos(rad);
+            float sin = (float) Math.sin(rad);
+            vertex(bb, m, cx + radius * cos, cy + radius * sin, argb, alphaMul);
+            vertex(bb, m, cx + inner * cos, cy + inner * sin, argb, alphaMul);
+        }
+        endDraw(bb);
+    }
+
+    /**
+     * 扇形视野锥（三角扇）。{@code facingDeg} 为锥中轴方位（正北 0、顺时针），
+     * {@code spreadDeg} 为总张角。
+     */
+    static void sector(GuiGraphics gg, float cx, float cy, float radius,
+                       float facingDeg, float spreadDeg, int argb, float alphaMul) {
+        if (alphaMul <= 0f || radius <= 0f) {
+            return;
+        }
+        beginDraw();
+        Matrix4f m = gg.pose().last().pose();
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.TRIANGLE_FAN, DefaultVertexFormat.POSITION_COLOR);
+        vertex(bb, m, cx, cy, argb, alphaMul);
+        int segs = Math.max(2, (int) Math.ceil(spreadDeg / 6f));
+        for (int i = 0; i <= segs; i++) {
+            float deg = -90f + facingDeg - spreadDeg / 2f + spreadDeg * (i / (float) segs);
+            float rad = (float) Math.toRadians(deg);
+            vertex(bb, m, cx + radius * (float) Math.cos(rad), cy + radius * (float) Math.sin(rad),
+                    argb, alphaMul);
+        }
+        endDraw(bb);
+    }
+
+    /** 实心三角形（边缘方向指示的箭头）。顶点朝 {@code facingDeg} 方位。 */
+    static void triangle(GuiGraphics gg, float cx, float cy, float size,
+                         float facingDeg, int argb, float alphaMul) {
+        if (alphaMul <= 0f || size <= 0f) {
+            return;
+        }
+        beginDraw();
+        Matrix4f m = gg.pose().last().pose();
+        BufferBuilder bb = Tesselator.getInstance().getBuilder();
+        bb.begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
+        for (float offset : new float[]{0f, 130f, -130f}) {
+            float rad = (float) Math.toRadians(-90f + facingDeg + offset);
+            float r = offset == 0f ? size : size * 0.75f;
+            vertex(bb, m, cx + r * (float) Math.cos(rad), cy + r * (float) Math.sin(rad), argb, alphaMul);
+        }
+        endDraw(bb);
+    }
+
     /** 环背板(整圈,通常用低透明度白色画在进度弧下方)。 */
     static void ringTrack(GuiGraphics gg, float cx, float cy, float radius, float thickness, int argb, float alphaMul) {
         ringArc(gg, cx, cy, radius, thickness, 1f, argb, alphaMul);

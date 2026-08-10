@@ -20,6 +20,7 @@ public final class ClientDeployFx {
 
     /** 触发部署落地反馈。 */
     public static void trigger(String pointLabel) {
+        ClientMinimapEvents.playIntro();
         startedMs = System.currentTimeMillis();
         label = pointLabel != null ? pointLabel : "";
     }

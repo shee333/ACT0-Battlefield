@@ -3,10 +3,15 @@ package org.shee33.act0.battlefield.client;
 /**
  * 小地图的纯数学与配色规则，不依赖任何 Minecraft 类型，可直接 JUnit 单测。
  *
- * <p>小地图采用<b>北朝上固定朝向</b>而非"整图跟随视角旋转"：旋转整张地图会让据点名标签
- * 跟着倾斜到难以辨认，且 {@code GuiGraphics.enableScissor} 的裁剪区域不跟随 PoseStack
- * 变换（见 AGENTS.md 菜单动效规范），旋转后裁剪会错位。因此改为地图固定、玩家箭头旋转，
- * 方向信息同样完整，实现代价却低得多。
+ * <p>默认<b>旋转模式</b>：整图随视角旋转、前方永远朝上；北朝上作为配置项保留。此前之所以
+ * 只做北朝上，是因为两条顾虑，现已各有解法：
+ * <ul>
+ *   <li>标签倾斜 → 标记分两层，"位置组"随世界旋转、"字形组"每帧叠加 {@code rotate(-mapRot)}
+ *       反向旋转，文字图标恒屏幕正立；</li>
+ *   <li>{@code enableScissor} 裁剪区不跟随 PoseStack → 裁剪矩形始终取屏幕固定的面板区域，
+ *       旋转只发生在 scissor <b>内部</b>的 PoseStack 上，裁剪因此永远正确。</li>
+ * </ul>
+ * 方位类元素统一按 {@link #screenBearing} 换算，两种模式零特判。
  */
 public final class MinimapMath {
 
@@ -24,7 +29,113 @@ public final class MinimapMath {
     /** 倒地队友点位——复用调色板里的警告橙，与"需要救援"的语义一致。 */
     public static final int SQUAD_DOWNED = 0xFFFF8C00;
 
+    /**
+     * 可视半径（格）。
+     *
+     * <p>此前用的是"1 像素 = 2 格"，但那与"半径 50 格"在 84px 面板上并不自洽：42px 半宽
+     * ×2 等于 84 格而非 50。这里以<b>半径语义</b>为准，像素/格由 {@link #pixelsPerBlock}
+     * 从面板尺寸反算，面板尺寸变化时半径恒定。
+     */
+    public static final double VIEW_R = 50.0;
+
+    /** 边缘渐隐带宽度（格）。 */
+    public static final double FADE_R = 6.0;
+
     private MinimapMath() {
+    }
+
+    /** 像素/格：{@code size / (2·VIEW_R)}。 */
+    public static double pixelsPerBlock(int panelSize) {
+        return panelSize / (2.0 * VIEW_R);
+    }
+
+    /**
+     * 最短弧角度平滑的单步增量（度）。
+     *
+     * <p>直接对角度做线性插值会在 ±180° 边界上绕远路打转（例如 350°→10° 会逆着转 340°）。
+     * 先把差值归一化到 (−180, 180] 再按比例前进，转向永远走短边。
+     *
+     * @param current 当前角度（度，任意范围）
+     * @param target  目标角度（度，任意范围）
+     * @param factor  每帧前进比例
+     * @return 应加到 {@code current} 上的增量
+     */
+    public static float shortestArcStep(float current, float target, float factor) {
+        float delta = ((target - current + 540f) % 360f) - 180f;
+        return delta * factor;
+    }
+
+    /** 追赶插值单步：{@code shown += (real - shown) × factor}。 */
+    public static double chase(double shown, double real, double factor) {
+        return shown + (real - shown) * factor;
+    }
+
+    /**
+     * 边缘软化透明度：距离进入 {@link #FADE_R} 带内开始线性渐隐，超出可视半径返回 0。
+     *
+     * <p>替代原先的硬切。"超界不画、不 clamp 贴边"的决策保留——渐隐到 0 即不可见。
+     */
+    public static float edgeFade(double dist, double viewR, double fadeR) {
+        if (dist >= viewR) {
+            return 0f;
+        }
+        if (fadeR <= 0) {
+            return 1f;
+        }
+        return (float) Math.min(1.0, Math.max(0.0, (viewR - dist) / fadeR));
+    }
+
+    /**
+     * 世界方位角 → 屏幕方位角（弧度）。旋转模式与北朝上模式共用此换算，只是后者
+     * {@code mapRotRad} 恒为 0，因此方位类元素（边缘指示、受击弧、罗盘）无需为模式写特判。
+     */
+    public static double screenBearing(double worldBearingRad, double mapRotRad) {
+        return worldBearingRad + mapRotRad;
+    }
+
+    /**
+     * 世界方位角（弧度）：+Z 为南、−Z 为北，返回值以正北为 0、顺时针增长，与
+     * {@link #screenBearing} 及极坐标落点换算配套。
+     */
+    public static double worldBearing(double dx, double dz) {
+        return Math.atan2(dx, -dz);
+    }
+
+    /**
+     * 旋转模式下的投影：世界坐标 → 面板内屏幕坐标。
+     *
+     * <p>变换链为 {@code Rotate(mapRot) · (worldPos − playerPos) · S + center}。北朝上模式
+     * 传 {@code mapRotRad = 0} 即退化为纯平移缩放。
+     *
+     * @return 长度 2 的数组 {@code [x, y]}，已含面板中心偏移
+     */
+    public static double[] project(double worldX, double worldZ, double playerX, double playerZ,
+                                   double mapRotRad, double pixelsPerBlock, double centerX, double centerY) {
+        double dx = (worldX - playerX) * pixelsPerBlock;
+        double dz = (worldZ - playerZ) * pixelsPerBlock;
+        double cos = Math.cos(mapRotRad);
+        double sin = Math.sin(mapRotRad);
+        return new double[]{
+                centerX + dx * cos - dz * sin,
+                centerY + dx * sin + dz * cos,
+        };
+    }
+
+    /**
+     * 屏幕角（度）→ 地图旋转角（度）。旋转模式要让"前方朝上"，因此整图反向转玩家朝向。
+     *
+     * @param yaw MC 的玩家 yaw
+     */
+    public static float mapRotationFor(float yaw, boolean northUp) {
+        return northUp ? 0f : -screenAngleFor(yaw);
+    }
+
+    /** 极坐标落点：以面板中心为原点、按屏幕方位角取半径 {@code r} 处的点。 */
+    public static double[] polar(double bearingRad, double r, double centerX, double centerY) {
+        return new double[]{
+                centerX + Math.sin(bearingRad) * r,
+                centerY - Math.cos(bearingRad) * r,
+        };
     }
 
     /**

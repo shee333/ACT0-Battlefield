@@ -732,6 +732,25 @@ public final class ConquestManager {
         }
     }
 
+    /**
+     * 战术标记：优先派发给玩家所在的征服对局，否则交给突破对局。
+     *
+     * <p>与 {@link #spotEnemy} 只处理征服不同，这里两模式都覆盖——小地图大修在两个模式下
+     * 都启用，只做一半会让突破模式的 Ping 静默失效。
+     */
+    public void markPing(ServerPlayer player, double x, double z) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.broadcastPing(player, x, z);
+            return;
+        }
+        BreakthroughMatch breakthrough =
+                Act0Battlefield.BREAKTHROUGH_MANAGER.activeContaining(player.getUUID());
+        if (breakthrough != null) {
+            breakthrough.broadcastPing(player, x, z);
+        }
+    }
+
     public void handleDownedAction(ServerPlayer player, DownedActionPacket.Action action) {
         ConquestMatch match = activeContaining(player.getUUID());
         if (match != null) {
