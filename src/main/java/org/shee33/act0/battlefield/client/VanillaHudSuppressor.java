@@ -12,6 +12,7 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.integration.TaczGunBridge;
 
+import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -26,13 +27,21 @@ import java.util.Set;
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class VanillaHudSuppressor {
 
-    private static final Set<NamedGuiOverlay> SUPPRESSED = Set.of(
-            VanillaGuiOverlay.CROSSHAIR.type(),
-            VanillaGuiOverlay.HOTBAR.type(),
-            VanillaGuiOverlay.PLAYER_HEALTH.type(),
-            VanillaGuiOverlay.FOOD_LEVEL.type(),
-            VanillaGuiOverlay.ARMOR_LEVEL.type(),
-            VanillaGuiOverlay.EXPERIENCE_BAR.type());
+    /**
+     * 这里存的是<b>枚举常量本身</b>，绝不能在静态初始化里就调 {@code .type()}。
+     *
+     * <p>带 {@code @Mod.EventBusSubscriber} 的类会在 mod CONSTRUCT 阶段就被加载以注册事件方法，
+     * 而原版覆盖层的 {@link NamedGuiOverlay} 实例要等到 Forge 触发 {@code RegisterGuiOverlaysEvent}
+     * 才被赋值——此刻 {@code VanillaGuiOverlay.XXX.type()} 全是 null。{@code Set.of} 不接受 null
+     * 元素，会直接抛 NPE 让整个 mod 构造失败、客户端起不来。改为在事件期再解析。
+     */
+    private static final Set<VanillaGuiOverlay> SUPPRESSED = EnumSet.of(
+            VanillaGuiOverlay.CROSSHAIR,
+            VanillaGuiOverlay.HOTBAR,
+            VanillaGuiOverlay.PLAYER_HEALTH,
+            VanillaGuiOverlay.FOOD_LEVEL,
+            VanillaGuiOverlay.ARMOR_LEVEL,
+            VanillaGuiOverlay.EXPERIENCE_BAR);
 
     private VanillaHudSuppressor() {
     }
@@ -42,9 +51,22 @@ public final class VanillaHudSuppressor {
         if (!inMatch()) {
             return;
         }
-        if (SUPPRESSED.contains(event.getOverlay()) || isReplacedTaczOverlay(event.getOverlay())) {
+        if (isSuppressedVanilla(event.getOverlay()) || isReplacedTaczOverlay(event.getOverlay())) {
             event.setCanceled(true);
         }
+    }
+
+    /** 事件期解析 {@code .type()}：此时覆盖层已注册完毕，不会再是 null。 */
+    private static boolean isSuppressedVanilla(NamedGuiOverlay overlay) {
+        if (overlay == null) {
+            return false;
+        }
+        for (VanillaGuiOverlay vanilla : SUPPRESSED) {
+            if (vanilla.type() == overlay) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
