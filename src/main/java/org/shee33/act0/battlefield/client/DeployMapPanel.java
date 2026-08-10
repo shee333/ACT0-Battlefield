@@ -211,6 +211,11 @@ public final class DeployMapPanel {
             cardHide(now);
         }
 
+        // 地图参照框：标记是 letterbox 居中到 rect 里的，面板底色却铺满整个 box。没有这层
+        // 边框与网格，玩家看到的只是一块纯色底上几个浮着的点，无从判断它们对应地图哪一块——
+        // 这正是"据点位置和实际地图对不上"的观感来源（此前连边框一起删掉了，没留替代物）。
+        renderAreaFrame(gg, rx, ry, rw, rh);
+
         // 十字准星在标记之下(规格 SVG 里 xhair 组在 mks 组之前),先画。
         renderCrosshair(gg, now, rx, ry, rw, rh);
 
@@ -619,6 +624,33 @@ public final class DeployMapPanel {
             float t = XH_SLIDE.easedT(now);
             xhX = Mth.lerp(t, xhFromX, xhToX);
             xhY = Mth.lerp(t, xhFromY, xhToY);
+        }
+    }
+
+    /**
+     * 地图参照框：letterbox 后区域的 1px 细边框 + 四等分网格。
+     *
+     * <p>纯静态、无动效——它的职责是给标记提供一个稳定的空间参照，任何呼吸/漂移都会重新
+     * 破坏"标记与实际位置一一对应"的观感（这正是上一版把整个边框连带动效一起删掉的原因，
+     * 但删过头了：动效该去，参照物该留）。
+     */
+    private static void renderAreaFrame(GuiGraphics gg, float rx, float ry, float rw, float rh) {
+        int x0 = Math.round(rx);
+        int y0 = Math.round(ry);
+        int x1 = Math.round(rx + rw);
+        int y1 = Math.round(ry + rh);
+        int frame = 0x593A4048;
+        gg.fill(x0, y0, x1, y0 + 1, frame);
+        gg.fill(x0, y1 - 1, x1, y1, frame);
+        gg.fill(x0, y0, x0 + 1, y1, frame);
+        gg.fill(x1 - 1, y0, x1, y1, frame);
+
+        int grid = 0x263A4048;
+        for (int i = 1; i < 4; i++) {
+            int gx = Math.round(rx + rw * i / 4f);
+            int gy = Math.round(ry + rh * i / 4f);
+            gg.fill(gx, y0 + 1, gx + 1, y1 - 1, grid);
+            gg.fill(x0 + 1, gy, x1 - 1, gy + 1, grid);
         }
     }
 

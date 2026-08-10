@@ -60,6 +60,24 @@ public record BattleArea(double minX, double minY, double minZ,
         return maxZ - minZ;
     }
 
+    /**
+     * 与另一个区域取并集（各轴取更宽的一侧）。任一方为空则返回另一方。
+     *
+     * <p>供"地图视图区域"使用：显式设定的战斗区域不保证包含所有据点（管理员完全可能先划区域
+     * 再挪据点），而缩略地图必须把要画的东西全框进来，否则标记会被投影到区域外、看起来位置全乱。
+     */
+    public BattleArea union(BattleArea other) {
+        if (other == null || other.isEmpty()) {
+            return this;
+        }
+        if (isEmpty()) {
+            return other;
+        }
+        return new BattleArea(
+                Math.min(minX, other.minX), Math.min(minY, other.minY), Math.min(minZ, other.minZ),
+                Math.max(maxX, other.maxX), Math.max(maxY, other.maxY), Math.max(maxZ, other.maxZ));
+    }
+
     public boolean contains(double x, double y, double z) {
         return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
     }

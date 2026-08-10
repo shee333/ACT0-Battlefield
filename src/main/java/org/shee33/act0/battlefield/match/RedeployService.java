@@ -386,7 +386,8 @@ public final class RedeployService {
             deploySelection.put(id, selected);
             deployTarget.put(id, target);
         }
-        org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
+        // 地图视图用并集区域,保证所有据点都落在投影范围内(见 BattlefieldData#mapViewArea)
+        org.shee33.act0.battlefield.core.BattleArea area = data.mapViewArea();
         boolean areaExplicit = data.areaOverride().isSet();
         // 地图名：直接取存档/世界名(server.properties 的 level-name)，本 mod 没有独立的"地图轮换"
         // 系统，一个世界即对应一张固定的对局地图。

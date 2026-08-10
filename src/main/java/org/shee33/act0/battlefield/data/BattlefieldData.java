@@ -235,10 +235,20 @@ public final class BattlefieldData extends SavedData {
      * 取得当前生效的战斗区域：优先使用显式录入，否则从基地+据点推导（外扩 16 格水平 padding）。
      * 若完全没有基地和据点，则返回 {@link BattleArea#EMPTY}。
      */
-    public BattleArea effectiveArea() {
-        if (area.isSet()) {
-            return area;
-        }
+    /**
+     * <b>地图视图</b>专用区域：{@link #effectiveArea()} 与"所有据点/基地包围盒"的并集。
+     *
+     * <p>与 {@link #effectiveArea()} 刻意分开：后者是<b>玩法边界</b>（越界惩罚以它为准），
+     * 必须严格等于管理员划定的范围，不能因为要画图就悄悄放大。而显式区域并不保证包含所有
+     * 据点——先划区域再挪据点、或沿用别的布局留下的区域，都会让据点落在区域外，缩略地图
+     * 投影后就表现为"据点位置乱、和实际地图对不上"。视图取并集即可保证要画的东西全在框内。
+     */
+    public BattleArea mapViewArea() {
+        return effectiveArea().union(derivedPointArea());
+    }
+
+    /** 由所有据点与两阵营基地推导的包围盒（含 16 格外扩）。 */
+    private BattleArea derivedPointArea() {
         List<double[]> pts = new ArrayList<>();
         if (alphaBase != null) {
             pts.add(new double[]{alphaBase.x(), alphaBase.y(), alphaBase.z()});
@@ -250,6 +260,13 @@ public final class BattlefieldData extends SavedData {
             pts.add(new double[]{def.pos().getX() + 0.5, def.pos().getY() + 0.5, def.pos().getZ() + 0.5});
         }
         return BattleArea.derive(pts, 16.0);
+    }
+
+    public BattleArea effectiveArea() {
+        if (area.isSet()) {
+            return area;
+        }
+        return derivedPointArea();
     }
 
     // ---- 预设 ----

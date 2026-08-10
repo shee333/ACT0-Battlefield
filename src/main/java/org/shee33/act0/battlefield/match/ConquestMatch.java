@@ -1752,6 +1752,7 @@ public final class ConquestMatch {
             // 可能挨枪倒地）。
             if (reviver == null || target == null || !downedUntil.containsKey(targetId)
                     || downedUntil.containsKey(reviverId)
+                    || !squadManager.isSameSquad(reviverId, targetId)
                     || target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
                 toCancel.add(reviverId);
                 continue;
@@ -1837,9 +1838,9 @@ public final class ConquestMatch {
         if (!downedUntil.containsKey(targetId)) {
             return;
         }
-        Faction tf = factionOf.get(targetId);
-        Faction rf = factionOf.get(reviverId);
-        if (tf == null || rf == null || tf != rf) {
+        // 救援限<b>同小队</b>：同阵营但不同小队不能互救。小队是战地里最小的协作单位，
+        // 允许全阵营互救会让"跟着小队走"失去意义，倒地者也无法预期谁会来扶。
+        if (!squadManager.isSameSquad(reviverId, targetId)) {
             return;
         }
         if (target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
