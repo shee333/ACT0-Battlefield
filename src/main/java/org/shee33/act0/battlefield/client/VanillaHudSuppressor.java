@@ -1,16 +1,12 @@
 package org.shee33.act0.battlefield.client;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.gui.overlay.NamedGuiOverlay;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
-import org.shee33.act0.battlefield.integration.TaczGunBridge;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -18,8 +14,9 @@ import java.util.Set;
 /**
  * 对局期间隐藏被作战 HUD 取代的原版 HUD 元件，并把开火动作转发给准心扩散。
  *
- * <p>{@link CombatHudOverlay} 自绘了快捷栏、准心与血量，若原版同时还在画，屏幕上会出现两套
- * 血条、两个准心、以及底部中央一条与右下武器栏重复的快捷栏。饥饿/护甲/经验条一并隐藏是因为
+ * <p>{@link CombatHudOverlay} 自绘了快捷栏与血量，若原版同时还在画，屏幕上会出现两套血条、
+ * 以及底部中央一条与右下武器栏重复的快捷栏。<b>准星不在屏蔽之列</b>——自绘准星已按需求移除，
+ * 交还原版/TaCZ 渲染。饥饿/护甲/经验条一并隐藏是因为
  * 它们原本紧贴快捷栏排布，快捷栏一旦撤走这几条会散落在屏幕底部中央，反而更碍眼。
  *
  * <p>只在对局 HUD 显示时生效，退出对局立刻恢复原版 HUD。
@@ -36,7 +33,6 @@ public final class VanillaHudSuppressor {
      * 元素，会直接抛 NPE 让整个 mod 构造失败、客户端起不来。改为在事件期再解析。
      */
     private static final Set<VanillaGuiOverlay> SUPPRESSED = EnumSet.of(
-            VanillaGuiOverlay.CROSSHAIR,
             VanillaGuiOverlay.HOTBAR,
             VanillaGuiOverlay.PLAYER_HEALTH,
             VanillaGuiOverlay.FOOD_LEVEL,
@@ -94,22 +90,6 @@ public final class VanillaHudSuppressor {
         }
         return "tacz".equals(overlay.id().getNamespace())
                 && SUPPRESSED_TACZ_OVERLAYS.contains(overlay.id().getPath());
-    }
-
-    /**
-     * 近战挥击的准心扩散。TaCZ 枪械的开火不走这条路径，由 {@code CombatHudOverlay} 按弹匣
-     * 数下降检测——这里若不排除枪械，开镜点射会被扩散两次。
-     */
-    @SubscribeEvent
-    public static void onAttack(InputEvent.InteractionKeyMappingTriggered event) {
-        if (!event.isAttack() || !inMatch()) {
-            return;
-        }
-        LocalPlayer player = Minecraft.getInstance().player;
-        if (player != null && TaczGunBridge.isGun(player.getMainHandItem())) {
-            return;
-        }
-        CombatFeedbackAnimator.onFire(Tween.now());
     }
 
     private static boolean inMatch() {

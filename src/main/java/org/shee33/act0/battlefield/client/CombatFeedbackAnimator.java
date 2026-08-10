@@ -1,22 +1,19 @@
 package org.shee33.act0.battlefield.client;
 
 /**
- * 准心扩散 / 命中标记 / 受击红晕 / 屏幕微抖的状态 —— 《作战HUD动效规格文档》§2、§5.2。
+ * 命中标记 / 受击红晕 / 屏幕微抖的状态 —— 《作战HUD动效规格文档》§2、§5.2。
+ *
+ * <p>自绘准星与开火扩散已按需求移除（准星交还原版/TaCZ），因此这里不再有 spread/onFire。
  *
  * <p>屏幕抖动<b>只位移 HUD 层，绝不动相机</b>（规格 §8 移植对照明确要求）：动相机会和游戏内
  * 的开火后坐力混在一起，玩家分不清哪个是"我被打了"哪个是"我在开枪"。
  */
 final class CombatFeedbackAnimator {
 
-    private static final float BASE_SPREAD = 4f;
-    private static final float KICK_SPREAD = 5f;
-    private static final long KICK_OUT_MS = 70L;
-    private static final long KICK_BACK_MS = 260L;
     private static final long HITMARK_MS = 310L;
     private static final long VIGNETTE_MS = 420L;
     private static final long SHAKE_MS = 200L;
 
-    private static long kickStartMs = -1L;
     private static long hitmarkStartMs = -1L;
     private static boolean hitmarkKill;
     private static long hurtStartMs = -1L;
@@ -28,15 +25,9 @@ final class CombatFeedbackAnimator {
     }
 
     static void clear() {
-        kickStartMs = -1L;
         hitmarkStartMs = -1L;
         hurtStartMs = -1L;
         lastHitmarkSourceMs = 0L;
-    }
-
-    /** 开火：准心扩散一次。 */
-    static void onFire(long now) {
-        kickStartMs = now;
     }
 
     /** 自身受击：红晕闪 + 屏幕微抖。抖动方向每次随机，避免规律感。 */
@@ -54,19 +45,6 @@ final class CombatFeedbackAnimator {
             hitmarkStartMs = now;
             hitmarkKill = ClientHitFeedback.isKill();
         }
-    }
-
-    /** 准心当前半展开距离（像素）。 */
-    static float spread(long now) {
-        if (kickStartMs < 0L) {
-            return BASE_SPREAD;
-        }
-        long age = now - kickStartMs;
-        if (age < KICK_OUT_MS) {
-            return BASE_SPREAD + KICK_SPREAD * Tween.Ease.OUT_CUBIC.apply(age / (float) KICK_OUT_MS);
-        }
-        float t = clamp01((age - KICK_OUT_MS) / (float) KICK_BACK_MS);
-        return BASE_SPREAD + KICK_SPREAD * (1f - Tween.Ease.OUT_CUBIC.apply(t));
     }
 
     /** 命中 X 标记透明度；0 表示不画。 */

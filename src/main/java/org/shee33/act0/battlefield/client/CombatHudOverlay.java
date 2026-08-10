@@ -11,7 +11,6 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
-import org.shee33.act0.battlefield.integration.TaczGunBridge;
 import org.shee33.act0.battlefield.network.SquadMateHudDto;
 
 import java.util.List;
@@ -73,7 +72,6 @@ public final class CombatHudOverlay {
 
         int selfHpPct = selfHealthPct(player);
         trackSelfDamage(selfHpPct, now);
-        trackGunFire(player, now);
         CombatFeedbackAnimator.pollHitFeedback(now);
         KillPromptAnimator.poll(player.getGameProfile().getName(), now);
 
@@ -86,9 +84,8 @@ public final class CombatHudOverlay {
             HudShapes.edgeVignette(gg, gg.guiWidth(), gg.guiHeight(), 0xFFC81E1E, vignette, 0.55f);
         }
 
-        // 准心刻意画在抖动之外：规格 demo 抖的是整个舞台，但真实对局里抖动准心会直接干扰
-        // 瞄准，玩家会分不清是自己手抖还是 HUD 在抖。受击反馈的表达交给红晕与面板抖动即可。
-        renderCrosshair(gg, now);
+        // 命中标记刻意画在抖动之外：它贴在准星上，跟着抖会直接干扰瞄准判读。
+        renderHitMarker(gg, now);
 
         float[] shake = CombatFeedbackAnimator.shakeOffset(now);
         gg.pose().pushPose();
@@ -125,8 +122,6 @@ public final class CombatHudOverlay {
         wasShown = false;
         // 不清零会让下次进场时把"上局最后血量→本局满血"当成一次掉血，凭空抖一下屏。
         lastSelfHpPct = -1;
-        lastMagCount = -1;
-        lastMagSlot = -1;
         ClientGunStatus.clear();
         KillPromptAnimator.clear();
         WeaponBarAnimator.clear();
@@ -135,25 +130,6 @@ public final class CombatHudOverlay {
     }
 
     private static int lastSelfHpPct = -1;
-    private static int lastMagCount = -1;
-    private static int lastMagSlot = -1;
-
-    /**
-     * 开火检测：以 TaCZ 弹匣数下降为准，而不是原版攻击键。TaCZ 的射击走它自己的输入链，
-     * 攻击键映射不保证触发；弹匣少一发则是"确实打出去了一发"的确凿信号，且连发武器每发
-     * 都会各触发一次准心扩散，与规格 §4.2「开火 → 准心扩散」的语义一致。
-     */
-    private static void trackGunFire(LocalPlayer player, long now) {
-        int slot = player.getInventory().selected;
-        int mag = TaczGunBridge.currentAmmo(player.getMainHandItem());
-        // 必须同时比对槽位：换枪时弹匣数会从上一把的余弹跳到新枪的余弹，若只看数值下降，
-        // 从 30 发的步枪切到 17 发的手枪会被误判成开了一枪。
-        if (slot == lastMagSlot && mag >= 0 && lastMagCount > mag) {
-            CombatFeedbackAnimator.onFire(now);
-        }
-        lastMagSlot = slot;
-        lastMagCount = mag;
-    }
 
     private static void trackSelfDamage(int hpPct, long now) {
         if (lastSelfHpPct >= 0 && hpPct < lastSelfHpPct) {
@@ -167,28 +143,22 @@ public final class CombatHudOverlay {
         return Math.max(0, Math.min(100, Math.round(player.getHealth() / max * 100f)));
     }
 
-    /** 规格 §2：4 短线 + 中点，开火时扩散；命中时四角 X 标记闪现。 */
-    private static void renderCrosshair(GuiGraphics gg, long now) {
-        int cx = gg.guiWidth() / 2;
-        int cy = gg.guiHeight() / 2;
-        int spread = Math.round(CombatFeedbackAnimator.spread(now));
-        int len = 7;
-        int white = 0xE6FFFFFF;
-
-        gg.fill(cx - 1, cy - spread - len, cx + 1, cy - spread, white);
-        gg.fill(cx - 1, cy + spread, cx + 1, cy + spread + len, white);
-        gg.fill(cx - spread - len, cy - 1, cx - spread, cy + 1, white);
-        gg.fill(cx + spread, cy - 1, cx + spread + len, cy + 1, white);
-        gg.fill(cx - 1, cy - 1, cx + 1, cy + 1, white);
-
+    /**
+     * 命中反馈：四角 X 标记在准星处一次性闪现，击杀时转红。
+     *
+     * <p>自绘准星已按需求移除，准星交还原版/TaCZ 渲染——TaCZ 的枪械有自己的准星与瞄准镜，
+     * 再叠一套只会打架。这里只保留与准星无关的命中反馈。
+     */
+    private static void renderHitMarker(GuiGraphics gg, long now) {
         float hm = CombatFeedbackAnimator.hitmarkAlpha(now);
         if (hm <= 0.01f) {
             return;
         }
+        int cx = gg.guiWidth() / 2;
+        int cy = gg.guiHeight() / 2;
         float s = CombatFeedbackAnimator.hitmarkScale(now);
         int color = CombatFeedbackAnimator.hitmarkIsKill() ? CombatHudMath.RED : 0xFFFFFFFF;
-        int a = Math.round(255 * hm);
-        int argb = (color & 0x00FFFFFF) | (a << 24);
+        int argb = (color & 0x00FFFFFF) | (Math.round(255 * hm) << 24);
         gg.pose().pushPose();
         gg.pose().translate(cx, cy, 0);
         gg.pose().scale(s, s, 1f);
