@@ -25,6 +25,13 @@ import java.util.function.Function;
  */
 public final class SquadManager {
 
+    /**
+     * 小队人数硬上限。配置项可以调小，但不允许调大——小队是战地的最小协作单位，四人是整套
+     * 小队机制（重生在队友身上、小队指令、小队语音位）的设计基准；放大到八人会让"跟着小队走"
+     * 退化成"跟着半个阵营走"，也会让小队 HUD 面板越界。
+     */
+    public static final int MAX_SQUAD_SIZE = 4;
+
     private final int squadSize;
     private final Map<UUID, Faction> factionOf;
     private final Map<UUID, Integer> squadOf = new LinkedHashMap<>();

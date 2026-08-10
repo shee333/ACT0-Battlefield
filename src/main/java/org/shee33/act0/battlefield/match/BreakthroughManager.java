@@ -3,6 +3,8 @@ package org.shee33.act0.battlefield.match;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.shee33.act0.battlefield.deployable.DeployableKind;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.Entity;
@@ -628,6 +630,16 @@ public final class BreakthroughManager {
         if (match != null) {
             match.handleDownedAction(player, action);
         }
+    }
+
+    public boolean handleDeployGadget(ServerPlayer player, DeployableKind kind, ItemStack display) {
+        BreakthroughMatch match = activeContaining(player.getUUID());
+        return match != null && match.handleDeployGadget(player, kind, display);
+    }
+
+    public boolean handleSyringeRevive(ServerPlayer reviver, ServerPlayer target) {
+        BreakthroughMatch match = activeContaining(reviver.getUUID());
+        return match != null && match.handleSyringeRevive(reviver, target);
     }
 
     public void handleReviveHeartbeat(ServerPlayer reviver, int targetEntityId, boolean active) {

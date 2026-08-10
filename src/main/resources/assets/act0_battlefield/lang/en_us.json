@@ -1,6 +1,9 @@
 {
   "block.act0_battlefield.control_point": "Control Point Marker",
   "item.act0_battlefield.battlefield_terminal": "Battlefield Terminal",
+  "item.act0_battlefield.ammo_box": "Ammo Crate",
+  "item.act0_battlefield.medic_box": "Medic Crate",
+  "item.act0_battlefield.medic_syringe": "Medic Syringe",
   "itemGroup.act0_battlefield.main": "ACT0 Battlefield",
   "key.categories.act0_battlefield": "ACT0 Battlefield",
   "key.act0_battlefield.open_menu": "Open Battlefield",

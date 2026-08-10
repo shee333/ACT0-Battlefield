@@ -1,0 +1,47 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "particle": "minecraft:block/obsidian",
+    "body": "minecraft:block/obsidian",
+    "lid": "minecraft:block/purpur_block",
+    "latch": "minecraft:block/emerald_block"
+  },
+  "elements": [
+    {
+      "from": [2, 0, 2],
+      "to": [14, 9, 14],
+      "faces": {
+        "north": {"texture": "#body"},
+        "south": {"texture": "#body"},
+        "east": {"texture": "#body"},
+        "west": {"texture": "#body"},
+        "up": {"texture": "#body"},
+        "down": {"texture": "#body"}
+      }
+    },
+    {
+      "from": [1.5, 9, 1.5],
+      "to": [14.5, 13, 14.5],
+      "faces": {
+        "north": {"texture": "#lid"},
+        "south": {"texture": "#lid"},
+        "east": {"texture": "#lid"},
+        "west": {"texture": "#lid"},
+        "up": {"texture": "#lid"},
+        "down": {"texture": "#lid"}
+      }
+    },
+    {
+      "from": [7, 7, 1.1],
+      "to": [9, 11, 2.1],
+      "faces": {
+        "north": {"texture": "#latch"},
+        "south": {"texture": "#latch"},
+        "east": {"texture": "#latch"},
+        "west": {"texture": "#latch"},
+        "up": {"texture": "#latch"},
+        "down": {"texture": "#latch"}
+      }
+    }
+  ]
+}

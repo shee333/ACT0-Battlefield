@@ -14,7 +14,10 @@ import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.block.ControlPointBlock;
+import org.shee33.act0.battlefield.item.AmmoBoxItem;
 import org.shee33.act0.battlefield.item.BattlefieldTerminalItem;
+import org.shee33.act0.battlefield.item.MedicBoxItem;
+import org.shee33.act0.battlefield.item.MedicSyringeItem;
 
 /**
  * 模组注册中心：据点标记方块、其 BlockItem 与一个创造物品栏分类。
@@ -46,6 +49,18 @@ public final class BattlefieldRegistry {
     public static final RegistryObject<Item> BATTLEFIELD_TERMINAL = ITEMS.register("battlefield_terminal",
             () -> new BattlefieldTerminalItem(new Item.Properties().stacksTo(1)));
 
+    /** 工程兵弹药箱：右键部署，为范围内同阵营玩家补给主副武器备弹。 */
+    public static final RegistryObject<Item> AMMO_BOX = ITEMS.register("ammo_box",
+            () -> new AmmoBoxItem(new Item.Properties().stacksTo(1)));
+
+    /** 支援兵医疗箱：右键部署，为范围内同阵营玩家回复血量。 */
+    public static final RegistryObject<Item> MEDIC_BOX = ITEMS.register("medic_box",
+            () -> new MedicBoxItem(new Item.Properties().stacksTo(1)));
+
+    /** 医疗针：点击倒地的同阵营玩家，以 3 倍速将其救起。 */
+    public static final RegistryObject<Item> MEDIC_SYRINGE = ITEMS.register("medic_syringe",
+            () -> new MedicSyringeItem(new Item.Properties().stacksTo(1)));
+
     /** 创造物品栏分类，便于管理员取出据点标记方块。 */
     public static final RegistryObject<CreativeModeTab> TAB = TABS.register("main",
             () -> CreativeModeTab.builder()
@@ -54,6 +69,9 @@ public final class BattlefieldRegistry {
                                         .displayItems((params, output) -> {
                                                 output.accept(BATTLEFIELD_TERMINAL.get());
                                                 output.accept(CONTROL_POINT_ITEM.get());
+                                                output.accept(AMMO_BOX.get());
+                                                output.accept(MEDIC_BOX.get());
+                                                output.accept(MEDIC_SYRINGE.get());
                                         })
                     .build());
 

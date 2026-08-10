@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "13";
+    private static final String PROTOCOL = "14";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -129,6 +129,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncPingPacket.class,
             SyncPingPacket::encode, SyncPingPacket::decode,
             SyncPingPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, SyncDeployablesPacket.class,
+            SyncDeployablesPacket::encode, SyncDeployablesPacket::decode,
+            SyncDeployablesPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }
 
     /**
@@ -137,6 +140,11 @@ public final class BattlefieldNetwork {
      */
     public static void sendDamageDirection(ServerPlayer player, float bearingRad) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DamageDirectionPacket(bearingRad));
+    }
+
+    /** 向玩家推送其可见的已部署补给物列表（驱动地面提示圆）。 */
+    public static void sendDeployables(ServerPlayer player, List<DeployableDto> deployables) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncDeployablesPacket(deployables));
     }
 
     /** 把战术标记同步给某玩家。 */
@@ -156,6 +164,7 @@ public final class BattlefieldNetwork {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBattleTabPacket(false, null));
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
                 new SyncDeployPacket(false, DeployStatusDto.inactive()));
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncDeployablesPacket(List.of()));
     }
 
     /** 向玩家推送 BF 风格 HUD 快照（顶部票数/据点进度/小队）。 */

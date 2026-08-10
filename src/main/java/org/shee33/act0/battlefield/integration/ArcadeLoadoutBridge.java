@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 与 {@code act0_arcade} 的配装系统软集成桥。
@@ -37,7 +38,64 @@ public final class ArcadeLoadoutBridge {
     private static boolean warnedFailure = false;
     private static boolean warnedOverrideFailure = false;
 
+    /** 兵种名（{@code PlayerClassType} 的枚举名）缓存，见 {@link #classNameOf}。 */
+    private static final Map<UUID, String> CLASS_CACHE = new ConcurrentHashMap<>();
+
+    /** 支援兵兵种名，对应 Arcade {@code PlayerClassType.SUPPORT}。 */
+    public static final String CLASS_SUPPORT = "SUPPORT";
+
     private ArcadeLoadoutBridge() {
+    }
+
+    /**
+     * 玩家当前兵种名（如 {@code "SUPPORT"} / {@code "ENGINEER"}）；Arcade 不在场或读取失败返回空串。
+     *
+     * <p><b>带缓存</b>：救援权限与倒地高亮都要查兵种，前者随救援心跳约 5 Hz 触发、后者每 2 tick
+     * 对每名玩家各查一次。整条反射链有六跳，几十人的对局下每 tick 会产生上百次反射调用，而兵种
+     * 在一条命之内根本不会变——缓存到 {@link #apply} 发放配装时才失效，那正是兵种唯一可能改变
+     * 的时刻（改兵种要重新部署才生效，这也是战地的既有行为）。
+     */
+    public static String classNameOf(ServerPlayer player) {
+        if (player == null) {
+            return "";
+        }
+        return CLASS_CACHE.computeIfAbsent(player.getUUID(), id -> readClassName(player));
+    }
+
+    /** 该玩家是否为支援兵。 */
+    public static boolean isSupport(ServerPlayer player) {
+        return CLASS_SUPPORT.equals(classNameOf(player));
+    }
+
+    /** 丢弃某玩家的兵种缓存（玩家退出对局/下线时调用，避免缓存无界增长）。 */
+    public static void forgetClass(UUID playerId) {
+        if (playerId != null) {
+            CLASS_CACHE.remove(playerId);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String readClassName(ServerPlayer player) {
+        try {
+            Object services = Class.forName("org.shee33.act0.arcade.Act0Arcade").getMethod("services").invoke(null);
+            Object registry = services.getClass().getMethod("registry").invoke(services);
+            Class<?> registryClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutRegistry");
+            Object fallback = Class.forName("org.shee33.act0.arcade.loadout.DefaultLoadoutCatalog")
+                    .getMethod("defaultLoadout", registryClass).invoke(null, registry);
+            Class<?> storeClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeLoadoutStore");
+            Object store = storeClass.getMethod("get", MinecraftServer.class).invoke(null, player.server);
+            Object set = storeClass.getMethod("getOrCreate", UUID.class,
+                            Class.forName("org.shee33.act0.arcade.loadout.Loadout"))
+                    .invoke(store, player.getUUID(), fallback);
+            Object active = set.getClass().getMethod("active").invoke(set);
+            if (active == null) {
+                return "";
+            }
+            Object classType = active.getClass().getMethod("classType").invoke(active);
+            return classType == null ? "" : classType.toString();
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "";
+        }
     }
 
     /**
@@ -50,6 +108,8 @@ public final class ArcadeLoadoutBridge {
         try {
             MinecraftServer server = player.server;
             UUID playerId = player.getUUID();
+            // 发放配装 = 兵种唯一可能改变的时刻，缓存必须在此失效。
+            CLASS_CACHE.remove(playerId);
 
             Class<?> act0ArcadeClass = Class.forName("org.shee33.act0.arcade.Act0Arcade");
             Object services = act0ArcadeClass.getMethod("services").invoke(null);

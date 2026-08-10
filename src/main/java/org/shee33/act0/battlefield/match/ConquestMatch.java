@@ -28,6 +28,11 @@ import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
+import org.shee33.act0.battlefield.network.DeployableDto;
+import org.shee33.act0.battlefield.deployable.DeployableService;
+import org.shee33.act0.battlefield.deployable.DeployableKind;
+import org.shee33.act0.battlefield.core.SupplyRules;
 import org.shee33.act0.battlefield.core.TicketPool;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
@@ -121,6 +126,11 @@ public final class ConquestMatch {
     private final Map<UUID, Long> revivingStarted = new LinkedHashMap<>();
     /** reviverId → 收到的最近一次客户端救援心跳所在 tick，见 {@link #handleReviveHeartbeat}。 */
     private final Map<UUID, Long> revivingHeartbeat = new LinkedHashMap<>();
+    /** reviverId → 本次救援所需总 tick 数：完成判定与 HUD 进度条必须共用同一个值，否则
+     * 医疗针加速后进度条会先走满而服务端还没救完（或反之）。 */
+    private final Map<UUID, Integer> revivingDuration = new LinkedHashMap<>();
+    private final DeployableService deployables = new DeployableService();
+    private boolean deployablesWereSent = false;
     /** 救援朝向判定阈值：比 IFF 远距离标敌（{@link #enemyMarkViewDot}）更宽松，救援本就要求近距离
      * （≤4 格），只需大致朝向目标即可，不必是精确瞄准。 */
     private static final double REVIVE_VIEW_DOT = 0.5D;
@@ -173,7 +183,7 @@ public final class ConquestMatch {
         this.captureInterval = BattlefieldConfig.CAPTURE_INTERVAL.get();
         this.captureDelta = this.captureInterval / 20.0;
         this.hudInterval = BattlefieldConfig.HUD_INTERVAL.get();
-        int squadSize = BattlefieldConfig.SQUAD_SIZE.get();
+        int squadSize = Math.min(SquadManager.MAX_SQUAD_SIZE, BattlefieldConfig.SQUAD_SIZE.get());
         int redeployDelayTicks = BattlefieldConfig.REDEPLOY_DELAY_TICKS.get();
         int spawnProtectionTicks = BattlefieldConfig.SPAWN_PROTECTION_TICKS.get();
         double squadDeployEnemyBlockRadius = BattlefieldConfig.SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS.get();
@@ -276,6 +286,7 @@ public final class ConquestMatch {
         lastTabHash.remove(id);
         callHelpCooldownUntil.remove(id);
         squadManager.removeMember(id);
+        ArcadeLoadoutBridge.forgetClass(id);
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
@@ -355,6 +366,7 @@ public final class ConquestMatch {
         tickEscapeBoundary();
         tickDownedPlayers();
         tickRevives();
+        deployables.tick(level, server.getTickCount(), this::sameFaction, downedUntil::containsKey);
         tickSpotted();
         if (ended) {
             return;
@@ -822,6 +834,7 @@ public final class ConquestMatch {
             }
         }
         redeployService.clearAll();
+        deployables.clearAll(level);
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
@@ -1003,6 +1016,7 @@ public final class ConquestMatch {
             }
         }
         redeployService.clearAll();
+        deployables.clearAll(level);
         lastHurtTick.clear();
         escapeTicks.clear();
         downedUntil.clear();
@@ -1185,7 +1199,8 @@ public final class ConquestMatch {
             if (mine == null || factionOf.get(id) != mine) {
                 return RelativeTeamSync.Relation.ENEMY;
             }
-            return downedUntil.containsKey(id)
+            // 高亮与救援共用同一套授权判据：能看见却救不了、或能救却看不见，都会让玩家困惑。
+            return downedUntil.containsKey(id) && canRevive(viewer, viewerId, id)
                     ? RelativeTeamSync.Relation.FRIENDLY_DOWNED
                     : RelativeTeamSync.Relation.FRIENDLY;
         });
@@ -1341,6 +1356,7 @@ public final class ConquestMatch {
     // ---- HUD ----
 
     private void broadcastHud() {
+        broadcastDeployables();
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p == null) {
@@ -1752,17 +1768,22 @@ public final class ConquestMatch {
             // 可能挨枪倒地）。
             if (reviver == null || target == null || !downedUntil.containsKey(targetId)
                     || downedUntil.containsKey(reviverId)
-                    || !squadManager.isSameSquad(reviverId, targetId)
+                    || !canRevive(reviver, reviverId, targetId)
                     || target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
                 toCancel.add(reviverId);
                 continue;
+            }
+            // 医疗针救援由服务端自行推进，客户端不发心跳；手持期间逐 tick 续期，否则 10 tick 的
+            // 心跳超时会在 20 tick 的加速救援完成之前就把它掐掉。
+            if (holdsSyringe(reviver)) {
+                revivingHeartbeat.put(reviverId, now);
             }
             Long lastHeartbeat = revivingHeartbeat.get(reviverId);
             if (lastHeartbeat == null || now - lastHeartbeat > REVIVE_HEARTBEAT_TIMEOUT_TICKS) {
                 toCancel.add(reviverId);
                 continue;
             }
-            if (now >= e.getValue() + reviveDurationTicks) {
+            if (now >= e.getValue() + reviveDurationOf(reviverId)) {
                 toComplete.add(reviverId);
             }
         }
@@ -1773,6 +1794,7 @@ public final class ConquestMatch {
             UUID targetId = revivingTarget.remove(reviverId);
             revivingStarted.remove(reviverId);
             revivingHeartbeat.remove(reviverId);
+            revivingDuration.remove(reviverId);
             ServerPlayer target = player(targetId);
             ServerPlayer reviver = player(reviverId);
             if (target != null && reviver != null) {
@@ -1790,6 +1812,107 @@ public final class ConquestMatch {
                 reviver.sendSystemMessage(Component.literal("§a你救起了 " + target.getGameProfile().getName()));
                 reviver.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
                 target.playNotifySound(SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.2f);
+                if (holdsSyringe(reviver)) {
+                    reviver.getCooldowns().addCooldown(BattlefieldRegistry.MEDIC_SYRINGE.get(),
+                            SupplyRules.SYRINGE_COOLDOWN_TICKS);
+                }
+            }
+        }
+    }
+
+    /**
+     * 能否救援该目标：<b>支援兵</b>可救援全阵营任意倒地者，其余兵种只能救本小队成员。
+     *
+     * <p>手持医疗针同样解锁跨小队救援——医疗针的唯一用途就是救人，配了针却只能救本队会让它在
+     * 半数场合形同虚设。兵种与道具是两条互不排斥的授权路径。
+     *
+     * <p>这里显式比对阵营，不再依赖"同小队蕴含同阵营"：小队编号按阵营分段本来就保证了这一点，
+     * 但支援兵/医疗针会绕过小队判定，跨阵营救人必须由这一行挡住。
+     */
+    private boolean canRevive(ServerPlayer reviver, UUID reviverId, UUID targetId) {
+        Faction rf = factionOf.get(reviverId);
+        if (rf == null || rf != factionOf.get(targetId)) {
+            return false;
+        }
+        return squadManager.isSameSquad(reviverId, targetId)
+                || ArcadeLoadoutBridge.isSupport(reviver)
+                || holdsSyringe(reviver);
+    }
+
+    private static boolean holdsSyringe(ServerPlayer player) {
+        return player.getMainHandItem().is(BattlefieldRegistry.MEDIC_SYRINGE.get())
+                || player.getOffhandItem().is(BattlefieldRegistry.MEDIC_SYRINGE.get());
+    }
+
+    private int reviveDurationOf(UUID reviverId) {
+        Integer d = revivingDuration.get(reviverId);
+        return d == null ? reviveDurationTicks : d;
+    }
+
+    private boolean sameFaction(UUID a, UUID b) {
+        Faction fa = factionOf.get(a);
+        return fa != null && fa == factionOf.get(b);
+    }
+
+    /**
+     * 医疗针点击救援：一次点击即开始，之后由 {@link #tickRevives} 自行推进，不依赖客户端心跳。
+     *
+     * @return 该玩家是否属于本场对局（{@code false} 时交由另一个模式的管理器处理）
+     */
+    public boolean handleSyringeRevive(ServerPlayer reviver, ServerPlayer target) {
+        UUID reviverId = reviver.getUUID();
+        UUID targetId = target.getUUID();
+        if (ended || !factionOf.containsKey(reviverId)) {
+            return false;
+        }
+        if (reviver.getCooldowns().isOnCooldown(BattlefieldRegistry.MEDIC_SYRINGE.get())
+                || downedUntil.containsKey(reviverId) || !downedUntil.containsKey(targetId)
+                || !canRevive(reviver, reviverId, targetId)) {
+            return true;
+        }
+        if (target.distanceToSqr(reviver) > 16.0D) {
+            reviver.displayClientMessage(Component.literal("§c距离太远"), true);
+            return true;
+        }
+        long now = server.getTickCount();
+        if (!targetId.equals(revivingTarget.get(reviverId))) {
+            revivingTarget.put(reviverId, targetId);
+            revivingStarted.put(reviverId, now);
+            revivingDuration.put(reviverId, SupplyRules.reviveDuration(reviveDurationTicks, true));
+            reviver.displayClientMessage(
+                    Component.literal("§a正在救援 " + target.getGameProfile().getName() + "..."), true);
+        }
+        revivingHeartbeat.put(reviverId, now);
+        return true;
+    }
+
+    /** 在玩家视线前方部署一个补给物。 */
+    public boolean handleDeployGadget(ServerPlayer player, DeployableKind kind, ItemStack display) {
+        UUID id = player.getUUID();
+        if (ended || !factionOf.containsKey(id) || downedUntil.containsKey(id)) {
+            return false;
+        }
+        deployables.deploy(level, player, kind, display, server.getTickCount());
+        return true;
+    }
+
+    /**
+     * 把己方补给物下发给同阵营玩家，驱动地面提示圆。
+     *
+     * <p>列表为空时只再发一次"清空"包便停发，而不是每个 HUD 周期都发一个空列表——绝大多数时间
+     * 场上没有补给物，持续广播空包纯属浪费带宽。
+     */
+    private void broadcastDeployables() {
+        long now = server.getTickCount();
+        boolean empty = deployables.isEmpty();
+        if (empty && !deployablesWereSent) {
+            return;
+        }
+        deployablesWereSent = !empty;
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p != null) {
+                BattlefieldNetwork.sendDeployables(p, deployables.snapshotFor(now, owner -> sameFaction(owner, id)));
             }
         }
     }
@@ -1802,6 +1925,7 @@ public final class ConquestMatch {
         revivingTarget.remove(reviverId);
         boolean wasReviving = revivingStarted.remove(reviverId) != null;
         revivingHeartbeat.remove(reviverId);
+        revivingDuration.remove(reviverId);
         if (!wasReviving) {
             return;
         }
@@ -1838,9 +1962,7 @@ public final class ConquestMatch {
         if (!downedUntil.containsKey(targetId)) {
             return;
         }
-        // 救援限<b>同小队</b>：同阵营但不同小队不能互救。小队是战地里最小的协作单位，
-        // 允许全阵营互救会让"跟着小队走"失去意义，倒地者也无法预期谁会来扶。
-        if (!squadManager.isSameSquad(reviverId, targetId)) {
+        if (!canRevive(reviver, reviverId, targetId)) {
             return;
         }
         if (target.distanceToSqr(reviver) > 16.0D || !isInFrontOf(reviver, target, REVIVE_VIEW_DOT)) {
@@ -1851,10 +1973,12 @@ public final class ConquestMatch {
         if (!revivingStarted.containsKey(reviverId)) {
             revivingTarget.put(reviverId, targetId);
             revivingStarted.put(reviverId, now);
+            revivingDuration.put(reviverId, SupplyRules.reviveDuration(reviveDurationTicks, holdsSyringe(reviver)));
             reviver.displayClientMessage(Component.literal("§a正在救援 " + target.getGameProfile().getName() + "..."), true);
         } else if (!targetId.equals(revivingTarget.get(reviverId))) {
             revivingTarget.put(reviverId, targetId);
             revivingStarted.put(reviverId, now);
+            revivingDuration.put(reviverId, SupplyRules.reviveDuration(reviveDurationTicks, holdsSyringe(reviver)));
         }
     }
 
@@ -1973,10 +2097,15 @@ public final class ConquestMatch {
         if (viewerFaction == null) {
             return List.of();
         }
+        ServerPlayer viewer = player(viewerId);
+        if (viewer == null) {
+            return List.of();
+        }
         List<DownedMateDto> list = new ArrayList<>();
         for (Map.Entry<UUID, Long> e : downedUntil.entrySet()) {
             Faction f = factionOf.get(e.getKey());
-            if (f != viewerFaction) {
+            // 与倒地高亮同一判据：非支援兵且未持医疗针者，只看得到本小队的倒地成员。
+            if (f != viewerFaction || !canRevive(viewer, viewerId, e.getKey())) {
                 continue;
             }
             ServerPlayer p = player(e.getKey());
@@ -1995,7 +2124,7 @@ public final class ConquestMatch {
             return 0;
         }
         long elapsed = server.getTickCount() - started;
-        return (int) Math.min(100, Math.round((double) elapsed / reviveDurationTicks * 100.0));
+        return (int) Math.min(100, Math.round((double) elapsed / reviveDurationOf(reviverId) * 100.0));
     }
 
     @Nullable

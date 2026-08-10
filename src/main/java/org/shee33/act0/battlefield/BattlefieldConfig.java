@@ -40,7 +40,7 @@ public final class BattlefieldConfig {
                 .comment("Tick interval between capture progress updates (10 = 0.5s)")
                 .defineInRange("captureIntervalTicks", 10, 1, 100);
         SQUAD_SIZE = builder
-                .comment("Maximum players per squad")
+                .comment("Maximum players per squad (hard-capped at 4 by SquadManager.MAX_SQUAD_SIZE)")
                 .defineInRange("squadSize", 4, 1, 16);
         START_COUNTDOWN_TICKS = builder
                 .comment("Ticks before match starts after begin() (100 = 5 seconds)")

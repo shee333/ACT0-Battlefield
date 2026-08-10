@@ -2,6 +2,8 @@ package org.shee33.act0.battlefield.match;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import org.shee33.act0.battlefield.deployable.DeployableKind;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -756,6 +758,16 @@ public final class ConquestManager {
         if (match != null) {
             match.handleDownedAction(player, action);
         }
+    }
+
+    public boolean handleDeployGadget(ServerPlayer player, DeployableKind kind, ItemStack display) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        return match != null && match.handleDeployGadget(player, kind, display);
+    }
+
+    public boolean handleSyringeRevive(ServerPlayer reviver, ServerPlayer target) {
+        ConquestMatch match = activeContaining(reviver.getUUID());
+        return match != null && match.handleSyringeRevive(reviver, target);
     }
 
     public void handleReviveHeartbeat(ServerPlayer reviver, int targetEntityId, boolean active) {
