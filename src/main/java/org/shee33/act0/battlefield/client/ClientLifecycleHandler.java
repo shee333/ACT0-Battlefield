@@ -38,6 +38,7 @@ public final class ClientLifecycleHandler {
         ClientDeployStatus.clear();
         ClientDeployLoadout.clear();
         ClientDeployables.clear();
+        ClientTabFocus.reset();
         ClientSquadSpectate.clear();
         BattlefieldClientInput.reset();
     }

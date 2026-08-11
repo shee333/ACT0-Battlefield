@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -57,9 +58,7 @@ public final class BattlefieldHudOverlay {
             return;
         }
 
-        renderTopHud(gg, font, hud);
-        renderCaptureFocus(gg, font, hud);
-        renderCapturePointBanner(gg, font, hud);
+        renderTopHudGroup(gg, font, hud);
         renderKillFeed(gg, font, hud.myFaction());
         renderReviveProgress(gg, font, hud);
         renderDownedMates(gg, font, hud);
@@ -200,6 +199,36 @@ public final class BattlefieldHudOverlay {
     private static int withAlpha(int color, float alpha) {
         int a = Math.max(0, Math.min(255, Math.round(255 * alpha)));
         return (color & 0x00FFFFFF) | (a << 24);
+    }
+
+    /**
+     * 顶部票数条 + 据点图标行 + 据点特写/横幅，作为一组整体随 TAB 呼出淡出、松开淡入。
+     *
+     * <p>它们与 TAB 战绩面板抢同一片屏幕区域。把 TAB 画在更上层并不能解决问题——两层信息叠在
+     * 一起谁都读不清；让下层退场才是可读的解法。整组一起淡出而不是逐个处理，是因为票数与据点
+     * 状态在 TAB 面板里本来就有（票数在标题下方直接显示），淡出期间没有信息丢失。
+     *
+     * <p>用 {@code setShaderColor} 的全局颜色调制统一乘 alpha，而不是把透明度逐个塞进几十处
+     * 颜色常量。必须在恢复调制前 {@link GuiGraphics#flush()}：文字与图元是批处理的，若先恢复
+     * 颜色再由外部触发 flush，这一组就会以原色画出，淡出完全失效。
+     */
+    private static void renderTopHudGroup(GuiGraphics gg, Font font, BattleHudDto hud) {
+        float dim = ClientTabFocus.dim();
+        if (dim >= 0.999f) {
+            return;
+        }
+        boolean fading = dim > 0.001f;
+        if (fading) {
+            RenderSystem.enableBlend();
+            RenderSystem.setShaderColor(1f, 1f, 1f, 1f - dim);
+        }
+        renderTopHud(gg, font, hud);
+        renderCaptureFocus(gg, font, hud);
+        renderCapturePointBanner(gg, font, hud);
+        if (fading) {
+            gg.flush();
+            RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        }
     }
 
     private static void renderTopHud(GuiGraphics gg, Font font, BattleHudDto hud) {

@@ -49,9 +49,16 @@ public final class BattlefieldTabOverlay {
         GuiGraphics gg = event.getGuiGraphics();
         Font font = mc.font;
 
+        // 压暗一层：背景的高斯模糊由 HudBlurEffect 在 HUD 绘制前就地完成，这里只补一层随淡入
+        // 推进的暗幕。模糊本身是开/关的二值效果，靠这层暗幕的渐变把切换过程接圆滑。
+        int scrimAlpha = (int) (ClientTabFocus.dim() * 0x66);
+        if (scrimAlpha > 0) {
+            gg.fill(0, 0, gg.guiWidth(), gg.guiHeight(), (scrimAlpha << 24) | 0x05070A);
+        }
+
         int w = Math.min(520, gg.guiWidth() - 40);
         int x = (gg.guiWidth() - w) / 2;
-        int y = 52; // 下移避免遮挡据点和进度条
+        int y = 72; // 让开顶部票数条与据点图标行；那一片在 TAB 呼出时会淡出，但仍留出安全间距
         int colGap = 8;
         int colW = (w - colGap) / 2;
         int rows = Math.max(tab.alpha().size(), tab.bravo().size());

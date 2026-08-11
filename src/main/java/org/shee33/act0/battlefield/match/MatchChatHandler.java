@@ -5,6 +5,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import org.shee33.act0.battlefield.core.ChatMessageText;
 import org.shee33.act0.battlefield.core.Faction;
 
 import java.util.UUID;
@@ -39,7 +40,7 @@ public final class MatchChatHandler {
     public void onServerChat(ServerChatEvent event) {
         ServerPlayer sender = event.getPlayer();
         UUID senderId = sender.getUUID();
-        String messageText = messageText(event);
+        String messageText = messageText(event, sender.getGameProfile().getName());
 
         ConquestMatch conquest = conquestManager.activeContaining(senderId);
         if (conquest != null) {
@@ -58,20 +59,23 @@ public final class MatchChatHandler {
     /**
      * 提取玩家实际打的消息正文。
      *
-     * <p>不用 {@link ServerChatEvent#getRawText()}：其值来自 Forge 内部
-     * {@code ForgeHooks.getRawText(Component)}，该方法仅在消息内容是裸的
-     * {@code LiteralContents}（单层纯文本）时才返回文本，一旦装饰后的 Component
-     * 被包成别的结构（比如其他同样监听聊天装饰链路的模组把正文放进了 sibling，
-     * 或未来 MC/Forge 版本改变了装饰产物的结构），就会静默退化为空字符串——
-     * 这与用户反馈的"看不到消息正文"完全吻合。
+     * <p>以 {@link ServerChatEvent#getRawText()} 为准。此前这里用的是
+     * {@link ServerChatEvent#getMessage()}，理由写的是"rawText 来自
+     * {@code ForgeHooks.getRawText(Component)}，只在裸 LiteralContents 时才有值"——
+     * 那个说法在 Forge 1.20.1（47.4.10 核对过字节码）上是错的：{@code rawText} 就是构造
+     * {@code ServerChatEvent} 时直接传入的 {@code String}，即 {@code signedContent()}，
+     * 永远是玩家键入的原文。
      *
-     * <p>改用 {@link ServerChatEvent#getMessage()}（即将被发送给客户端的最终
-     * Component，取消事件后不会真正发出）配合 {@link Component#getString()}：
-     * 后者会递归访问 contents 以及全部 siblings，无论正文以什么结构挂在
-     * Component 树上都能拿到完整文本，比 rawText 的单层 literal 判断更稳健。
+     * <p>而 {@code getMessage()} 是 {@code decoratedContent()}，等于
+     * {@code unsignedContent != null ? unsignedContent : literal(signedContent())}；
+     * {@code unsignedContent} 正是 {@code ChatDecorator} 的产物，装了聊天格式化的服务端
+     * 会把 {@code <Name> } 一起塞进来。拿它当正文，就会拼出"一个染色名 + 一个原版无色名"
+     * 的重复效果——这正是被反馈的 bug。
+     *
+     * <p>判定与剥离规则见 {@link ChatMessageText}（MC-free，带单测）。
      */
-    private static String messageText(ServerChatEvent event) {
-        return event.getMessage().getString();
+    private static String messageText(ServerChatEvent event, String senderName) {
+        return ChatMessageText.bodyOf(event.getRawText(), event.getMessage().getString(), senderName);
     }
 
     private void broadcast(ServerPlayer sender, String messageText, Predicate<UUID> isParticipant,
