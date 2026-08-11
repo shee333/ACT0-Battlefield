@@ -637,6 +637,11 @@ public final class BreakthroughManager {
         return match != null && match.handleDeployGadget(player, kind, display);
     }
 
+    public boolean handleSquadAction(ServerPlayer player, int kind, int targetSquadId) {
+        BreakthroughMatch match = activeContaining(player.getUUID());
+        return match != null && match.handleSquadAction(player, kind, targetSquadId);
+    }
+
     public boolean handleSyringeRevive(ServerPlayer reviver, ServerPlayer target) {
         BreakthroughMatch match = activeContaining(reviver.getUUID());
         return match != null && match.handleSyringeRevive(reviver, target);

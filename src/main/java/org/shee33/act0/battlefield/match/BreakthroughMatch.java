@@ -29,6 +29,9 @@ import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.network.SquadRosterDto;
+import org.shee33.act0.battlefield.network.SquadActionPacket;
+import org.shee33.act0.battlefield.core.SquadJoinRules;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
 import org.shee33.act0.battlefield.network.DeployableDto;
 import org.shee33.act0.battlefield.deployable.DeployableService;
@@ -138,6 +141,7 @@ public final class BreakthroughMatch {
     private final Map<UUID, Integer> revivingDuration = new LinkedHashMap<>();
     private final DeployableService deployables = new DeployableService();
     private boolean deployablesWereSent = false;
+    private final Map<UUID, Integer> lastRosterHash = new LinkedHashMap<>();
     /** 救援朝向判定阈值：比 IFF 远距离标敌（{@link #enemyMarkViewDot}）更宽松，救援本就要求近距离
      * （≤4 格），只需大致朝向目标即可，不必是精确瞄准。 */
     private static final double REVIVE_VIEW_DOT = 0.5D;
@@ -387,6 +391,7 @@ public final class BreakthroughMatch {
 
     private void broadcastHud() {
         broadcastDeployables();
+        broadcastSquadRosters();
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
             if (p == null) {
@@ -1365,6 +1370,102 @@ public final class BreakthroughMatch {
                 BattlefieldNetwork.sendDeployables(p, deployables.snapshotFor(now, owner -> sameFaction(owner, id)));
             }
         }
+    }
+
+    /**
+     * 按玩家哈希增量下发小队名册。
+     *
+     * <p>不在每个变更点逐一调用，而是挂在 HUD 周期上按内容哈希去重——名册除了加入/离开/锁定，
+     * 还会随成员倒地状态变化，逐点触发几乎必然漏掉其中一条。
+     */
+    private void broadcastSquadRosters() {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null) {
+                continue;
+            }
+            SquadRosterDto roster = squadRosterFor(id);
+            int hash = roster.hashCode();
+            Integer prev = lastRosterHash.get(id);
+            if (prev == null || prev != hash) {
+                lastRosterHash.put(id, hash);
+                BattlefieldNetwork.sendSquadRoster(p, roster);
+            }
+        }
+    }
+
+    /** 本阵营小队名册（暂停菜单小队管理页数据源）。只含本阵营——敌方编制是战术情报。 */
+    public SquadRosterDto squadRosterFor(UUID viewerId) {
+        Faction f = factionOf.get(viewerId);
+        if (f == null) {
+            return SquadRosterDto.empty();
+        }
+        List<SquadRosterDto.Squad> out = new ArrayList<>();
+        for (int squadId : squadManager.squadIdsOf(f)) {
+            LinkedHashSet<UUID> members = squadManager.getSquads().get(squadId);
+            if (members == null) {
+                continue;
+            }
+            List<SquadRosterDto.Member> list = new ArrayList<>();
+            for (UUID memberId : members) {
+                ServerPlayer p = player(memberId);
+                if (p == null) {
+                    continue;
+                }
+                list.add(new SquadRosterDto.Member(p.getGameProfile().getName(), memberId.equals(viewerId),
+                        squadManager.isSquadLeader(memberId), downedUntil.containsKey(memberId)));
+            }
+            out.add(new SquadRosterDto.Squad(squadId, squadManager.isLocked(squadId), list));
+        }
+        return new SquadRosterDto(squadManager.squadIdOf(viewerId), out);
+    }
+
+    /**
+     * 处理暂停菜单的小队操作。服务端完整复核权限与准入，不信任客户端上报。
+     *
+     * @return 该玩家是否属于本场对局（{@code false} 时交由另一模式的管理器处理）
+     */
+    public boolean handleSquadAction(ServerPlayer player, int kind, int targetSquadId) {
+        UUID id = player.getUUID();
+        if (ended || !factionOf.containsKey(id)) {
+            return false;
+        }
+        switch (kind) {
+            case SquadActionPacket.KIND_TOGGLE_LOCK -> {
+                if (!SquadJoinRules.canToggleLock(squadManager.isSquadLeader(id), squadManager.squadIdOf(id))) {
+                    player.displayClientMessage(Component.literal("§c只有队长可以锁定小队"), true);
+                    return true;
+                }
+                boolean locked = squadManager.toggleLock(id);
+                player.displayClientMessage(Component.literal(locked ? "§e小队已锁定" : "§a小队已解锁"), true);
+            }
+            case SquadActionPacket.KIND_LEAVE -> {
+                if (!squadManager.leaveSquad(id)) {
+                    player.displayClientMessage(Component.literal("§7你当前未加入任何小队"), true);
+                    return true;
+                }
+                player.displayClientMessage(Component.literal("§a已离开小队"), true);
+            }
+            case SquadActionPacket.KIND_JOIN -> {
+                SquadJoinRules.Result r = squadManager.joinSquad(id, targetSquadId);
+                if (r != SquadJoinRules.Result.OK) {
+                    player.displayClientMessage(Component.literal(switch (r) {
+                        case FULL -> "§c该小队已满";
+                        case LOCKED -> "§c该小队已锁定";
+                        case ALREADY_IN -> "§7你已在该小队中";
+                        default -> "§c无法加入该小队";
+                    }), true);
+                    return true;
+                }
+                player.displayClientMessage(Component.literal("§a已加入小队 " + targetSquadId), true);
+            }
+            default -> {
+                return true;
+            }
+        }
+        setupNameTagTeams();
+        broadcastHud();
+        return true;
     }
 
     /**

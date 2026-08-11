@@ -8,6 +8,9 @@ import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import org.shee33.act0.battlefield.core.SquadJoinRules;
+import java.util.Collections;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,11 +35,22 @@ public final class SquadManager {
      */
     public static final int MAX_SQUAD_SIZE = 4;
 
+    /**
+     * 小队编号按阵营分段：ALPHA 从 1 起、BRAVO 从 101 起。
+     *
+     * <p>分段的副作用是"小队号本身就编码了阵营"，{@link #isSameSquad} 因此天然不会跨阵营命中。
+     * 提成常量是为了让 {@link #factionOfSquadId} 与 {@link #buildSquads} 用的是同一个分界点——
+     * 两处各写一个 101 的话，改了一处就会让阵营判定与实际分队悄悄对不上。
+     */
+    public static final int ALPHA_SQUAD_BASE = 1;
+    public static final int BRAVO_SQUAD_BASE = 101;
+
     private final int squadSize;
     private final Map<UUID, Faction> factionOf;
     private final Map<UUID, Integer> squadOf = new LinkedHashMap<>();
     private final Map<Integer, LinkedHashSet<UUID>> squads = new LinkedHashMap<>();
     private final Map<Integer, UUID> squadLeaders = new LinkedHashMap<>();
+    private final Set<Integer> lockedSquads = new LinkedHashSet<>();
     private final Map<Integer, Map<UUID, Long>> orderRequests = new LinkedHashMap<>();
     private final Map<Integer, SquadOrder> activeOrders = new LinkedHashMap<>();
 
@@ -93,8 +107,8 @@ public final class SquadManager {
     public void buildSquads() {
         squadOf.clear();
         squads.clear();
-        int alphaSquad = 1;
-        int bravoSquad = 101;
+        int alphaSquad = ALPHA_SQUAD_BASE;
+        int bravoSquad = BRAVO_SQUAD_BASE;
         int alphaCount = 0;
         int bravoCount = 0;
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
@@ -209,6 +223,7 @@ public final class SquadManager {
         if (members == null || members.isEmpty()) {
             squads.remove(squadId);
             squadLeaders.remove(squadId);
+            lockedSquads.remove(squadId);
             orderRequests.remove(squadId);
             activeOrders.remove(squadId);
             return;
@@ -237,6 +252,90 @@ public final class SquadManager {
     }
 
     // ---- Squad leader ----
+
+    /** 小队号所属阵营；号段之外返回 {@code null}。 */
+    @Nullable
+    public Faction factionOfSquadId(int squadId) {
+        if (squadId >= BRAVO_SQUAD_BASE) {
+            return Faction.BRAVO;
+        }
+        return squadId >= ALPHA_SQUAD_BASE ? Faction.ALPHA : null;
+    }
+
+    /** 该小队是否已被队长锁定（锁定后其他玩家无法主动加入）。 */
+    public boolean isLocked(int squadId) {
+        return lockedSquads.contains(squadId);
+    }
+
+    /**
+     * 切换本队锁定状态；仅队长可操作。
+     *
+     * @return 操作后的锁定状态；无权操作时返回当前状态且不变更
+     */
+    public boolean toggleLock(UUID playerId) {
+        int squadId = squadIdOf(playerId);
+        if (!SquadJoinRules.canToggleLock(isSquadLeader(playerId), squadId)) {
+            return isLocked(squadId);
+        }
+        if (lockedSquads.contains(squadId)) {
+            lockedSquads.remove(squadId);
+            return false;
+        }
+        lockedSquads.add(squadId);
+        return true;
+    }
+
+    /**
+     * 玩家主动离队，之后处于"未加入任何小队"状态。
+     *
+     * <p>刻意不自动补进别的小队：规格文档的未加入态是一个玩家可以停留的合法状态（缩略卡显示
+     * 空位、子页面显示提示文案）。自动补位会让"离开小队"这个操作看起来根本没生效。
+     *
+     * @return 是否确实离开了小队
+     */
+    public boolean leaveSquad(UUID playerId) {
+        if (!SquadJoinRules.canLeave(squadIdOf(playerId))) {
+            return false;
+        }
+        removeMember(playerId);
+        return true;
+    }
+
+    /**
+     * 玩家主动加入指定小队。准入判据见 {@link SquadJoinRules#canJoin}。
+     *
+     * @return 判定结果；{@link SquadJoinRules.Result#OK} 表示已完成搬迁
+     */
+    public SquadJoinRules.Result joinSquad(UUID playerId, int targetSquadId) {
+        Faction mine = factionOf.get(playerId);
+        Faction targetFaction = factionOfSquadId(targetSquadId);
+        LinkedHashSet<UUID> target = squads.get(targetSquadId);
+        SquadJoinRules.Result result = SquadJoinRules.canJoin(squadIdOf(playerId), targetSquadId,
+                target == null ? 0 : target.size(), isLocked(targetSquadId),
+                mine != null && mine == targetFaction);
+        if (result != SquadJoinRules.Result.OK) {
+            return result;
+        }
+        // 先退旧队再进新队：removeMember 会顺带处理"队长走了要升新队长"和"空队要清理"，
+        // 自己手写搬迁很容易漏掉其中一条。
+        removeMember(playerId);
+        squadOf.put(playerId, targetSquadId);
+        squads.computeIfAbsent(targetSquadId, ignored -> new LinkedHashSet<>()).add(playerId);
+        squadLeaders.putIfAbsent(targetSquadId, playerId);
+        return SquadJoinRules.Result.OK;
+    }
+
+    /** 某阵营当前存在的小队号，升序。 */
+    public List<Integer> squadIdsOf(Faction faction) {
+        List<Integer> out = new ArrayList<>();
+        for (Integer id : squads.keySet()) {
+            if (factionOfSquadId(id) == faction) {
+                out.add(id);
+            }
+        }
+        Collections.sort(out);
+        return out;
+    }
 
     public boolean isSquadLeader(UUID playerId) {
         Integer squadId = squadOf.get(playerId);

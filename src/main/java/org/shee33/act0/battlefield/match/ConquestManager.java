@@ -765,6 +765,11 @@ public final class ConquestManager {
         return match != null && match.handleDeployGadget(player, kind, display);
     }
 
+    public boolean handleSquadAction(ServerPlayer player, int kind, int targetSquadId) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        return match != null && match.handleSquadAction(player, kind, targetSquadId);
+    }
+
     public boolean handleSyringeRevive(ServerPlayer reviver, ServerPlayer target) {
         ConquestMatch match = activeContaining(reviver.getUUID());
         return match != null && match.handleSyringeRevive(reviver, target);
