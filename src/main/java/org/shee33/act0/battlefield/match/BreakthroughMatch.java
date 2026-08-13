@@ -1144,7 +1144,7 @@ public final class BreakthroughMatch {
                 double h = Math.sqrt(dx * dx + dz * dz);
                 float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
                 float pitch = (float) (-Math.toDegrees(Math.atan2(dy, h)));
-                p.connection.teleport(p.getX(), p.getY(), p.getZ(), yaw, pitch);
+                ConnectionSafeTeleport.teleport(p, p.getX(), p.getY(), p.getZ(), yaw, pitch);
             }
         }
         String killerName = killerId != null ? nameOf(killerId) : "未知";
@@ -1172,7 +1172,7 @@ public final class BreakthroughMatch {
             }
             double lastGoodY = downedLastGoodY.getOrDefault(id, p.getY());
             if (p.getY() - lastGoodY > DOWNED_MAX_Y_RISE_PER_TICK) {
-                p.connection.teleport(p.getX(), lastGoodY, p.getZ(), p.getYRot(), p.getXRot());
+                ConnectionSafeTeleport.teleport(p, p.getX(), lastGoodY, p.getZ(), p.getYRot(), p.getXRot());
                 Vec3 v = p.getDeltaMovement();
                 if (v.y > 0.0D) {
                     p.setDeltaMovement(v.x, 0.0D, v.z);

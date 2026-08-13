@@ -57,6 +57,8 @@ public final class Act0Battlefield {
 
         MinecraftForge.EVENT_BUS.register(MANAGER);
         MinecraftForge.EVENT_BUS.register(BREAKTHROUGH_MANAGER);
+        MinecraftForge.EVENT_BUS.register(
+                org.shee33.act0.battlefield.bot.mc.BotManager.INSTANCE);
         MinecraftForge.EVENT_BUS.register(BattlefieldEntranceHolograms.INSTANCE);
         MinecraftForge.EVENT_BUS.register(new MatchChatHandler(MANAGER, BREAKTHROUGH_MANAGER));
 

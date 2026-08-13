@@ -28,6 +28,7 @@ import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.MatchPhase;
 import org.shee33.act0.battlefield.network.SquadRosterDto;
 import org.shee33.act0.battlefield.network.SquadActionPacket;
 import org.shee33.act0.battlefield.core.SquadJoinRules;
@@ -381,29 +382,95 @@ public final class ConquestMatch {
         }
     }
 
+    /**
+     * 一个据点区域内双方的有效占领人数。
+     *
+     * @param alpha ALPHA 方在区域内、可参与占领的人数
+     * @param bravo BRAVO 方同上
+     */
+    public record ZoneOccupancy(int alpha, int bravo) {
+
+        public int of(Faction faction) {
+            return faction == Faction.ALPHA ? alpha : bravo;
+        }
+
+        public boolean contested() {
+            return alpha > 0 && bravo > 0;
+        }
+    }
+
+    /**
+     * 统计某区域内双方的有效占领人数。<b>纯查询，无副作用。</b>
+     *
+     * <p>这段筛选条件此前在 {@code resolveCaptureAndBleed} 与 {@code focusFor} 里各抄了一遍。
+     * 提取的直接动因是 AI 需要第三次用到它——占领策略要按"点内几打几"评估该打哪个点，
+     * 而让适配层再抄一遍等于给这条规则埋下三处独立漂移的入口。
+     *
+     * <p>观察者、阵亡者、倒地者与不在本对局维度的人一律不计——倒地的人不能占点，
+     * 这与 {@code core/PlayerMatchState#canCapture} 表达的是同一条规则。
+     */
+    public ZoneOccupancy occupancyOf(AABB zone) {
+        int alpha = 0;
+        int bravo = 0;
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            ServerPlayer p = holdingPlayer(e.getKey());
+            if (p == null || !zone.contains(p.getX(), p.getY(), p.getZ())) {
+                continue;
+            }
+            if (e.getValue() == Faction.ALPHA) {
+                alpha++;
+            } else {
+                bravo++;
+            }
+        }
+        return new ZoneOccupancy(alpha, bravo);
+    }
+
+    /**
+     * 该玩家当前能参与占领时返回其实体，否则返回 {@code null}。
+     *
+     * <p>返回实体而不是布尔，是为了让调用方一次查表就同时拿到"能不能占"与"人在哪"
+     * ——两者都要用，分成两次查会在每个据点每次结算上多跑一遍玩家列表。
+     */
+    @Nullable
+    private ServerPlayer holdingPlayer(UUID id) {
+        ServerPlayer p = player(id);
+        if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
+                || downedUntil.containsKey(id)) {
+            return null;
+        }
+        return p;
+    }
+
+    /**
+     * 给区域内属于 {@code owner} 方的玩家累计"守点时长"统计。
+     *
+     * <p>刻意与 {@link #occupancyOf} 分开：占领人数是每 tick 被多处读取的查询，而守点时长是
+     * 只该在结算时发生一次的写入。合在一处会让任何新的读取方顺带刷高统计。
+     */
+    private void creditHoldTime(AABB zone, @Nullable Faction owner) {
+        if (owner == null) {
+            return;
+        }
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            if (e.getValue() != owner) {
+                continue;
+            }
+            ServerPlayer p = holdingPlayer(e.getKey());
+            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+                captureTime.merge(e.getKey(), captureInterval, Integer::sum);
+            }
+        }
+    }
+
     private void resolveCaptureAndBleed() {
         for (int i = 0; i < points.size(); i++) {
             CapturePoint point = points.get(i);
             AABB zone = defs.get(i).zone();
-            int alpha = 0;
-            int bravo = 0;
-            for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
-                ServerPlayer p = player(e.getKey());
-                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
-                        || downedUntil.containsKey(e.getKey())) {
-                    continue;
-                }
-                if (zone.contains(p.getX(), p.getY(), p.getZ())) {
-                    if (e.getValue() == Faction.ALPHA) {
-                        alpha++;
-                    } else {
-                        bravo++;
-                    }
-                    if (point.owner() == e.getValue()) {
-                        captureTime.merge(e.getKey(), captureInterval, Integer::sum);
-                    }
-                }
-            }
+            ZoneOccupancy occupancy = occupancyOf(zone);
+            int alpha = occupancy.alpha();
+            int bravo = occupancy.bravo();
+            creditHoldTime(zone, point.owner());
             // Comeback boost: when a faction has <70% of its starting tickets, its in-zone count
             // counts as 1.5x for CapturePoint.tick, letting the trailing side flip points faster.
             double maxTickets = Math.max(1.0, rules.startingTickets());
@@ -810,6 +877,7 @@ public final class ConquestMatch {
         if (ended) {
             return;
         }
+        org.shee33.act0.battlefield.bot.mc.BotManager.INSTANCE.onMatchEnded(level.dimension());
         this.ended = true;
         this.winner = w;
         // 先解散阵营名牌 Scoreboard 队伍：一旦 ended=true，管理器下一 tick 就会把这场对局从
@@ -1511,22 +1579,9 @@ public final class ConquestMatch {
                 continue;
             }
             CapturePoint point = points.get(i);
-            int alpha = 0;
-            int bravo = 0;
-            for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
-                ServerPlayer p = player(e.getKey());
-                if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()
-                        || downedUntil.containsKey(e.getKey())) {
-                    continue;
-                }
-                if (def.zone().contains(p.getX(), p.getY(), p.getZ())) {
-                    if (e.getValue() == Faction.ALPHA) {
-                        alpha++;
-                    } else {
-                        bravo++;
-                    }
-                }
-            }
+            ZoneOccupancy occupancy = occupancyOf(def.zone());
+            int alpha = occupancy.alpha();
+            int bravo = occupancy.bravo();
             boolean contested = alpha > 0 && bravo > 0;
             int progress = captureProgressFor(point, viewerFaction);
             if (contested) {
@@ -1677,7 +1732,7 @@ public final class ConquestMatch {
                 double h = Math.sqrt(dx * dx + dz * dz);
                 float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
                 float pitch = (float) (-Math.toDegrees(Math.atan2(dy, h)));
-                p.connection.teleport(p.getX(), p.getY(), p.getZ(), yaw, pitch);
+                ConnectionSafeTeleport.teleport(p, p.getX(), p.getY(), p.getZ(), yaw, pitch);
             }
         }
         String killerName = killerId != null ? nameOf(killerId) : "未知";
@@ -1714,7 +1769,7 @@ public final class ConquestMatch {
             }
             double lastGoodY = downedLastGoodY.getOrDefault(id, p.getY());
             if (p.getY() - lastGoodY > DOWNED_MAX_Y_RISE_PER_TICK) {
-                p.connection.teleport(p.getX(), lastGoodY, p.getZ(), p.getYRot(), p.getXRot());
+                ConnectionSafeTeleport.teleport(p, p.getX(), lastGoodY, p.getZ(), p.getYRot(), p.getXRot());
                 Vec3 v = p.getDeltaMovement();
                 if (v.y > 0.0D) {
                     p.setDeltaMovement(v.x, 0.0D, v.z);
@@ -2501,5 +2556,86 @@ public final class ConquestMatch {
 
     public int deathsOf(UUID id) {
         return killTracker.deathsOf(id);
+    }
+
+    // ---- AI 只读视图 ----
+    // 以下访问器全部是纯读取，不改变任何既有行为。存在的理由是 AI 士兵需要读取据点态势、
+    // 阵营名册与小队指令，而这些状态原本只以网络 DTO 的形式离开本类——让适配层去解析 HUD 包
+    // 等于把玩法规则复制一份到表现层。
+
+    /**
+     * 单个据点的实时快照：归属、争夺进度与几何。<b>不含点内人数</b>。
+     *
+     * <p>人数刻意不放进来：它需要遍历全体玩家，而本视图会被每个 bot 每 tick 读取。人数请单独调
+     * {@link #occupancyOf(AABB)}，由调用方每 tick 统一算一次再分发给所有 bot。
+     *
+     * @param owner {@code null} 表示中立
+     * @param level 有符号争夺度，{@code +1} 为 ALPHA 满控、{@code -1} 为 BRAVO 满控
+     */
+    public record PointView(int pointId, String displayName, @Nullable Faction owner,
+                            double level, AABB zone) {
+
+        public Vec3 center() {
+            return zone.getCenter();
+        }
+    }
+
+    /** 全部据点的实时快照，顺序与地图定义一致。 */
+    public List<PointView> pointViews() {
+        List<PointView> views = new ArrayList<>(points.size());
+        for (int i = 0; i < points.size(); i++) {
+            CapturePoint point = points.get(i);
+            ControlPointDef def = defs.get(i);
+            views.add(new PointView(def.pointId(), point.displayName(), point.owner(),
+                    point.level(), def.zone()));
+        }
+        return views;
+    }
+
+    /** 某阵营的全部参战者（含倒地与待部署者）；返回不可变副本。 */
+    public List<UUID> membersOf(Faction faction) {
+        List<UUID> out = new ArrayList<>();
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            if (e.getValue() == faction) {
+                out.add(e.getKey());
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * 小队管理器句柄。
+     *
+     * <p>{@link SquadManager} 自身的接口本就是公开的（成员集合、队长、
+     * {@link SquadManager.SquadOrder 进攻/防守指令}），此前只是实例私有导致包外拿不到。
+     * AI 需要它来做集火与"服从真人队长的指令"。
+     */
+    public SquadManager squads() {
+        return squadManager;
+    }
+
+    /** 本局规则参数，AI 用它估算占领耗时与票数流失速率。 */
+    public ConquestRules rules() {
+        return rules;
+    }
+
+    /**
+     * 当前比赛阶段，由既有的倒计时/结束标志<b>派生</b>而来。
+     *
+     * <p>{@code core/MatchPhase} 早已存在且有单测，但没有任何生产代码引用它。这里只是把它接成
+     * 一个读取器，不改动本类的状态管理——AI 必须能区分"还在倒计时"与"已经开打"，否则会在无法
+     * 交火的阶段就开始冲点。暂停状态另见 {@link #isPaused()}：{@code MatchPhase} 里没有对应项，
+     * 强行塞进去会改变这个已被测试锁定的枚举的语义。
+     */
+    public MatchPhase phase() {
+        if (ended) {
+            return MatchPhase.ENDED;
+        }
+        return startCountdownTicks > 0 ? MatchPhase.COUNTDOWN : MatchPhase.LIVE;
+    }
+
+    /** 开局倒计时剩余 tick；已开打返回 {@code 0}。 */
+    public int countdownTicksRemaining() {
+        return Math.max(0, startCountdownTicks);
     }
 }

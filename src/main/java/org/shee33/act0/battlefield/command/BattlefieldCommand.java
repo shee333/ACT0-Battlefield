@@ -18,6 +18,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.BattlefieldConfig;
+import org.shee33.act0.battlefield.bot.AimModel;
+import org.shee33.act0.battlefield.bot.mc.BotManager;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
@@ -30,7 +32,10 @@ import org.shee33.act0.battlefield.match.ConquestMatch;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.match.MapTemplateManager;
 
+import javax.annotation.Nullable;
+
 import java.util.List;
+import java.util.Locale;
 import java.io.IOException;
 
 /**
@@ -62,6 +67,7 @@ public final class BattlefieldCommand {
                         .executes(BattlefieldCommand::quickJoin)))
                 .then(Commands.literal("leave").executes(BattlefieldCommand::leave))
                 .then(Commands.literal("squad").executes(BattlefieldCommand::squadInfo))
+                .then(buildBotBranch())
                 .then(buildOrderBranch())
                 .then(Commands.literal("status").executes(BattlefieldCommand::status))
                 .then(buildHologramBranch())
@@ -892,6 +898,130 @@ public final class BattlefieldCommand {
             case "sub" -> match.subTickets(faction, amount);
         }
         feedback(c, "§a已修改 " + faction.coloredName() + " §a票数（当前：" + match.displayTickets(faction) + "）。");
+        return 1;
+    }
+
+    // ---------------- bot（AI 士兵） ----------------
+
+    /**
+     * {@code /battlefield bot ...}：对<b>进行中的对局</b>手动补入 AI 士兵。
+     *
+     * <p>刻意不做成"开局前配置席位"：大战场的对局是长时间连续进行的，管理员真正需要的是在人数
+     * 不够或一边被打崩时随时补人，而不是开局那一刻定好数量。
+     */
+    private static LiteralArgumentBuilder<CommandSourceStack> buildBotBranch() {
+        LiteralArgumentBuilder<CommandSourceStack> difficulty = Commands.literal("difficulty");
+        for (AimModel.Difficulty tier : AimModel.Difficulty.values()) {
+            String key = tier.name().toLowerCase(Locale.ROOT);
+            difficulty.then(Commands.literal(key)
+                    .executes(c -> botDifficultyAll(c, tier))
+                    .then(Commands.argument("name", StringArgumentType.word())
+                            .executes(c -> botDifficultyOne(c, tier))));
+        }
+        return Commands.literal("bot")
+                .requires(s -> s.hasPermission(2))
+                .then(Commands.literal("add")
+                        .executes(c -> botAdd(c, 1, null))
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 32))
+                                .executes(c -> botAdd(c, IntegerArgumentType.getInteger(c, "count"), null))
+                                .then(Commands.literal("alpha")
+                                        .executes(c -> botAdd(c, IntegerArgumentType.getInteger(c, "count"), Faction.ALPHA)))
+                                .then(Commands.literal("bravo")
+                                        .executes(c -> botAdd(c, IntegerArgumentType.getInteger(c, "count"), Faction.BRAVO)))))
+                .then(Commands.literal("remove")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(BattlefieldCommand::botRemove)))
+                .then(Commands.literal("clear").executes(BattlefieldCommand::botClear))
+                .then(Commands.literal("list").executes(BattlefieldCommand::botList))
+                .then(difficulty);
+    }
+
+    /**
+     * 定位要操作的对局：执行者自己所在的那一场优先，否则取服务器上唯一进行中的一场。
+     *
+     * <p>优先取执行者所在对局，是为了让管理员在多维度同时开局时不必额外指定——他站在哪一局里，
+     * 补的人就进哪一局。
+     */
+    @Nullable
+    private static ConquestMatch resolveMatch(CommandContext<CommandSourceStack> ctx) {
+        ServerPlayer player = ctx.getSource().getPlayer();
+        if (player != null) {
+            ConquestMatch mine = Act0Battlefield.manager().activeContaining(player.getUUID());
+            if (mine != null) {
+                return mine;
+            }
+        }
+        return Act0Battlefield.manager().active();
+    }
+
+    private static int botAdd(CommandContext<CommandSourceStack> ctx, int count,
+                              @Nullable Faction faction) {
+        ConquestMatch match = resolveMatch(ctx);
+        if (match == null) {
+            ctx.getSource().sendFailure(Component.literal("§c当前没有进行中的对局。"));
+            return 0;
+        }
+        // 未指定阵营时补给人少的一方——管理员补 bot 的动机通常就是人数不均。
+        Faction target = faction != null ? faction
+                : (match.memberCount(Faction.ALPHA) <= match.memberCount(Faction.BRAVO)
+                        ? Faction.ALPHA : Faction.BRAVO);
+        List<String> added = BotManager.INSTANCE.addToMatch(
+                ctx.getSource().getServer(), match, target, count);
+        if (added.isEmpty()) {
+            ctx.getSource().sendFailure(Component.literal(
+                    "§c未能加入任何 AI 士兵（该方基地未设置、名字用尽或对局已满）。"));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§a已向 " + target.coloredName()
+                + " §a补入 §e" + added.size() + " §a名 AI 士兵：§7" + String.join(", ", added)), true);
+        return added.size();
+    }
+
+    private static int botRemove(CommandContext<CommandSourceStack> ctx) {
+        String name = StringArgumentType.getString(ctx, "name");
+        if (!BotManager.INSTANCE.despawn(ctx.getSource().getServer(), name)) {
+            ctx.getSource().sendFailure(Component.literal("§c没有名为 " + name + " 的 AI 士兵。"));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal("§a已撤走 AI 士兵 §e" + name), true);
+        return 1;
+    }
+
+    private static int botClear(CommandContext<CommandSourceStack> ctx) {
+        int removed = BotManager.INSTANCE.despawnAll(ctx.getSource().getServer());
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§a已撤走 §e" + removed + " §a名 AI 士兵。"), true);
+        return removed;
+    }
+
+    private static int botList(CommandContext<CommandSourceStack> ctx) {
+        List<String> names = BotManager.INSTANCE.activeNames();
+        if (names.isEmpty()) {
+            ctx.getSource().sendSuccess(() -> Component.literal("§7当前没有 AI 士兵。"), false);
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§eAI 士兵（" + names.size() + "）：§f" + String.join(", ", names)), false);
+        return names.size();
+    }
+
+    private static int botDifficultyAll(CommandContext<CommandSourceStack> ctx,
+                                        AimModel.Difficulty tier) {
+        int n = BotManager.INSTANCE.setDifficultyForAll(tier);
+        ctx.getSource().sendSuccess(() -> Component.literal("§a已将 §e" + n
+                + " §a名 AI 士兵的难度设为 §e" + tier.displayName()), true);
+        return n;
+    }
+
+    private static int botDifficultyOne(CommandContext<CommandSourceStack> ctx,
+                                        AimModel.Difficulty tier) {
+        String name = StringArgumentType.getString(ctx, "name");
+        if (!BotManager.INSTANCE.setDifficulty(name, tier)) {
+            ctx.getSource().sendFailure(Component.literal("§c没有名为 " + name + " 的 AI 士兵。"));
+            return 0;
+        }
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "§a" + name + " §a难度 → §e" + tier.displayName()), true);
         return 1;
     }
 }

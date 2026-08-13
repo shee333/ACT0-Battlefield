@@ -660,7 +660,7 @@ public final class RedeployService {
             double z = Mth.lerp(t, pan.startZ(), pan.endZ());
             float yaw = pan.startYaw() + Mth.wrapDegrees(pan.endYaw() - pan.startYaw()) * t;
             float pitch = Mth.lerp(t, pan.startPitch(), pan.endPitch());
-            p.connection.teleport(x, y, z, yaw, pitch);
+            ConnectionSafeTeleport.teleport(p, x, y, z, yaw, pitch);
             p.setDeltaMovement(0.0, 0.0, 0.0);
         }
     }
@@ -673,6 +673,9 @@ public final class RedeployService {
     /** Snaps the player onto the resolved spawn and runs the original post-teleport deploy logic. */
     private void finishDeploy(ServerPlayer p, PanState pan) {
         UUID id = p.getUUID();
+        // AI 士兵落地即算新的一条命：不复位撤退迟滞，上一条命的残血状态会跟着新生命走，
+        // 满血落地的 bot 会先莫名后退几秒。传入真人 UUID 无副作用。
+        org.shee33.act0.battlefield.bot.mc.BotManager.INSTANCE.onRespawn(id);
         p.teleportTo(level, pan.endX(), pan.endY(), pan.endZ(), pan.endYaw(), pan.endPitch());
         p.setDeltaMovement(0.0, 0.0, 0.0);
         p.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
