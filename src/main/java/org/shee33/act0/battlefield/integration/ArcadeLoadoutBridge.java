@@ -160,12 +160,27 @@ public final class ArcadeLoadoutBridge {
 
             Class<?> storeClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeLoadoutStore");
             Object store = storeClass.getMethod("get", MinecraftServer.class).invoke(null, server);
-            Object loadout = storeClass.getMethod("getOrCreate", UUID.class, loadoutClass)
-                    .invoke(store, playerId, fallback);
-
             Class<?> unlocksClass = Class.forName("org.shee33.act0.arcade.storage.ArcadePlayerUnlocks");
             Object unlocksStore = unlocksClass.getMethod("get", MinecraftServer.class).invoke(null, server);
-            Object unlocked = unlocksClass.getMethod("unlocked", UUID.class).invoke(unlocksStore, playerId);
+
+            Object loadout;
+            Object unlocked;
+            // AI 士兵在 Arcade 侧既没有存档配装也没有解锁记录。走真人那条路只会拿到"仅含
+            // isDefault 武器"的兜底配装，而武器库默认不给任何武器打 isDefault
+            //（DefaultLoadoutCatalog.register 是空的，武器全靠管理员录入 JSON）——于是解析结果
+            // 全空，LoadoutApplier 先清空背包再一件不发，bot 空手上阵，此后它的每一次开火都
+            // 只能以 TaCZ 的 NOT_GUN 告终。护甲侧早已按同样的理由特判（见 applySharedApparel），
+            // 这里补上漏掉的另一半：目录全量 key 视作已解锁，配装按身份随机搭配。
+            Object aiLoadout = BotSpawner.isBot(player)
+                    ? botLoadout(registry, registryClass, loadoutClass, playerId) : null;
+            if (aiLoadout != null) {
+                loadout = aiLoadout;
+                unlocked = ((Map<String, ?>) registryClass.getMethod("all").invoke(registry)).keySet();
+            } else {
+                loadout = storeClass.getMethod("getOrCreate", UUID.class, loadoutClass)
+                        .invoke(store, playerId, fallback);
+                unlocked = unlocksClass.getMethod("unlocked", UUID.class).invoke(unlocksStore, playerId);
+            }
 
             Object fullRuleset = Enum.valueOf((Class<Enum>) rulesetClass.asSubclass(Enum.class), "FULL");
             Class<?> applierClass = Class.forName("org.shee33.act0.arcade.loadout.mc.LoadoutApplier");
@@ -181,6 +196,43 @@ public final class ArcadeLoadoutBridge {
             warnOnce("apply", e);
             return false;
         }
+    }
+
+    /**
+     * 为 AI 士兵逐槽随机抽一件装备，返回 Arcade 的 {@code Loadout} 实例。
+     *
+     * <p>与 {@link #randomApparelSelection} 同源：随机数按 bot 身份播种，因此同一个士兵的枪械
+     * 恒定且幂等——本模组每次部署都会重跑一遍配装发放，幂等意味着这些重跑不会让 bot 中途换枪。
+     *
+     * <p>抽取池取自 {@code availableItems(slot, 默认职业)}，<b>不再按 isDefault 过滤</b>：
+     * 这正是 bot 与真人的分野——真人靠解锁记录，bot 没有解锁记录，只能把整个武器库视作可用。
+     *
+     * @return 配装实例；武器库完全为空时返回 {@code null}，由调用方回落到真人那条路
+     */
+    @Nullable
+    private static Object botLoadout(Object registry, Class<?> registryClass, Class<?> loadoutClass,
+                                     UUID botId) throws ReflectiveOperationException {
+        Class<?> slotClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutSlot");
+        Class<?> classTypeClass = Class.forName("org.shee33.act0.arcade.loadout.PlayerClassType");
+        Class<?> itemClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutItem");
+        Object classType = classTypeClass.getMethod("defaultClass").invoke(null);
+        Object loadout = loadoutClass.getConstructor(String.class, classTypeClass)
+                .newInstance("AI 配装", classType);
+        Method availableItems = registryClass.getMethod("availableItems", slotClass, classTypeClass);
+        Method keyOf = itemClass.getMethod("key");
+        Method setSlot = loadoutClass.getMethod("setSlot", slotClass, String.class);
+
+        java.util.Random rng = new java.util.Random(botId.hashCode());
+        boolean any = false;
+        for (Object slot : slotClass.getEnumConstants()) {
+            List<?> pool = (List<?>) availableItems.invoke(registry, slot, classType);
+            if (pool == null || pool.isEmpty()) {
+                continue;
+            }
+            setSlot.invoke(loadout, slot, keyOf.invoke(pool.get(rng.nextInt(pool.size()))));
+            any = true;
+        }
+        return any ? loadout : null;
     }
 
     private static void applySharedApparel(MinecraftServer server, ServerPlayer player, UUID playerId,

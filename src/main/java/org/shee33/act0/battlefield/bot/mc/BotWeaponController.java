@@ -6,6 +6,7 @@ import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.shee33.act0.battlefield.bot.AimModel;
 import org.shee33.act0.battlefield.bot.AimTracker;
+import org.shee33.act0.battlefield.bot.ShootOutcome;
 import org.shee33.act0.battlefield.bot.Steering;
 
 import javax.annotation.Nullable;
@@ -55,9 +56,20 @@ public final class BotWeaponController {
     @Nullable
     private Vec3 lastKnownAimPoint;
 
-    /** 上一次已上报的开火失败原因，用于去重；开火成功后清空以便问题复发时能再报一次。 */
+    /** 同一开火故障的最短重报间隔（tick）：够稀疏不刷屏，又够密集让整局都看得见。 */
+    private static final long REPORT_INTERVAL_TICKS = 20L * 60L;
+
+    /** 上一次已上报的开火失败原因；开火成功后清空以便问题复发时能立即再报一次。 */
     @Nullable
     private String lastReportedFailure;
+
+    /**
+     * 上一次上报所处的游戏刻，与 {@link #REPORT_INTERVAL_TICKS} 一同构成限流。
+     *
+     * <p>初值取 0 而非 {@code Long.MIN_VALUE}：后者会让首次比较的差值溢出成负数。首次上报本身
+     * 由 {@code lastReportedFailure == null} 放行，不依赖这个初值。
+     */
+    private long lastReportTick;
 
     public BotWeaponController(BotPlayer bot, AimModel model, long seed) {
         this.bot = Objects.requireNonNull(bot, "bot");
@@ -164,40 +176,37 @@ public final class BotWeaponController {
             lastReportedFailure = null;
             return;
         }
-        // 弹尽、待上膛、未持枪都不是错误，而是应当就地自愈的正常状态。
-        switch (result) {
-            case "NO_AMMO" -> BotGunBridge.reload(bot);
-            case "NEED_BOLT" -> BotGunBridge.bolt(bot);
-            // 配装发枪后没有任何人替 bot 完成 TaCZ 的"持枪就绪"，于是每一枪都是 NOT_DRAW。
-            // 在此就地补 draw 而非要求上层调用：换枪、复活重新发装备都会让 draw 失效，
-            // 由开火失败驱动重新持枪是唯一不会漏掉任何路径的做法。
-            case "NOT_DRAW" -> {
-                // 补 draw 若也失败（例如手里根本不是枪），必须上报：否则又成了静默重试。
+        switch (ShootOutcome.actionFor(result)) {
+            case RELOAD -> BotGunBridge.reload(bot);
+            case BOLT -> BotGunBridge.bolt(bot);
+            // 正常情况下配装发放时就已代 bot 完成持枪（见 RedeployService#drawIssuedGunForBot）；
+            // 这里是绕过部署流程的路径（调试指令直接生成、对局外混战）的兜底。
+            case DRAW -> {
                 if (!BotGunBridge.drawMainHand(bot)) {
-                    reportUnexpectedFailure("NOT_DRAW（补持枪失败，检查 bot 主手是否为 TaCZ 枪械）");
+                    reportFailure("NOT_DRAW（补持枪失败：主手不是 TaCZ 枪械，多半是配装没发到武器）");
                 }
             }
-            // 抽枪动画期。它紧跟在上面补的那次 draw 之后必然出现，属正常过渡而非故障；
-            // 若不在此拦下，每个 bot 首次交火都会记一条假警报，把诊断日志的信噪比冲掉。
-            case "IS_DRAWING" -> {
+            case REPORT -> reportFailure(result);
+            case NONE -> {
             }
-            default -> reportUnexpectedFailure(result);
         }
     }
 
     /**
-     * 记录非预期的开火失败，同一原因只报一次。
+     * 记录一条开火故障，同一原因按 {@link #REPORT_INTERVAL_TICKS} 限流。
      *
-     * <p>这里原本是空的 {@code default} 分支，于是 {@code NOT_DRAW} 被静默吞掉、bot 在对局里
-     * 一枪不发却毫无线索，只能靠人肉上客户端才发现。集成层异常不该影响主玩法，
-     * 但也不该无声无息——去重后即便每 tick 触发也只留一行。
+     * <p><b>限流而非只报一次。</b>先前是"与上次相同就永不再报"，于是像"bot 根本没拿到枪"这种
+     * 贯穿整局的故障只在开局留下一行、随后彻底沉默，实际表现成 bot 全程一枪不发却查无实据。
+     * 故障持续多久就该被看见多久；开火成功会清空记录，使问题复发时能立即再报一次。
      */
-    private void reportUnexpectedFailure(String result) {
-        if (result.equals(lastReportedFailure)) {
+    private void reportFailure(String reason) {
+        long now = bot.serverLevel().getGameTime();
+        if (reason.equals(lastReportedFailure) && now - lastReportTick < REPORT_INTERVAL_TICKS) {
             return;
         }
-        lastReportedFailure = result;
-        LOGGER.warn("[ACT0] bot {} 开火被 TaCZ 拒绝：{}", bot.getGameProfile().getName(), result);
+        lastReportedFailure = reason;
+        lastReportTick = now;
+        LOGGER.warn("[ACT0] bot {} 开火被 TaCZ 拒绝：{}", bot.getGameProfile().getName(), reason);
     }
 
     private boolean weaponReady() {

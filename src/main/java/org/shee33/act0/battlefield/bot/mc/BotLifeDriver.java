@@ -188,14 +188,8 @@ final class BotLifeDriver {
      * 因此这里每 tick 调用是安全的，不需要 AI 侧再记一份计时。
      */
     void tickRedeploy(BotMatchContext context) {
-        RedeployPolicy.best(deployOptions(context)).ifPresent(option -> {
-            String kind = switch (option.kind()) {
-                case SQUADMATE -> "squad";
-                case POINT -> "point";
-                case BASE -> "base";
-            };
-            context.match().handleDeployAction(bot, kind, option.targetId());
-        });
+        RedeployPolicy.best(deployOptions(context)).ifPresent(option ->
+                context.match().handleDeployAction(bot, kindKey(option.kind()), option.targetId()));
     }
 
     private List<RedeployPolicy.Option> deployOptions(BotMatchContext context) {
@@ -205,26 +199,49 @@ final class BotLifeDriver {
             if (state.view().owner() != context.faction()) {
                 continue;
             }
-            options.add(new RedeployPolicy.Option(RedeployPolicy.Kind.POINT,
+            addOption(options, context, RedeployPolicy.Kind.POINT,
                     Integer.toString(state.view().pointId()),
-                    distance(goal, state.view().center()), true));
+                    distance(goal, state.view().center()));
         }
         for (UUID mate : context.squadMates()) {
             ServerPlayer p = player(mate);
             if (p == null || !p.isAlive() || p.isSpectator() || context.match().isDowned(mate)) {
                 continue;
             }
-            options.add(new RedeployPolicy.Option(RedeployPolicy.Kind.SQUADMATE, mate.toString(),
-                    distance(goal, p.position()), true));
+            addOption(options, context, RedeployPolicy.Kind.SQUADMATE, mate.toString(),
+                    distance(goal, p.position()));
         }
         BattlefieldData.BaseSpawn base = BattlefieldData.get(context.match().level())
                 .base(context.faction());
         if (base != null) {
-            options.add(new RedeployPolicy.Option(RedeployPolicy.Kind.BASE, "",
-                    distance(goal, new net.minecraft.world.phys.Vec3(base.x(), base.y(), base.z())),
-                    true));
+            addOption(options, context, RedeployPolicy.Kind.BASE, "",
+                    distance(goal, new net.minecraft.world.phys.Vec3(base.x(), base.y(), base.z())));
         }
         return options;
+    }
+
+    /**
+     * 登记一个候选落点，{@code safe} 一律取本体的实时判定。
+     *
+     * <p><b>不能在这里自己近似。</b>先前此处对三类落点一律传 {@code true}，于是"队友身边 12 格内
+     * 有敌人"这类只有本体才知道的否决条件完全不在 AI 的视野里：AI 每 tick 选中同一个必被
+     * {@code handleDeployAction} 拒收的落点，而被拒时本体只是静默重发一次状态，于是中途加入的
+     * bot 会永久停在待部署——开局入场的 bot 走 {@code deployDirect} 绕过了这道校验，所以只有
+     * 中途加入者会卡住。
+     */
+    private void addOption(List<RedeployPolicy.Option> options, BotMatchContext context,
+                           RedeployPolicy.Kind kind, String targetId, double distance) {
+        options.add(new RedeployPolicy.Option(kind, targetId, distance,
+                context.match().canDeployTo(bot, kindKey(kind), targetId)));
+    }
+
+    /** 落点类别到本体 {@code DeployActionPacket.DeployKind} 取值的映射。 */
+    private static String kindKey(RedeployPolicy.Kind kind) {
+        return switch (kind) {
+            case SQUADMATE -> "squad";
+            case POINT -> "point";
+            case BASE -> "base";
+        };
     }
 
     private net.minecraft.world.phys.Vec3 objectiveCenter(BotMatchContext context) {

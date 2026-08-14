@@ -842,6 +842,11 @@ public final class ConquestMatch {
         redeployService.handleDeployAction(player, kind, targetId);
     }
 
+    /** 与 {@link #handleDeployAction(ServerPlayer, String, String)} 同源的落点合法性预检。 */
+    public boolean canDeployTo(ServerPlayer player, String kind, String targetId) {
+        return redeployService.canDeployTo(player, kind, targetId);
+    }
+
     public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
         redeployService.handleSlotOverride(player, slotIndex, itemName);
     }

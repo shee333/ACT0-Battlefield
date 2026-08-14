@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.match;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -9,6 +10,8 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.level.GameType;
+import org.shee33.act0.battlefield.bot.mc.BotGunBridge;
+import org.shee33.act0.battlefield.bot.mc.BotSpawner;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.OverheadViewMath;
@@ -21,6 +24,8 @@ import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
 import org.shee33.act0.battlefield.network.DeployStatusDto;
+
+import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -38,6 +43,8 @@ import java.util.function.Consumer;
  * Delegates squad-spawn logic to {@link SquadManager}.
  */
 public final class RedeployService {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -482,6 +489,27 @@ public final class RedeployService {
         return "";
     }
 
+    /**
+     * 该玩家此刻能否部署到给定落点——与 {@link #handleDeployAction(ServerPlayer, String, String)}
+     * 用的是同一份判定，供调用方在提交前自查。
+     *
+     * <p><b>AI 必须用它来填 {@code RedeployPolicy.Option#safe}。</b>AI 侧每 tick 重算落点并提交，
+     * 而提交被拒时本类只是重发一次状态、不做任何提示；若 AI 用一份自己的近似判定（例如只看
+     * "队友活着"而漏掉"队友身边 12 格内有敌人"这一条），它会每 tick 选中同一个必被拒的落点，
+     * 从而永久卡在待部署。判定只能有一份，且必须是本类这一份。
+     *
+     * <p>入参归一化（{@code kind} 兜底、{@code targetId} 的 {@code null} 视作空串）与
+     * {@code handleDeployAction} 完全一致，否则两边会在边角取值上悄悄漂移。
+     */
+    public boolean canDeployTo(ServerPlayer player, String kind, String targetId) {
+        UUID id = player.getUUID();
+        Faction faction = factionOf.get(id);
+        if (faction == null) {
+            return false;
+        }
+        return canDeployTo(id, faction, normalizeDeployKind(kind), targetId != null ? targetId : "");
+    }
+
     private boolean canDeployTo(UUID id, Faction faction, String kind, String targetId) {
         return switch (kind) {
             case "squad" -> squadManager.squadMateSpawn(id, faction, targetId) != null;
@@ -691,6 +719,7 @@ public final class RedeployService {
         ArcadeLoadoutBridge.apply(p);
         purgeInvalidOverrides(p, id);
         ArcadeLoadoutBridge.applyOverrides(p, loadoutOverrides.get(id));
+        drawIssuedGunForBot(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
         lastHurtTick.remove(id);
@@ -699,6 +728,27 @@ public final class RedeployService {
         p.sendSystemMessage(Component.literal("§a已部署，短暂无敌保护已启动。"));
         BattlefieldNetwork.sendDeploy(p, false, DeployStatusDto.inactive());
         BattlefieldNetwork.sendFireLock(p, fireLocked);
+    }
+
+    /**
+     * 替 AI 士兵完成 TaCZ 的"持枪就绪"，并在配装没发到枪时把问题喊出来。
+     *
+     * <p><b>真人不需要、也不能走这一步。</b>TaCZ 的服务端 {@code draw} 由客户端在手持物变化时
+     * 发包触发；bot 没有客户端，这一跳在它身上永远不会发生，于是刚发到手的枪从未被"抽出"过——
+     * 不仅开火要靠失败重试兜底，其他玩家看到的第三人称持枪模型与改装属性缓存也停在旧枪上。
+     * 配装刚发完正是客户端本会发包的那个时刻，由服务端在此代劳，语义与真人完全对齐。
+     *
+     * <p>失败即告警：bot 空手落地是配置问题（武器库里没有任何可发的枪），不是运行时抖动，
+     * 沉默只会让它以"bot 一枪不发"的形态出现在对局里，而那是最难反查的一类症状。
+     */
+    private void drawIssuedGunForBot(ServerPlayer p) {
+        if (!BotSpawner.isBot(p)) {
+            return;
+        }
+        if (!BotGunBridge.drawMainHand(p)) {
+            LOGGER.warn("[ACT0] bot {} 部署后主手没有 TaCZ 枪械，本次配装未发到武器，它将无法开火",
+                    p.getGameProfile().getName());
+        }
     }
 
     /**

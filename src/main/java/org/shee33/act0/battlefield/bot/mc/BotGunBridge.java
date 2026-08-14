@@ -40,6 +40,7 @@ public final class BotGunBridge {
 
     private static final boolean AVAILABLE;
 
+    private static Class<?> gunItemInterface;
     private static Method fromLivingEntity;
     private static Method initialData;
     private static Method draw;
@@ -59,6 +60,7 @@ public final class BotGunBridge {
             Class<?> operator = Class.forName("com.tacz.guns.api.entity.IGunOperator");
             Class<?> reloadState = Class.forName("com.tacz.guns.api.entity.ReloadState");
             Class<?> stateType = Class.forName("com.tacz.guns.api.entity.ReloadState$StateType");
+            gunItemInterface = Class.forName("com.tacz.guns.api.item.IGun");
 
             fromLivingEntity = operator.getMethod("fromLivingEntity",
                     net.minecraft.world.entity.LivingEntity.class);
@@ -98,7 +100,11 @@ public final class BotGunBridge {
      */
     public static boolean drawMainHand(ServerPlayer bot) {
         Object operator = operatorOf(bot);
-        if (operator == null) {
+        // 主手不是枪时必须在 initialData 之前退出。initialData 会把 TaCZ 的 currentGunItem 设成
+        // 一个恒非空的"取主手物品"supplier，此后 TaCZ 再也无法报出 NOT_DRAW——空手的 bot 就此
+        // 从"没持枪"这个可自愈、可复现的状态，掉进只在首次开火报一行 NOT_GUN、随后被去重永久
+        // 静音的死角。如实失败才能让上层把"这个 bot 根本没拿到枪"讲出来。
+        if (operator == null || !isGunInMainHand(bot)) {
             return false;
         }
         try {
@@ -109,6 +115,15 @@ public final class BotGunBridge {
         } catch (Throwable e) {
             return false;
         }
+    }
+
+    /** 主手当前是否握着一把 TaCZ 枪械。 */
+    public static boolean isGunInMainHand(ServerPlayer bot) {
+        if (!AVAILABLE || bot == null) {
+            return false;
+        }
+        ItemStack stack = bot.getMainHandItem();
+        return !stack.isEmpty() && gunItemInterface.isInstance(stack.getItem());
     }
 
     /**
