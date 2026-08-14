@@ -49,6 +49,14 @@ public final class ConquestTactics {
     /** 己方牢固控制且无敌人的点，价值压到很低，避免 AI 蹲在空点上。 */
     public static final double SECURE_OWN_POINT_BASE = 0.25D;
 
+    /**
+     * 已站在据点内时，仍允许追出判定区的余量（格）。
+     *
+     * <p>取 6：足够把刚被打退到区边的敌人追回来，又不足以让 bot 被一个路过的敌人拖到半个地图外。
+     * 这是征服模式最核心的一条纪律——票数由控点数之差决定，追着人离开据点是负收益。
+     */
+    public static final double CHASE_MARGIN_BLOCKS = 6.0D;
+
     private ConquestTactics() {
     }
 
@@ -111,6 +119,23 @@ public final class ConquestTactics {
         double proximity = 1.0D / (1.0D + Math.max(0.0D, point.distance()) / DISTANCE_SCALE);
         double crowding = Math.max(0.0D, 1.0D - CROWD_PENALTY_PER_ALLY * Math.max(0, point.alliesInZone()));
         return base * proximity * crowding;
+    }
+
+    /**
+     * 已经站在据点内时，是否值得为追击某个敌人离开该点。
+     *
+     * <p><b>这条判据来自一次实测缺陷。</b>缺少它时，bot 走进判定区后会立刻转去追最近的敌人、
+     * 从而走出该区；出区后又重新判定为"不在点内"，于是再走回来。探针实测到据点在
+     * {@code IDLE↔CAPTURING} 之间反复振荡 36 次、{@code owner} 始终为 {@code null}，
+     * 整局无人占下任何一个点——占领机制事实上完全失效。
+     *
+     * <p>征服模式最核心的一条纪律：票数由控点数之差决定，追着人离开据点是负收益。
+     *
+     * @param enemyDistanceFromCenter 敌人到据点中心的水平距离（格）
+     * @param pointHalfWidth          判定区半宽（格）
+     */
+    public static boolean worthChasingOffPoint(double enemyDistanceFromCenter, double pointHalfWidth) {
+        return enemyDistanceFromCenter <= pointHalfWidth + CHASE_MARGIN_BLOCKS;
     }
 
     /**

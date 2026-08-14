@@ -2,6 +2,7 @@ package org.shee33.act0.battlefield.bot.mc;
 
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+import org.shee33.act0.battlefield.bot.ConquestTactics;
 
 import javax.annotation.Nullable;
 import java.util.UUID;
@@ -39,30 +40,47 @@ final class BotSeekPolicy {
                 return mate.position();
             }
         }
-        Vec3 objective = context.objective()
-                .map(o -> context.pointCenter(o.pointId()))
-                .orElse(null);
-        if (objective != null && !insideObjective(context, objective)) {
-            return objective;
+        BotMatchContext.PointState objective = objectiveState(context);
+        if (objective == null) {
+            return nearestEnemy != null ? nearestEnemy.position() : null;
         }
-        if (nearestEnemy != null) {
+        Vec3 center = objective.view().center();
+        if (!objective.view().zone().contains(bot.getX(), bot.getY(), bot.getZ())) {
+            return center;
+        }
+        // 已在点内：只有敌人还在据点附近才值得追出去，否则守住——见 worthChasingOffPoint 的说明。
+        if (nearestEnemy != null && ConquestTactics.worthChasingOffPoint(
+                horizontalDistance(center, nearestEnemy.position()), halfWidthOf(objective))) {
             return nearestEnemy.position();
         }
-        return objective;
+        return center;
     }
 
-    /**
-     * 是否已经站进目标据点。
-     *
-     * <p>已在点内还继续以中心为目标，会让 bot 无视身边的敌人往几何中心挤——交火反而被荒废。
-     * 用据点自身的 AABB 判定而不是半径近似，与本体的占领判定同源。
-     */
-    private boolean insideObjective(BotMatchContext context, Vec3 center) {
+    /** 本 bot 当前选定的目标据点；无目标（或据点已被移除）时返回 {@code null}。 */
+    @Nullable
+    private static BotMatchContext.PointState objectiveState(BotMatchContext context) {
+        var chosen = context.objective();
+        if (chosen.isEmpty()) {
+            return null;
+        }
+        int pointId = chosen.get().pointId();
         for (BotMatchContext.PointState state : context.points()) {
-            if (state.view().center().equals(center)) {
-                return state.view().zone().contains(bot.getX(), bot.getY(), bot.getZ());
+            if (state.view().pointId() == pointId) {
+                return state;
             }
         }
-        return false;
+        return null;
+    }
+
+    /** 判定区半宽（格）：AABB 在 X 轴上的一半跨度，与 {@code ControlPointDef.radius} 同量。 */
+    private static double halfWidthOf(BotMatchContext.PointState state) {
+        var zone = state.view().zone();
+        return (zone.maxX - zone.minX) / 2.0D;
+    }
+
+    private static double horizontalDistance(Vec3 a, Vec3 b) {
+        double dx = a.x - b.x;
+        double dz = a.z - b.z;
+        return Math.sqrt(dx * dx + dz * dz);
     }
 }

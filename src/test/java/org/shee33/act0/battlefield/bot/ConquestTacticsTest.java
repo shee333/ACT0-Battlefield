@@ -145,4 +145,30 @@ class ConquestTacticsTest {
         assertFalse(point(1, PointStance.NEUTRAL, 5, 0, 3, false).contested());
         assertFalse(point(1, PointStance.NEUTRAL, 5, 3, 0, false).contested());
     }
+
+    // ---------------- 入点牵制（实测缺陷的回归护栏）----------------
+
+    /**
+     * 这组断言锁的是一个已被实测证实的缺陷：缺少牵制时 bot 进点即转身追敌、走出判定区，
+     * 出区后又判定为"不在点内"而折回，据点在 IDLE↔CAPTURING 间振荡 36 次、owner 恒为 null，
+     * 整局无人占下任何一个点。
+     */
+    @Test
+    void chasesOnlyEnemiesNearThePoint() {
+        double half = 8.0D;
+        assertTrue(ConquestTactics.worthChasingOffPoint(0.0D, half), "点内的敌人必须追");
+        assertTrue(ConquestTactics.worthChasingOffPoint(half, half), "区边的敌人仍该追");
+        assertTrue(ConquestTactics.worthChasingOffPoint(half + ConquestTactics.CHASE_MARGIN_BLOCKS, half),
+                "余量之内仍该追");
+        assertFalse(ConquestTactics.worthChasingOffPoint(half + ConquestTactics.CHASE_MARGIN_BLOCKS + 0.01D, half),
+                "超出余量就该守点，不能被拖走");
+        assertFalse(ConquestTactics.worthChasingOffPoint(200.0D, half), "半个地图外的敌人绝不能追");
+    }
+
+    @Test
+    void chaseMarginIsSmallEnoughToKeepBotsOnPoint() {
+        assertTrue(ConquestTactics.CHASE_MARGIN_BLOCKS > 0.0D);
+        assertTrue(ConquestTactics.CHASE_MARGIN_BLOCKS <= 10.0D,
+                "余量过大等于没有牵制，bot 会被路过的敌人拖离据点");
+    }
 }
