@@ -35,9 +35,35 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ArcadeLoadoutBridge {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static boolean warnedMissing = false;
-    private static boolean warnedFailure = false;
-    private static boolean warnedOverrideFailure = false;
+
+    /**
+     * 已经报告过的降级点，用于"每个点只记录一次"。
+     *
+     * <p>两条约束决定了这个形状：这些反射方法多数每 tick 每人都会调用，不去重就会刷屏；而去重必须
+     * 按点各自独立，共用一个开关会让先失败的点把后失败的点永久屏蔽掉。用集合而非一堆 {@code boolean}
+     * 是为了让新增降级点只需调用 {@link #warnOnce}，不必记得再声明一个开关——漏声明就是静默降级。
+     */
+    private static final Set<String> REPORTED_SITES = ConcurrentHashMap.newKeySet();
+
+    /** Arcade 未安装是合法的软依赖缺席，只在首次发现时以 INFO 说明一次，不是警告。 */
+    private static void noteArcadeMissing() {
+        if (REPORTED_SITES.add("arcade-missing")) {
+            LOGGER.info("[ACT/0/Battlefield] act0_arcade not present; battlefield loadout integration disabled");
+        }
+    }
+
+    /**
+     * 反射降级告警，同一 {@code site} 只记录一次，并带上完整堆栈。
+     *
+     * <p>带堆栈是刻意的：这类失败的唯一成因是 Arcade 内部 API 漂移，而反射没有编译期检查，只有
+     * 栈顶那一行能指出是哪一跳对不上。仅打 {@code e.toString()} 时，"object is not an instance of
+     * declaring class" 之类的消息完全无法定位。
+     */
+    private static void warnOnce(String site, Throwable e) {
+        if (REPORTED_SITES.add(site)) {
+            LOGGER.warn("[ACT/0/Battlefield] Arcade 桥降级：{}（同一位置后续失败不再记录）", site, e);
+        }
+    }
 
     /** 兵种名（{@code PlayerClassType} 的枚举名）缓存，见 {@link #classNameOf}。 */
     private static final Map<UUID, String> CLASS_CACHE = new ConcurrentHashMap<>();
@@ -97,7 +123,11 @@ public final class ArcadeLoadoutBridge {
             }
             Object classType = active.getClass().getMethod("classType").invoke(active);
             return classType == null ? "" : classType.toString();
+        } catch (ClassNotFoundException e) {
+            noteArcadeMissing();
+            return "";
         } catch (ReflectiveOperationException | RuntimeException e) {
+            warnOnce("readClassName", e);
             return "";
         }
     }
@@ -145,16 +175,10 @@ public final class ArcadeLoadoutBridge {
                 applySharedApparel(server, player, playerId, services, applier, applierClass, unlocked);
             return true;
         } catch (ClassNotFoundException e) {
-            if (!warnedMissing) {
-                warnedMissing = true;
-                LOGGER.info("[ACT/0/Battlefield] act0_arcade not present; battlefield loadout integration disabled");
-            }
+            noteArcadeMissing();
             return false;
         } catch (ReflectiveOperationException | RuntimeException e) {
-            if (!warnedFailure) {
-                warnedFailure = true;
-                LOGGER.warn("[ACT/0/Battlefield] failed to apply shared ACT0-Arcade loadout: {}", e.toString());
-            }
+            warnOnce("apply", e);
             return false;
         }
     }
@@ -186,7 +210,10 @@ public final class ArcadeLoadoutBridge {
             Object apparelStore = apparelStoreClass.getMethod("get", MinecraftServer.class).invoke(null, server);
             Object selection = apparelStoreClass.getMethod("getOrCreate", UUID.class).invoke(apparelStore, playerId);
             applyApparel.invoke(applier, player, selection, apparel, unlocked);
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        } catch (ClassNotFoundException e) {
+            noteArcadeMissing();
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            warnOnce("applySharedApparel", e);
         }
     }
 
@@ -303,7 +330,11 @@ public final class ArcadeLoadoutBridge {
                 slots.add(new DeploySlotOptionsDto(hotbarIndex, slot.toString(), key, availableNames));
             }
             return new DeployLoadoutDto(className, slots);
+        } catch (ClassNotFoundException e) {
+            noteArcadeMissing();
+            return DeployLoadoutDto.empty();
         } catch (Exception e) {
+            warnOnce("readDeployLoadout", e);
             return DeployLoadoutDto.empty();
         }
     }
@@ -374,10 +405,7 @@ public final class ArcadeLoadoutBridge {
                 player.getInventory().setChanged();
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
-            if (!warnedOverrideFailure) {
-                warnedOverrideFailure = true;
-                LOGGER.warn("[ACT/0/Battlefield] failed to apply battlefield loadout slot overrides: {}", e.toString());
-            }
+            warnOnce("applyOverrides", e);
         }
     }
 
