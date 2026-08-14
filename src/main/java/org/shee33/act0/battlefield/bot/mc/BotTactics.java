@@ -20,6 +20,15 @@ import java.util.UUID;
  */
 final class BotTactics {
 
+    /**
+     * 征服模式的绕侧倾向，喂给 {@link SquadTactics#roleFor}／{@link SquadTactics#flankOffsetDegrees}。
+     *
+     * <p>取 1.0 表示"完全启用绕侧"。大战场本轮只有征服一种模式，所以这里是个定值；街机版对应的是
+     * {@code ModeTactics.flankBias()} 那种按模式取的值。接突破模式时，这个常量就是替换成"按模式
+     * 取值"的锚点——别把它当死代码删掉。
+     */
+    private static final float CONQUEST_FLANK_BIAS = 1.0F;
+
     private final BotPlayer bot;
     private final CombatStance stance = new CombatStance();
     private final RetreatPolicy retreat = new RetreatPolicy();
@@ -54,7 +63,7 @@ final class BotTactics {
         if (context == null || context.squadMates().isEmpty()) {
             return SquadTactics.Role.SUPPRESS;
         }
-        return SquadTactics.roleFor(context.squadRank(), SquadTactics.FLANK_ROLE_MIN_BIAS);
+        return SquadTactics.roleFor(context.squadRank(), CONQUEST_FLANK_BIAS);
     }
 
     /**
@@ -66,8 +75,7 @@ final class BotTactics {
         if (context == null || context.squadMates().isEmpty()) {
             return new double[]{dx, dz};
         }
-        float offset = SquadTactics.flankOffsetDegrees(
-                context.squadRank(), SquadTactics.FLANK_ROLE_MIN_BIAS);
+        float offset = SquadTactics.flankOffsetDegrees(context.squadRank(), CONQUEST_FLANK_BIAS);
         return offset == 0.0F ? new double[]{dx, dz} : SquadTactics.rotateApproach(dx, dz, offset);
     }
 

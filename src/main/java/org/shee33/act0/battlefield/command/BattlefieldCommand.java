@@ -18,6 +18,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.GameRules;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.bot.AimModel;
@@ -844,8 +845,23 @@ public final class BattlefieldCommand {
         return 1;
     }
 
+    /**
+     * 命令回复。真人走 {@code sendSystemMessage}，其余源头（控制台／RCON／AI 士兵）走 {@code sendSuccess}。
+     *
+     * <p>不能只用其中一个：{@code sendSystemMessage} 在源头实体是玩家时会把消息投给<b>那个实体</b>而不是
+     * 命令的发起者，于是 {@code execute as <某玩家>} 的回显对控制台与 RCON 永远不可见（AI 士兵同样是
+     * {@code ServerPlayer}，调试时整条链路就是哑的）；而 {@code sendSuccess} 受 {@code sendCommandFeedback}
+     * 游戏规则管辖，服主一旦关掉，真人点命令会毫无反应。
+     *
+     * <p>因此走标准命令输出，仅在该规则被关掉时补发给玩家本人——两条保证各自成立且不会重复投递。
+     */
     private static void feedback(CommandContext<CommandSourceStack> c, String msg) {
-        c.getSource().sendSystemMessage(Component.literal(msg));
+        CommandSourceStack source = c.getSource();
+        source.sendSuccess(() -> Component.literal(msg), false);
+        if (!source.getServer().getGameRules().getBoolean(GameRules.RULE_SENDCOMMANDFEEDBACK)
+                && source.getEntity() instanceof ServerPlayer player) {
+            player.sendSystemMessage(Component.literal(msg));
+        }
     }
 
     // ---- 管理员命令 (OP 2) ----
