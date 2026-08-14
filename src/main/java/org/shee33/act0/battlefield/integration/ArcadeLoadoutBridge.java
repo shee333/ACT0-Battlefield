@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import org.shee33.act0.battlefield.bot.mc.BotSpawner;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.slf4j.Logger;
@@ -162,13 +163,69 @@ public final class ArcadeLoadoutBridge {
             Class<?> apparelRegistryClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelRegistry");
             Class<?> selectionClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelSelection");
             Class<?> apparelStoreClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeApparelStore");
-            Object apparelStore = apparelStoreClass.getMethod("get", MinecraftServer.class).invoke(null, server);
-            Object selection = apparelStoreClass.getMethod("getOrCreate", UUID.class).invoke(apparelStore, playerId);
             Method applyApparel = applierClass.getMethod("applyApparel", ServerPlayer.class,
                     selectionClass, apparelRegistryClass, Set.class);
+
+            // AI 士兵在 Arcade 侧既没有服饰选择也没有解锁记录，读存档只会得到空选择、穿不上任何东西。
+            // 改为按身份随机搭配，并把目录全量 key 当作已解锁集——既让 bot 能穿全目录，
+            // 又完全不触碰真人的解锁记录。
+            if (BotSpawner.isBot(player)) {
+                Object botSelection = randomApparelSelection(apparel, selectionClass, playerId);
+                if (botSelection == null) {
+                    return;
+                }
+                Object allKeys = apparelRegistryClass.getMethod("all").invoke(apparel);
+                Object botUnlocked = allKeys.getClass().getMethod("keySet").invoke(allKeys);
+                applyApparel.invoke(applier, player, botSelection, apparel, botUnlocked);
+                return;
+            }
+
+            Object apparelStore = apparelStoreClass.getMethod("get", MinecraftServer.class).invoke(null, server);
+            Object selection = apparelStoreClass.getMethod("getOrCreate", UUID.class).invoke(apparelStore, playerId);
             applyApparel.invoke(applier, player, selection, apparel, unlocked);
         } catch (ReflectiveOperationException | RuntimeException ignored) {
         }
+    }
+
+
+    /**
+     * 为 AI 士兵逐槽随机抽一件护甲，返回 Arcade 的 {@code ApparelSelection} 实例。
+     *
+     * <p><b>随机源按 bot 身份播种</b>：同一个 bot 的造型恒定（每个士兵有自己的装具，而不是每次
+     * 复活换一身），且因为结果只由 UUID 决定而<b>幂等</b>——本模组每次部署都会重跑一遍配装发放，
+     * 幂等意味着这些重跑不会把护甲换掉。
+     *
+     * <p><b>逐槽独立抽取而非整套抽取</b>，得到的是"杂牌军"观感；按套抽会让同一批 bot 呈现出几种
+     * 一眼可辨的固定造型，反而更假。
+     *
+     * <p>目录为空或某个槽位无货一律静默跳过——Arcade 的护甲目录默认不写种子模板，全靠管理员录入，
+     * 空目录是正常运营状态而非错误。
+     *
+     * @return 选择实例；目录完全为空时返回 {@code null}
+     */
+    @Nullable
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Object randomApparelSelection(Object apparelRegistry, Class<?> selectionClass,
+                                                 UUID botId) throws ReflectiveOperationException {
+        Class<?> slotClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelSlot");
+        Class<?> itemClass = Class.forName("org.shee33.act0.arcade.loadout.ApparelItem");
+        Method itemsForSlot = apparelRegistry.getClass().getMethod("itemsForSlot", slotClass);
+        Method keyOf = itemClass.getMethod("key");
+        Method set = selectionClass.getMethod("set", slotClass, String.class);
+
+        Object selection = selectionClass.getDeclaredConstructor().newInstance();
+        java.util.Random rng = new java.util.Random(botId.hashCode());
+        boolean any = false;
+        for (Object slot : slotClass.getEnumConstants()) {
+            List<?> pool = (List<?>) itemsForSlot.invoke(apparelRegistry, slot);
+            if (pool == null || pool.isEmpty()) {
+                continue;
+            }
+            Object picked = pool.get(rng.nextInt(pool.size()));
+            set.invoke(selection, slot, keyOf.invoke(picked));
+            any = true;
+        }
+        return any ? selection : null;
     }
 
     /**
