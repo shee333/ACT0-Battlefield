@@ -85,10 +85,13 @@ public final class ArcadeLoadoutBridge {
                     .getMethod("defaultLoadout", registryClass).invoke(null, registry);
             Class<?> storeClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeLoadoutStore");
             Object store = storeClass.getMethod("get", MinecraftServer.class).invoke(null, player.server);
-            Object set = storeClass.getMethod("getOrCreate", UUID.class,
+            // ArcadeLoadoutStore 同时有 getOrCreate → Loadout 与 getOrCreateSet → LoadoutSet。
+            // 这里取的是前者，它内部已经是 getOrCreateSet(...).active()，因此不能再调一次 active()：
+            // Loadout 上没有该方法，多调只会抛 NoSuchMethodException 被 catch 吞掉，让兵种名静默
+            // 恒为空串——isSupport() 因此永远是 false，支援兵跨小队救援的门控形同不存在。
+            Object active = storeClass.getMethod("getOrCreate", UUID.class,
                             Class.forName("org.shee33.act0.arcade.loadout.Loadout"))
                     .invoke(store, player.getUUID(), fallback);
-            Object active = set.getClass().getMethod("active").invoke(set);
             if (active == null) {
                 return "";
             }
@@ -247,12 +250,14 @@ public final class ArcadeLoadoutBridge {
             Class<?> storeClass = Class.forName("org.shee33.act0.arcade.storage.ArcadeLoadoutStore");
             Object store = storeClass.getMethod("get", MinecraftServer.class).invoke(null, server);
             Class<?> loadoutClass = Class.forName("org.shee33.act0.arcade.loadout.Loadout");
-            Class<?> setClass = Class.forName("org.shee33.act0.arcade.loadout.LoadoutSet");
-            Object set = storeClass.getMethod("getOrCreate", UUID.class, loadoutClass).invoke(store, playerId,
+            // 同 readClassName：getOrCreate 返回的已经是激活的 Loadout，不是 LoadoutSet。
+            // 原先把它交给 LoadoutSet.active() 反射调用，抛 IllegalArgumentException
+            //（object is not an instance of declaring class）被 catch 吞掉，导致本方法恒返回空
+            // DTO——底部武器更换面板因此永远是 0 个槽位。
+            Object active = storeClass.getMethod("getOrCreate", UUID.class, loadoutClass).invoke(store, playerId,
                     Class.forName("org.shee33.act0.arcade.loadout.DefaultLoadoutCatalog")
                             .getMethod("defaultLoadout", Class.forName("org.shee33.act0.arcade.loadout.LoadoutRegistry"))
                             .invoke(null, registry));
-            Object active = setClass.getMethod("active").invoke(set);
             if (active == null) return DeployLoadoutDto.empty();
 
             Class<?> playerClassTypeClass = Class.forName("org.shee33.act0.arcade.loadout.PlayerClassType");
