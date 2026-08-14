@@ -9,7 +9,9 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -31,6 +33,7 @@ import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestMatch;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.match.MapTemplateManager;
+import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
 
 import javax.annotation.Nullable;
 
@@ -87,6 +90,9 @@ public final class BattlefieldCommand {
                                         .executes(BattlefieldCommand::setMaxPlayers)))
                         .then(Commands.literal("info").executes(BattlefieldCommand::mapInfo)))
                 .then(Commands.literal("point").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                        .executes(BattlefieldCommand::addPointAt)))
                         .then(Commands.literal("list").executes(BattlefieldCommand::listPoints))
                         .then(Commands.literal("radius")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(0))
@@ -386,6 +392,28 @@ public final class BattlefieldCommand {
         feedback(c, "§7地图 §e" + (data.mapName().isBlank() ? level.dimension().location() : data.mapName()));
         feedback(c, "§7自动开始人数：§e" + min + (data.minPlayersToStartRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         feedback(c, "§7人数上限：§e" + max + (data.maxPlayersRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
+        return 1;
+    }
+
+    /**
+     * {@code /battlefield point add <x> <y> <z>}：按坐标登记一个据点。
+     *
+     * <p>据点原本只能通过<b>实体放置</b>据点方块来登记（{@code ControlPointBlock.setPlacedBy}）。
+     * 这条命令补上了按坐标登记的入口，作用是让布场可以脚本化：服务端自动开图、批量部署地图模板、
+     * 以及在没有真人在线时验证对局流程——{@code /setblock} 不会触发 {@code setPlacedBy}，
+     * 因此在此之前控制台完全无法把一张图布置到可开局状态。
+     *
+     * <p>方块本身也会一并放下，使命令登记出的据点与手动放置的据点在世界里完全一致
+     * （破坏该方块仍会按 {@code onRemove} 注销据点）。
+     */
+    private static int addPointAt(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getLevel();
+        BlockPos pos = BlockPosArgument.getLoadedBlockPos(c, "pos");
+        level.setBlockAndUpdate(pos, BattlefieldRegistry.CONTROL_POINT.get().defaultBlockState());
+        ControlPointDef def = BattlefieldData.get(level).addPoint(pos);
+        c.getSource().sendSuccess(() -> Component.literal("§a已登记据点 §e" + def.name()
+                + " §7(" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ()
+                + " · 半径 " + def.radius() + " · 高度 " + def.height() + ")"), true);
         return 1;
     }
 
@@ -928,6 +956,10 @@ public final class BattlefieldCommand {
                                         .executes(c -> botAdd(c, IntegerArgumentType.getInteger(c, "count"), Faction.ALPHA)))
                                 .then(Commands.literal("bravo")
                                         .executes(c -> botAdd(c, IntegerArgumentType.getInteger(c, "count"), Faction.BRAVO)))))
+                .then(Commands.literal("spawn")
+                        .executes(c -> botSpawnBare(c, 1))
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 32))
+                                .executes(c -> botSpawnBare(c, IntegerArgumentType.getInteger(c, "count")))))
                 .then(Commands.literal("remove")
                         .then(Commands.argument("name", StringArgumentType.word())
                                 .executes(BattlefieldCommand::botRemove)))
@@ -974,6 +1006,21 @@ public final class BattlefieldCommand {
         }
         ctx.getSource().sendSuccess(() -> Component.literal("§a已向 " + target.coloredName()
                 + " §a补入 §e" + added.size() + " §a名 AI 士兵：§7" + String.join(", ", added)), true);
+        return added.size();
+    }
+
+    /** {@code /battlefield bot spawn [n]}：在执行者位置裸生成 AI 士兵，用作管理命令的执行者。 */
+    private static int botSpawnBare(CommandContext<CommandSourceStack> ctx, int count) {
+        var src = ctx.getSource();
+        var pos = src.getPosition();
+        List<String> added = BotManager.INSTANCE.spawnBare(
+                src.getServer(), src.getLevel(), pos.x, pos.y, pos.z, count);
+        if (added.isEmpty()) {
+            src.sendFailure(Component.literal("§c未能生成任何 AI 士兵。"));
+            return 0;
+        }
+        src.sendSuccess(() -> Component.literal("§a已生成 §e" + added.size()
+                + " §a名 AI 士兵：§7" + String.join(", ", added)), true);
         return added.size();
     }
 

@@ -87,6 +87,30 @@ public final class BotManager {
         return added;
     }
 
+    /**
+     * 在指定位置裸生成 AI 士兵，<b>不加入任何对局</b>。
+     *
+     * <p>用途是让 bot 能充当"需要玩家在场"的管理命令（{@code base set} / {@code start}）的执行者，
+     * 从而使一整套开局流程在没有真人在线时也能被脚本化地跑通。裸 bot 不属于任何阵营，
+     * 也不会自主行动（见 {@code BotTask#tick} 对无对局的处理）。
+     *
+     * @return 实际生成的 bot 名字
+     */
+    public List<String> spawnBare(MinecraftServer server, ServerLevel level,
+                                  double x, double y, double z, int count) {
+        Set<String> taken = new LinkedHashSet<>(activeNames());
+        List<String> added = new ArrayList<>();
+        for (String name : BotNames.pick(count, taken, server.getTickCount())) {
+            BotPlayer bot = BotSpawner.spawn(server, level, name, x, y, z, 0.0f, 0.0f);
+            if (bot == null) {
+                continue;
+            }
+            tasks.put(bot.getUUID(), new BotTask(bot));
+            added.add(name);
+        }
+        return added;
+    }
+
     /** 撤走一名 bot；返回是否确有其人。 */
     public boolean despawn(MinecraftServer server, String name) {
         BotTask task = tasks.remove(BotNames.uuidOf(name));
