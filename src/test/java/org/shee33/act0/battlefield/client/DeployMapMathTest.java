@@ -1,5 +1,7 @@
 package org.shee33.act0.battlefield.client;
 
+import com.mojang.math.Axis;
+import org.joml.Vector3f;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -209,5 +211,46 @@ class DeployMapMathTest {
             assertTrue(deg >= 0f && deg < 360f, "yaw=" + yaw + " 应归一化到 [0,360),实得 " + deg);
             assertEquals(90f, deg, EPS, "yaw=" + yaw + " 全部等价于正东");
         }
+    }
+
+    // ---------------- facingScreenDegrees × Axis.ZP 的实际旋转方向 ----------------
+    //
+    // facingScreenDegrees 的正确性依赖一个它自己测不到的前提:Axis.ZP 的正向旋转在屏幕上
+    // 究竟是顺时针还是逆时针。前提若反了,上面四个方向测试会连同实现一起错——它们锁的只是
+    // "我推导的那套约定"自洽,不是它与渲染管线一致。以下用真实的 Axis.ZP 四元数作用在
+    // DeployMapPanel 实际绘制的三角顶点(局部朝上,y=-4)上,直接断言它落在屏幕的哪一侧。
+
+    private static Vector3f rotatedApex(float yawDegrees) {
+        Vector3f apex = new Vector3f(0f, -4f, 0f);
+        apex.rotate(Axis.ZP.rotationDegrees(DeployMapMath.facingScreenDegrees(yawDegrees)));
+        return apex;
+    }
+
+    @Test
+    void apexPointsUpWhenFacingNorth() {
+        Vector3f a = rotatedApex(180f);
+        assertEquals(0f, a.x(), EPS);
+        assertEquals(-4f, a.y(), EPS, "正北时三角顶点应在中心上方(屏幕 y 更小)");
+    }
+
+    @Test
+    void apexPointsDownWhenFacingSouth() {
+        Vector3f a = rotatedApex(0f);
+        assertEquals(0f, a.x(), EPS);
+        assertEquals(4f, a.y(), EPS, "正南时三角顶点应在中心下方");
+    }
+
+    @Test
+    void apexPointsRightWhenFacingEast() {
+        Vector3f a = rotatedApex(270f);
+        assertEquals(4f, a.x(), EPS, "正东时三角顶点应在中心右侧——若 Axis.ZP 方向反了这里会得 -4");
+        assertEquals(0f, a.y(), EPS);
+    }
+
+    @Test
+    void apexPointsLeftWhenFacingWest() {
+        Vector3f a = rotatedApex(90f);
+        assertEquals(-4f, a.x(), EPS, "正西时三角顶点应在中心左侧");
+        assertEquals(0f, a.y(), EPS);
     }
 }
