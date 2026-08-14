@@ -12,9 +12,14 @@ import net.minecraft.util.Mth;
  * 套用在据点/队友这类<b>需要精确定位</b>的标记上会让它们永远对不准实际位置，
  * 且点击命中判定跟着晃动的标记走，玩家实际选到的目标与看到的位置不符。
  *
- * <p>投影约定:世界 X 对应屏幕横轴(增大向右/东),世界 Z 对应屏幕纵轴(增大向下/南)——
- * 与 {@code BattlefieldMinimapOverlay} 的北上东右惯例一致。战斗区域 AABB 的
- * {@code min}/{@code max} 天然满足 min≤max,因此无需额外翻转 Z 轴符号。
+ * <p>投影约定:世界 X 对应屏幕横轴(增大向右/东),世界 Z 对应屏幕纵轴(增大向下/南),即<b>恒为北朝上</b>。
+ * 战斗区域 AABB 的 {@code min}/{@code max} 天然满足 min≤max,因此无需额外翻转 Z 轴符号。
+ *
+ * <p><b>方位基准与战斗小地图不同,这是刻意的。</b>{@code BattlefieldMinimapOverlay} 默认走旋转模式
+ * (前方永远朝上,见 {@code BattlefieldConfig.MINIMAP_NORTH_UP} 默认 {@code false}),本图则固定北朝上
+ * ——部署时要的是稳定可点的目标,地图跟着镜头转会让人点不准。代价是两者相差玩家当时的偏航角,玩家在
+ * 战斗中建立的空间感无法直接套用到这张图上,因此本图<b>必须自带方位参照物</b>
+ * ({@link #facingDirection} 驱动的自身朝向锥与正北标记);拿掉它们,这张图就会"看着对不上实际地图"。
  */
 final class DeployMapMath {
 
@@ -74,6 +79,19 @@ final class DeployMapMath {
      */
     static boolean insideRect(float px, float py, float rx, float ry, float rw, float rh) {
         return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+    }
+
+    /**
+     * 玩家偏航角 → 本图上朝向标记的旋转角(度,可直接喂给 {@code Axis.ZP.rotationDegrees}),
+     * 约定标记在局部坐标里朝上(−y)绘制。返回值归一化到 {@code [0,360)}。
+     *
+     * <p>换算是 {@code yaw + 180}:Minecraft 的 yaw 以正南为 0 且顺时针增长(90=西、180=北、270=东),
+     * 而本图北朝上——正北 yaw=180 必须得到 0°(不旋转,标记朝上)。屏幕 y 轴向下,{@code Axis.ZP} 的正向
+     * 旋转在屏幕上表现为顺时针,恰好与 yaw 的增长方向一致,因此只需平移 180° 而无需再取负。
+     */
+    static float facingScreenDegrees(float yawDegrees) {
+        float deg = (yawDegrees + 180.0F) % 360.0F;
+        return deg < 0.0F ? deg + 360.0F : deg;
     }
 
     /** 选中脉冲相位:{@code p = 0.5 + 0.5*sin(t/280)},周期约 1.76s,恒在 [0,1] 内。 */

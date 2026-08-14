@@ -178,4 +178,36 @@ class DeployMapMathTest {
         float[] r = DeployMapMath.fittedRect(0, 0, 100, 100, 0, 0, 100, 100);
         assertFalse(DeployMapMath.insideRect(r[0] + r[2] + 40f, r[1] + 10f, r[0], r[1], r[2], r[3]));
     }
+
+    // ---------------- facingScreenDegrees ----------------
+
+    @Test
+    void facingNorthNeedsNoRotationBecauseMapIsNorthUp() {
+        assertEquals(0f, DeployMapMath.facingScreenDegrees(180f), EPS, "yaw 180 是正北,北朝上故标记不旋转");
+    }
+
+    @Test
+    void facingSouthPointsDown() {
+        assertEquals(180f, DeployMapMath.facingScreenDegrees(0f), EPS, "yaw 0 是正南,应指向屏幕下方");
+    }
+
+    @Test
+    void facingEastPointsRight() {
+        assertEquals(90f, DeployMapMath.facingScreenDegrees(270f), EPS, "yaw 270 是正东,东在右(屏幕顺时针 90)");
+    }
+
+    @Test
+    void facingWestPointsLeft() {
+        assertEquals(270f, DeployMapMath.facingScreenDegrees(90f), EPS, "yaw 90 是正西,西在左");
+    }
+
+    @Test
+    void facingNormalisesNegativeAndOverfullTurns() {
+        // MC 的 getYRot() 不归一化到 [0,360):长期转视角会累积成任意大小的角,含负值。
+        for (float yaw : new float[]{-450f, -90f, 270f, 630f}) {
+            float deg = DeployMapMath.facingScreenDegrees(yaw);
+            assertTrue(deg >= 0f && deg < 360f, "yaw=" + yaw + " 应归一化到 [0,360),实得 " + deg);
+            assertEquals(90f, deg, EPS, "yaw=" + yaw + " 全部等价于正东");
+        }
+    }
 }

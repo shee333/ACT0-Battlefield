@@ -2,9 +2,12 @@ package org.shee33.act0.battlefield.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployAllyDto;
 import org.shee33.act0.battlefield.network.DeployPointDto;
@@ -215,6 +218,7 @@ public final class DeployMapPanel {
         // 边框与网格，玩家看到的只是一块纯色底上几个浮着的点，无从判断它们对应地图哪一块——
         // 这正是"据点位置和实际地图对不上"的观感来源（此前连边框一起删掉了，没留替代物）。
         renderAreaFrame(gg, rx, ry, rw, rh);
+        renderNorth(gg, font, rx, ry, rw);
 
         // 十字准星在标记之下(规格 SVG 里 xhair 组在 mks 组之前),先画。
         renderCrosshair(gg, now, rx, ry, rw, rh);
@@ -223,6 +227,7 @@ public final class DeployMapPanel {
         // 顶部标题条/底部武器栏等其他UI区域。用外框box而非letterbox后的内框rect,给
         // drawLabelAbove 悬浮标签留出足够的裁剪空间不被裁掉。
         gg.enableScissor(mapX, mapY, mapX + mapW, mapY + mapH);
+        renderViewpoint(gg, st, rx, ry, rw, rh);
         renderAllies(gg, st, now, rx, ry, rw, rh);
         renderSquadMates(gg, font, st, now, rx, ry, rw, rh, mouseX, mouseY);
         renderPoints(gg, font, st, now, rx, ry, rw, rh, mouseX, mouseY);
@@ -441,6 +446,50 @@ public final class DeployMapPanel {
             // P0 修复:同上,越界标记不参与点击命中。
             lastTargets.add(new ClickTarget(DeployActionPacket.DeployKind.BASE, "", cx, cy, r + 4f));
         }
+    }
+
+    /**
+     * 当前视点(部署相机)的位置与朝向三角。
+     *
+     * <p>本图恒为北朝上,而战斗小地图默认随视角旋转(见 {@link DeployMapMath} 类注释),两者相差一个
+     * 偏航角。这个标记是二者之间<b>唯一的锚</b>:先在图上找到"我正看着哪、朝哪",才能把图上的据点
+     * 对应回眼前的 3D 战场视图。缺了它,这张图看起来就会"和实际地图对不上"。
+     *
+     * <p>取的是<b>相机</b>而非 {@code mc.player}:打开部署界面时玩家已阵亡待重生,玩家实体停在尸体
+     * 或旁观目标处,与眼前看到的画面无关;相机才是 3D 世界标记那一层真正使用的视点,只有用它两层
+     * 画面才对得上。
+     */
+    private static void renderViewpoint(GuiGraphics gg, DeployStatusDto st, float rx, float ry, float rw, float rh) {
+        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+        if (!camera.isInitialized()) {
+            return;
+        }
+        Vec3 eye = camera.getPosition();
+        float[] p = DeployMapMath.project(eye.x, eye.z,
+                st.areaMinX(), st.areaMinZ(), st.areaMaxX(), st.areaMaxZ(), rx, ry, rw, rh);
+        if (!DeployMapMath.insideRect(p[0], p[1], rx, ry, rw, rh)) {
+            return;
+        }
+        PoseStack pose = gg.pose();
+        pose.pushPose();
+        pose.translate(p[0], p[1], 0f);
+        pose.mulPose(Axis.ZP.rotationDegrees(DeployMapMath.facingScreenDegrees(camera.getYRot())));
+        int body = DocPalette.TEXT;
+        for (int i = 0; i < 8; i++) {
+            int halfW = Math.round(i * 3f / 7f);
+            gg.fill(-halfW, -4 + i, halfW + 1, -3 + i, body);
+        }
+        gg.fill(0, -9, 1, -5, withAlpha(body, 0.55f));
+        pose.popPose();
+    }
+
+    /** 正北指示:本图固定北朝上,把这个基准显式画出来,玩家才有对齐的依据。 */
+    private static void renderNorth(GuiGraphics gg, Font font, float rx, float ry, float rw) {
+        int cx = Math.round(rx + rw / 2f);
+        int top = Math.round(ry);
+        int color = withAlpha(DocPalette.NEUTRAL, 0.55f);
+        gg.fill(cx, top + 2, cx + 1, top + 8, color);
+        drawCenteredSmall(gg, font, "北", cx + 0.5f, top + 13f, color);
     }
 
     // =====================================================================

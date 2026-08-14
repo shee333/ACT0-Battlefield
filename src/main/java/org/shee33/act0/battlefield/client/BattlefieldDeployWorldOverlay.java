@@ -43,6 +43,19 @@ public final class BattlefieldDeployWorldOverlay {
     private static final ResourceLocation POINT_ENEMY = texture("capturepoint/axis.png");
     private static final ResourceLocation POINT_NEUTRAL = texture("misc/capturepoint.png");
 
+    /** 超过此距离的标记既不绘制也不可点击——两者必须同一个判据，否则会出现看不见却能点中的目标。 */
+    private static final double MARKER_CULL_DISTANCE = 600.0D;
+
+    /**
+     * 标记在 billboard 局部坐标里的视觉中心 y。
+     *
+     * <p>{@code renderMarker} 把图标画在局部 y 的 −32…−16、主标签画在 −16，而 {@code pose.scale} 的 y 分量
+     * 为负，因此这些负值在屏幕上位于锚点<b>上方</b>。点击热区若直接投影锚点，就会落在看得见的图标下方约
+     * 一个图标的距离——玩家瞄着图标点，判定却在图标脚下。取图标中心（无图标时取主标签中心）作为热区锚点。
+     */
+    private static final float MARKER_ICON_LOCAL_Y = -24.0F;
+    private static final float MARKER_LABEL_LOCAL_Y = -12.0F;
+
     private static final List<DeployClickTarget> TARGETS = new ArrayList<>();
     private static Matrix4f projectionMatrix;
     private static Vec3 cameraPos = Vec3.ZERO;
@@ -139,7 +152,13 @@ public final class BattlefieldDeployWorldOverlay {
                                      DeployActionPacket.DeployKind kind, String targetId,
                                      ResourceLocation iconTexture) {
         Vec3 pos = new Vec3(x, y, z);
-        ScreenProjection projected = projectToScreen(Minecraft.getInstance(), pos);
+        double dist = pos.distanceTo(camera.getPosition());
+        if (dist > MARKER_CULL_DISTANCE) {
+            return;
+        }
+        float localY = iconTexture != null ? MARKER_ICON_LOCAL_Y : MARKER_LABEL_LOCAL_Y;
+        Vec3 hotspot = pos.add(cameraUp.scale(-localY * markerScale(dist)));
+        ScreenProjection projected = projectToScreen(Minecraft.getInstance(), hotspot);
         boolean selected = status.selectedKind().equals(kind.id())
                 && (targetId == null || targetId.isBlank() || targetId.equals(status.selectedTarget()));
         boolean hovered = hoveredTarget != null && hoveredTarget.kind() == kind
@@ -151,6 +170,10 @@ public final class BattlefieldDeployWorldOverlay {
         renderMarker(pose, buffer, font, camera, pos, icon, name, deployable, selected, hovered, color, iconTexture);
     }
 
+    private static float markerScale(double dist) {
+        return (float) Mth.clamp(dist * 0.0018D, 0.035D, 0.115D);
+    }
+
     private static void renderMarker(PoseStack pose, MultiBufferSource buffer, Font font, Camera camera, Vec3 pos,
                                      String icon, String name, boolean deployable, boolean selected, boolean hovered, int color,
                                      ResourceLocation iconTexture) {
@@ -159,10 +182,7 @@ public final class BattlefieldDeployWorldOverlay {
         double dy = pos.y - cam.y;
         double dz = pos.z - cam.z;
         double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dist > 600.0D) {
-            return;
-        }
-        float scale = (float) Mth.clamp(dist * 0.0018D, 0.035D, 0.115D);
+        float scale = markerScale(dist);
         int main = selected ? GREEN : (hovered && deployable ? WHITE : color);
         String line1 = (selected || hovered) ? "◆ " + safe(name) : safe(icon);
         String line2 = deployable ? (selected ? "已选择" : (hovered ? "点击确认" : Math.round(dist) + "m")) : "不可部署";
