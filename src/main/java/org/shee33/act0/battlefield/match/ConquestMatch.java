@@ -1889,6 +1889,17 @@ public final class ConquestMatch {
      * <p>这里显式比对阵营，不再依赖"同小队蕴含同阵营"：小队编号按阵营分段本来就保证了这一点，
      * 但支援兵/医疗针会绕过小队判定，跨阵营救人必须由这一行挡住。
      */
+    /**
+     * {@code reviver} 是否有权扶起 {@code targetId}：同阵营，且满足同小队／支援兵／手持医疗针之一。
+     *
+     * <p><b>对外开放是为了消除一处已实测到的规则漂移。</b>AI 侧原本自行复制了这条判定却只抄了
+     * "同小队"一条，导致同阵营但不同小队的队友倒地后无人施救——探针实测 15 秒流血期内
+     * {@code REVIVE} 为 0，而队友就在 5.8 格外。这类规则只应有一处定义。
+     */
+    public boolean canRevive(ServerPlayer reviver, UUID targetId) {
+        return canRevive(reviver, reviver.getUUID(), targetId);
+    }
+
     private boolean canRevive(ServerPlayer reviver, UUID reviverId, UUID targetId) {
         Faction rf = factionOf.get(reviverId);
         if (rf == null || rf != factionOf.get(targetId)) {

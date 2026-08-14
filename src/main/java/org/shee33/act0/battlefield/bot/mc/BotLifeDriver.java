@@ -101,7 +101,7 @@ final class BotLifeDriver {
             double dist = Math.sqrt(downedMate.distanceToSqr(bot));
             candidates.add(new RevivePolicy.Candidate(mate, dist,
                     context.match().downedSeconds(mate),
-                    context.match().squads().isSameSquad(bot.getUUID(), mate),
+                    context.match().canRevive(bot, mate),
                     false,
                     someoneCloser(context, downedMate, dist)));
         }
