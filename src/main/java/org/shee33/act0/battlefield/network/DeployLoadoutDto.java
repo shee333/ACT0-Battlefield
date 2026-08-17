@@ -9,9 +9,9 @@ import java.util.Map;
 /**
  * 部署界面显示的配装数据快照。服务端按地图目录 + 玩家存档解析后发送给客户端。
  *
- * <p>每个槽位不再只是"当前选中项"的纯文本快照，还携带该槽位对玩家当前职业已解锁的全部可选项
- * （见 {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）
- * 展示可选列表，并供本次对局会话覆盖（{@code RedeployService#handleSlotOverride}）校验。
+ * <p>每个槽位不只是"当前选中项"的快照，还携带该槽位在本图目录里的全部可选项（见
+ * {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）展示，
+ * 并供换装提交（{@code RedeployService#handleSlotOverride}）校验。
  */
 public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slots) {
 
@@ -74,7 +74,7 @@ public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slot
             if (override != null && !override.equals(slot.currentItemName())
                     && slot.availableItemNames().contains(override)) {
                 merged.add(new DeploySlotOptionsDto(slot.slotIndex(), slot.slotName(), override,
-                        slot.availableItemNames()));
+                        slot.options()));
                 changed = true;
             } else {
                 merged.add(slot);

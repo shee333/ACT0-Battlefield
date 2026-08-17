@@ -2,6 +2,7 @@ package org.shee33.act0.battlefield.network;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -16,12 +17,42 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class DeployLoadoutOverrideTest {
 
+    /** 构造可选项：显示名刻意与 ID 不同，用来确认校验走的是 ID 而不是显示名。 */
+    private static List<DeployOptionDto> opts(String... ids) {
+        List<DeployOptionDto> out = new ArrayList<>(ids.length);
+        for (String id : ids) {
+            out.add(new DeployOptionDto(id, "名称:" + id));
+        }
+        return out;
+    }
+
     private static DeployLoadoutDto sampleLoadout() {
-        DeploySlotOptionsDto primary = new DeploySlotOptionsDto(0, "PRIMARY_WEAPON", "m4a1",
-                List.of("m4a1", "ak74", "scar_h"));
-        DeploySlotOptionsDto secondary = new DeploySlotOptionsDto(1, "SECONDARY_WEAPON", "g17",
-                List.of("g17", "deagle"));
-        return new DeployLoadoutDto("ASSAULT", List.of(primary, secondary));
+        DeploySlotOptionsDto primary = new DeploySlotOptionsDto(0, "主武器", "m4a1",
+                opts("m4a1", "ak74", "scar_h"));
+        DeploySlotOptionsDto secondary = new DeploySlotOptionsDto(1, "副武器", "g17",
+                opts("g17", "deagle"));
+        return new DeployLoadoutDto("", List.of(primary, secondary));
+    }
+
+    /** 显示名绝不能被当成选择键：否则界面上同名的两把枪会互相顶替。 */
+    @Test
+    void displayNameIsNeverAcceptedAsSelectionKey() {
+        DeployLoadoutDto loadout = sampleLoadout();
+        assertFalse(loadout.isValidOverride(0, "名称:ak74"), "显示名不是合法的选择键");
+        assertTrue(loadout.isValidOverride(0, "ak74"));
+        assertEquals("名称:m4a1", loadout.slots().get(0).currentDisplayName());
+        assertEquals("名称:ak74", loadout.slots().get(0).displayNameOf("ak74"));
+        assertEquals("unknown", loadout.slots().get(0).displayNameOf("unknown"),
+                "不在可选项里的 ID 应退回 ID 本身，而不是空串");
+    }
+
+    /** 覆盖后可选项列表必须原样带过去，否则换装一次之后面板就再也列不出别的枪。 */
+    @Test
+    void overrideKeepsOptionList() {
+        DeployLoadoutDto overridden = sampleLoadout().withOverrides(Map.of(0, "ak74"));
+        DeploySlotOptionsDto slot = overridden.slots().get(0);
+        assertEquals(List.of("m4a1", "ak74", "scar_h"), slot.availableItemNames());
+        assertEquals("名称:ak74", slot.currentDisplayName());
     }
 
     @Test

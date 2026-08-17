@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
+import org.shee33.act0.battlefield.network.DeployOptionDto;
 import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.shee33.act0.battlefield.network.DeploySlotOverridePacket;
 
@@ -69,7 +70,7 @@ public final class DeployWeaponPanel {
     // =====================================================================
 
     private static int openSlotIndex = -1;
-    private static List<String> openOptions = List.of();
+    private static List<DeployOptionDto> openOptions = List.of();
     private static String openSlotLabel = "";
     private static String openCurrentItemName = "";
     private static boolean panelClosing = false;
@@ -218,7 +219,7 @@ public final class DeployWeaponPanel {
         int n = slots.size();
         int[] widths = new int[n];
         for (int i = 0; i < n; i++) {
-            int textW = font.width(displayName(slots.get(i).currentItemName()));
+            int textW = font.width(slots.get(i).currentDisplayName());
             widths[i] = Mth.clamp(textW + 16, MIN_SLOT_W, MAX_SLOT_W);
         }
         int[] xs = DeployWeaponMath.layoutSlotX(widths, SLOT_GAP, screenW / 2);
@@ -284,17 +285,17 @@ public final class DeployWeaponPanel {
             if (!NAME_OUT.isDone(now)) {
                 float t = NAME_OUT.easedT(now);
                 int ty = nameY - Math.round(NAME_ROW_H * 1.10f * t);
-                drawCenteredName(gg, font, sx, ty, sw, displayName(nameSwapOldName));
+                drawCenteredName(gg, font, sx, ty, sw, nameSwapOldName);
             } else {
                 float t = NAME_IN.easedT(now);
                 int ty = nameY + Math.round(NAME_ROW_H * 1.10f * (1f - t));
-                drawCenteredName(gg, font, sx, ty, sw, displayName(nameSwapNewName));
+                drawCenteredName(gg, font, sx, ty, sw, nameSwapNewName);
             }
         } else {
             if (nameSwapSlotIndex == slot.slotIndex()) {
                 nameSwapSlotIndex = -1;
             }
-            drawCenteredName(gg, font, sx, nameY, sw, displayName(slot.currentItemName()));
+            drawCenteredName(gg, font, sx, nameY, sw, slot.currentDisplayName());
         }
         gg.disableScissor();
     }
@@ -315,8 +316,8 @@ public final class DeployWeaponPanel {
         }
 
         int panelW = PANEL_MIN_W;
-        for (String opt : openOptions) {
-            panelW = Math.max(panelW, font.width(displayName(opt)) + 54);
+        for (DeployOptionDto opt : openOptions) {
+            panelW = Math.max(panelW, font.width(opt.displayName()) + 54);
         }
         panelW = Math.min(panelW, PANEL_MAX_W);
 
@@ -327,7 +328,7 @@ public final class DeployWeaponPanel {
         int panelX = DeployWeaponMath.clampPanelX(slotX, panelW, screenW);
 
         gg.fill(panelX, panelTop, panelX + panelW, panelTop + PANEL_TITLE_H, withAlpha(0xFFFFFFFF, 0.08f * opacity));
-        String title = "更换 " + displayName(openSlotLabel);
+        String title = "更换 " + openSlotLabel;
         gg.drawString(font, title, panelX + 8, panelTop + 4, withAlpha(0xFFE0E0E0, 0.75f * opacity), false);
 
         int contentTop = panelTop + PANEL_TITLE_H;
@@ -347,15 +348,16 @@ public final class DeployWeaponPanel {
             int rowY = contentTop + i * PANEL_ROW_H + Math.round(rowFx[1]);
             renderOptionRow(gg, font, panelX, rowY, panelW, i, rowOpacity, mouseX, mouseY, now);
             if (!panelClosing) {
-                lastOptionRects.add(new OptionRect(i, openOptions.get(i), panelX, rowY, panelW, PANEL_ROW_H));
+                lastOptionRects.add(new OptionRect(i, openOptions.get(i).id(),
+                        panelX, rowY, panelW, PANEL_ROW_H));
             }
         }
     }
 
     private static void renderOptionRow(GuiGraphics gg, Font font, int panelX, int rowY, int panelW,
                                          int i, float rowOpacity, int mouseX, int mouseY, long now) {
-        String item = openOptions.get(i);
-        boolean isCurrent = DeployWeaponMath.isSameItem(item, openCurrentItemName);
+        DeployOptionDto option = openOptions.get(i);
+        boolean isCurrent = DeployWeaponMath.isSameItem(option.id(), openCurrentItemName);
         boolean hovered = !panelClosing && inRect(mouseX, mouseY, panelX, rowY, panelW, PANEL_ROW_H);
         if (hovered) {
             gg.fill(panelX, rowY, panelX + panelW, rowY + PANEL_ROW_H, withAlpha(0xFFFFFFFF, 0.07f * rowOpacity));
@@ -366,8 +368,8 @@ public final class DeployWeaponPanel {
         gg.fill(swX, swY, swX + 28, swY + 16, withAlpha(0xFFFFFFFF, (isCurrent ? 0.25f : 0.1f) * rowOpacity));
 
         int textColor = isCurrent ? GOLD : DIM_TEXT;
-        String text = displayName(item);
-        gg.drawString(font, text, swX + 34, rowY + 5, withAlpha(textColor, rowOpacity), false);
+        gg.drawString(font, option.displayName(), swX + 34, rowY + 5,
+                withAlpha(textColor, rowOpacity), false);
 
         if (pickedSlotIndex == openSlotIndex && pickedRowIndex == i && !PICK_FLASH.isDone(now)) {
             float decay = 1f - PICK_FLASH.easedT(now);
@@ -435,7 +437,7 @@ public final class DeployWeaponPanel {
 
     private static void openSlot(int slotIndex, DeploySlotOptionsDto slotDto, long now) {
         openSlotIndex = slotIndex;
-        openOptions = slotDto.availableItemNames();
+        openOptions = slotDto.options();
         openSlotLabel = slotDto.slotName();
         openCurrentItemName = slotDto.currentItemName();
         panelClosing = false;
@@ -485,8 +487,8 @@ public final class DeployWeaponPanel {
 
         if (!same) {
             nameSwapSlotIndex = slotIndex;
-            nameSwapOldName = openCurrentItemName;
-            nameSwapNewName = itemName;
+            nameSwapOldName = displayNameOf(openCurrentItemName);
+            nameSwapNewName = displayNameOf(itemName);
             NAME_OUT.start(now, 140L, Tween.Ease.IN_CUBIC);
             NAME_IN.start(now, 200L, Tween.Ease.OUT_CUBIC, 140L);
 
@@ -515,9 +517,19 @@ public final class DeployWeaponPanel {
         gg.fill(x + w - 1, y, x + w, y + h, color);
     }
 
-    /** 原始物品/槍位 key 通常是下划线分隔的注册表风格字符串,只做最小化去下划线处理,不猜测大小写。 */
-    private static String displayName(String raw) {
-        return raw == null ? "" : raw.replace('_', ' ');
+    /**
+     * 在当前打开的槽位可选项里查 ID 对应的显示名。
+     *
+     * <p>换字动效需要"旧名 → 新名"两段文字，而手里只有 ID：服务端下发的显示名挂在可选项上，
+     * 从这里查是唯一不必把显示名一路透传进点击回调的做法。
+     */
+    private static String displayNameOf(String id) {
+        for (DeployOptionDto option : openOptions) {
+            if (option.id().equals(id)) {
+                return option.displayName();
+            }
+        }
+        return DeployOptionDto.fallbackName(id);
     }
 
     private static int withAlpha(int argb, float alphaMul) {

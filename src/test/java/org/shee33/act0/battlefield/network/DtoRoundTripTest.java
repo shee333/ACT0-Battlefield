@@ -96,9 +96,10 @@ class DtoRoundTripTest {
 
     @Test
     void deployLoadoutDtoRoundTrip() {
-        DeploySlotOptionsDto slot = new DeploySlotOptionsDto(0, "PRIMARY_WEAPON", "m4a1",
-                List.of("m4a1", "ak74", "scar_h"));
-        DeployLoadoutDto dto = new DeployLoadoutDto("ASSAULT", List.of(slot));
+        DeploySlotOptionsDto slot = new DeploySlotOptionsDto(0, "主武器", "tacz:m4a1",
+                List.of(new DeployOptionDto("tacz:m4a1", "M4A1 卡宾枪"),
+                        new DeployOptionDto("tacz:ak74", "AK-74")));
+        DeployLoadoutDto dto = new DeployLoadoutDto("", List.of(slot));
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         DeployLoadoutDto decoded = DeployLoadoutDto.decode(buf);
@@ -108,6 +109,7 @@ class DtoRoundTripTest {
         assertEquals(slot.slotIndex(), decodedSlot.slotIndex());
         assertEquals(slot.slotName(), decodedSlot.slotName());
         assertEquals(slot.currentItemName(), decodedSlot.currentItemName());
-        assertEquals(slot.availableItemNames(), decodedSlot.availableItemNames());
+        assertEquals(slot.options(), decodedSlot.options(), "ID 与显示名必须成对往返");
+        assertEquals("M4A1 卡宾枪", decodedSlot.currentDisplayName());
     }
 }

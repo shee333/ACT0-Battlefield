@@ -17,6 +17,7 @@ import org.shee33.act0.battlefield.data.ArenaCatalogStore;
 import org.shee33.act0.battlefield.data.PlayerLoadoutStore;
 import org.shee33.act0.battlefield.integration.TaczGunBridge;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
+import org.shee33.act0.battlefield.network.DeployOptionDto;
 import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.slf4j.Logger;
 
@@ -71,9 +72,29 @@ public final class BattlefieldLoadoutService {
         for (Map.Entry<LoadoutSlot, String> e : resolved.entrySet()) {
             LoadoutSlot slot = e.getKey();
             slots.add(new DeploySlotOptionsDto(slot.hotbarIndex(), slot.displayName(), e.getValue(),
-                    catalog.optionIdsForSlot(slot)));
+                    optionsForSlot(catalog, slot)));
         }
         return new DeployLoadoutDto("", slots);
+    }
+
+    /**
+     * 把目录里该槽位的可选项转成"注册 ID + 显示名"成对下发。
+     *
+     * <p>显示名取录入时管理员手上那件物品的名字，因此中文资源包下天然是中文——服务端不需要
+     * 也无法在运行时把 {@code tacz:ak47} 翻译成玩家语言（枪械名来自 TaCZ 的资源包，只有客户端有）。
+     */
+    private static List<DeployOptionDto> optionsForSlot(ArenaCatalog catalog, LoadoutSlot slot) {
+        List<DeployOptionDto> out = new ArrayList<>();
+        if (slot.isGadget()) {
+            for (ArenaItemEntry entry : catalog.items(slot)) {
+                out.add(new DeployOptionDto(entry.itemId(), entry.displayName()));
+            }
+        } else {
+            for (ArenaWeaponEntry entry : catalog.weaponsForSlot(slot)) {
+                out.add(new DeployOptionDto(entry.gunId(), entry.displayName()));
+            }
+        }
+        return out;
     }
 
     /**
