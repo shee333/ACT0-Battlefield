@@ -40,7 +40,7 @@ import org.shee33.act0.battlefield.core.SupplyRules;
 import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
-import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
+import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.network.BattleResultDto;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.BreakthroughHudDto;
@@ -220,7 +220,7 @@ public final class BreakthroughMatch {
         squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
         this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
                 downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
-                spawnProtectionTicks, redeployDelayTicks, "突破模式");
+                spawnProtectionTicks, redeployDelayTicks, "突破模式", ArenaKey.of(lobbyLevel));
         this.captureRules = ConquestRules.builder()
                 .startingTickets(1)
                 .captureSeconds(rules.captureSeconds())
@@ -301,7 +301,6 @@ public final class BreakthroughMatch {
         lastHudHash.remove(id);
         callHelpCooldownUntil.remove(id);
         squadManager.removeMember(id);
-        ArcadeLoadoutBridge.forgetClass(id);
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
@@ -1289,9 +1288,7 @@ public final class BreakthroughMatch {
         if (rf == null || rf != factionOf.get(targetId)) {
             return false;
         }
-        return squadManager.isSameSquad(reviverId, targetId)
-                || ArcadeLoadoutBridge.isSupport(reviver)
-                || holdsSyringe(reviver);
+        return squadManager.isSameSquad(reviverId, targetId) || holdsSyringe(reviver);
     }
 
     private static boolean holdsSyringe(ServerPlayer player) {

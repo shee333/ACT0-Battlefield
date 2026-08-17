@@ -10,7 +10,7 @@ import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.Act0Battlefield;
 
 /**
- * 客户端按键注册：默认 B 键打开共享配装界面。大战场菜单仍可通过战地终端或命令打开。
+ * 客户端按键注册：默认 B 键打开大战场对局浏览器。同一界面也可通过战地终端或命令打开。
  */
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class BattlefieldKeyMappings {

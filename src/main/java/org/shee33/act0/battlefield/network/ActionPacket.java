@@ -12,8 +12,7 @@ import java.util.function.Supplier;
 /**
  * C→S：加入界面的玩家操作。{@link Action#JOIN} 加入（阵营由服务端随机分配）、
  * {@link Action#LEAVE} 退出候选名单、{@link Action#START}/{@link Action#STOP} 开局/停止（仅 OP）、
- * {@link Action#OPEN} 请求服务端打开 GUI、{@link Action#OPEN_LOADOUT} 请求打开 Arcade 配装、
- * {@link Action#REFRESH} 请求刷新。处理后回推最新状态。
+ * {@link Action#OPEN} 请求服务端打开对局浏览器、{@link Action#REFRESH} 请求刷新。处理后回推最新状态。
  */
 public final class ActionPacket {
 
@@ -24,7 +23,7 @@ public final class ActionPacket {
          * 加入候选名单/对局。阵营由服务端随机分配——玩家不再自行选边，
          * 见 {@code ConquestManager#assignRandomFaction}。
          */
-        JOIN, LEAVE, START, STOP, OPEN, OPEN_LOADOUT, REFRESH
+        JOIN, LEAVE, START, STOP, OPEN, REFRESH
     }
 
     private final Action action;

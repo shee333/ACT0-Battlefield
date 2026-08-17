@@ -569,10 +569,6 @@ public final class ConquestManager {
                 openFor(player);
                 return;
             }
-            case OPEN_LOADOUT -> {
-                openArcadeLoadout(player);
-                return;
-            }
             case REFRESH -> {
             }
         }
@@ -582,19 +578,6 @@ public final class ConquestManager {
     /** 主动为玩家打开对局浏览器（该玩家自己所在客户端未必已开屏，需要显式一跳网络包）。 */
     public void openFor(ServerPlayer player) {
         BattlefieldNetwork.sendOpenBrowser(player);
-    }
-
-    private void openArcadeLoadout(ServerPlayer player) {
-        ConquestMatch active = activeContaining(player.getUUID());
-        if (active == null || active.factionOf(player.getUUID()) == null) {
-            return;
-        }
-        try {
-            Class<?> network = Class.forName("org.shee33.act0.arcade.network.ArcadeNetwork");
-            network.getMethod("openLoadoutSelector", ServerPlayer.class).invoke(null, player);
-        } catch (ReflectiveOperationException e) {
-            player.displayClientMessage(Component.literal("§c未安装 ACT0-Arcade，无法打开配装"), true);
-        }
     }
 
 

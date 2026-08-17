@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 部署界面显示的配装数据快照。从服务器反射读取 Arcade 配装后发送给客户端。
+ * 部署界面显示的配装数据快照。服务端按地图目录 + 玩家存档解析后发送给客户端。
  *
  * <p>每个槽位不再只是"当前选中项"的纯文本快照，还携带该槽位对玩家当前职业已解锁的全部可选项
  * （见 {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）
@@ -58,8 +58,8 @@ public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slot
     }
 
     /**
-     * 把本次对局会话覆盖（槽位序号 → 覆盖后物品名）叠加到各槽位的 {@code currentItemName} 上，
-     * 让客户端 UI 立即反映覆盖后的选择（而不是 Arcade 里持久化保存的原始选择）。
+     * 把一组选择（槽位序号 → 物品名）叠加到各槽位的 {@code currentItemName} 上，
+     * 让客户端在服务端回包到达前就先乐观反映这次点击。
      *
      * <p>纯函数：只读取已知合法的覆盖并生成新快照，非法/未知槽位的覆盖会被忽略。
      */

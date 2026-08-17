@@ -40,7 +40,7 @@ import org.shee33.act0.battlefield.core.SupplyRules;
 import org.shee33.act0.battlefield.core.TicketPool;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
-import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
+import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.integration.MatchResultBroadcaster;
 import org.shee33.act0.battlefield.network.BattleHudDto;
 import org.shee33.act0.battlefield.network.BattleResultDto;
@@ -216,7 +216,7 @@ public final class ConquestMatch {
         squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
         this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
                 downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
-                spawnProtectionTicks, redeployDelayTicks, "征服模式");
+                spawnProtectionTicks, redeployDelayTicks, "征服模式", ArenaKey.of(lobbyLevel));
     }
     /** 开局：把所有参战玩家部署到各自基地。 */
     public void begin() {
@@ -291,7 +291,6 @@ public final class ConquestMatch {
         lastTabHash.remove(id);
         callHelpCooldownUntil.remove(id);
         squadManager.removeMember(id);
-        ArcadeLoadoutBridge.forgetClass(id);
         setupNameTagTeams();
         broadcast("§e" + player.getGameProfile().getName() + " §7退出了本对局。");
         player.sendSystemMessage(Component.literal("§7已退出大战场。"));
@@ -1910,9 +1909,7 @@ public final class ConquestMatch {
         if (rf == null || rf != factionOf.get(targetId)) {
             return false;
         }
-        return squadManager.isSameSquad(reviverId, targetId)
-                || ArcadeLoadoutBridge.isSupport(reviver)
-                || holdsSyringe(reviver);
+        return squadManager.isSameSquad(reviverId, targetId) || holdsSyringe(reviver);
     }
 
     private static boolean holdsSyringe(ServerPlayer player) {

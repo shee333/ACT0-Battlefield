@@ -17,7 +17,7 @@ import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.OverheadViewMath;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
-import org.shee33.act0.battlefield.integration.ArcadeLoadoutBridge;
+import org.shee33.act0.battlefield.loadout.BattlefieldLoadoutService;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployAllyDto;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
@@ -68,6 +68,13 @@ public final class RedeployService {
      * 只对应单一模式，这里只是一个只读展示字符串，不参与任何判定逻辑。
      */
     private final String matchModeName;
+    /**
+     * 本场对局取用的地图目录主键，由对局在构造时从<b>大厅世界</b>解析后传入。
+     *
+     * <p>不能在本类里现算：用地图模板开局时对局跑在临时创建的维度里，那个维度的每维度存档是空的，
+     * 现算只会得到临时维度 ID，与管理员配置武器池时用的图名对不上，玩家将一件装备都拿不到。
+     */
+    private final String arenaKey;
 
     // --- State owned by RedeployService ---
     private final Map<UUID, Long> redeployReadyTick = new LinkedHashMap<>();
@@ -78,20 +85,10 @@ public final class RedeployService {
     private final Map<UUID, Integer> spectateTarget = new LinkedHashMap<>();
     private final Map<UUID, PanState> deployPanState = new LinkedHashMap<>();
     /**
-     * 玩家 UUID → (槽位序号 → 覆盖后物品名) 的本次对局会话覆盖状态。玩家在部署界面武器更换
-     * 面板里选中的槖位覆盖只影响"这一命"落地时应用的装备，不改变 Arcade 里保存的配装本身。
-     *
-     * <p>生命周期：一旦写入就持续有效，直到玩家自己再改（覆盖同一槽位）或退出对局/对局结束
-     * ——每次重生之间<b>不</b>自动重置，这更符合"这条命换的装备一直用到我再换"的直觉，而不是
-     * 每次死亡重生都被静默清空。见 {@link #clearLoadoutOverride}（退出对局时调用）与
-     * {@link #clearAll}（对局结束/中止时调用）。
-     */
-    private final Map<UUID, Map<Integer, String>> loadoutOverrides = new LinkedHashMap<>();
-    /**
      * 玩家 UUID → 上次成功处理 {@code DeploySlotOverridePacket} 的 tick（P1-2 修复）。每收到
-     * 这个小包都要跑一遍反射开销不小的 {@link ArcadeLoadoutBridge#readDeployLoadout}，
-     * 无节流会让恶意/异常客户端狂发小包造成主线程反射风暴+回包带宽放大；参照
-     * {@link ConquestMatch} 里 CALL_HELP 呼救冷却同款"记录上次处理 tick，间隔太短直接丢弃"写法。
+     * 这个小包都要读一遍地图目录并回一个包，无节流会让恶意/异常客户端狂发小包造成主线程压力
+     * 与回包带宽放大；参照 {@link ConquestMatch} 里 CALL_HELP 呼救冷却同款"记录上次处理 tick，
+     * 间隔太短直接丢弃"写法。
      */
     private final Map<UUID, Long> lastSlotOverrideTick = new LinkedHashMap<>();
     /** 换装覆盖包最小处理间隔：100ms（20 tick/s，2 tick）。 */
@@ -127,7 +124,8 @@ public final class RedeployService {
             Consumer<UUID> cancelRevive,
             int spawnProtectionTicks,
             int redeployDelayTicks,
-            String matchModeName) {
+            String matchModeName,
+            String arenaKey) {
         this.server = level.getServer();
         this.level = level;
         this.data = data;
@@ -142,6 +140,7 @@ public final class RedeployService {
         this.spawnProtectionTicks = spawnProtectionTicks;
         this.redeployDelayTicks = redeployDelayTicks;
         this.matchModeName = matchModeName;
+        this.arenaKey = arenaKey;
     }
 
     // ---- Query helpers for ConquestMatch ----
@@ -233,9 +232,12 @@ public final class RedeployService {
     }
 
     /**
-     * 部署界面底部武器更换面板提交的槖位覆盖选择（{@code DeploySlotOverridePacket}）。
-     * 只在部署界面确实开着时受理，物品名必须在该槖位当前的已解锁可选列表内才会被接受——
-     * 校验逻辑见 {@link DeployLoadoutDto#isValidOverride}（纯函数，不依赖本类）。
+     * 部署界面底部武器更换面板提交的槽位选择（{@code DeploySlotOverridePacket}）。
+     * 只在部署界面确实开着时受理，物品名必须在该槽位当前的地图目录可选列表内才会被接受——
+     * 校验与落库都在 {@link BattlefieldLoadoutService#setPick} 里完成。
+     *
+     * <p>选择<b>按玩家×地图持久化</b>，不是本次对局的临时覆盖：玩家在这张图惯用的枪下次进来
+     * 还在。不合法的提交被静默丢弃后仍回一个最新快照，让客户端的乐观更新回滚到真实状态。
      */
     public void handleSlotOverride(ServerPlayer player, int slotIndex, String itemName) {
         UUID id = player.getUUID();
@@ -249,12 +251,8 @@ public final class RedeployService {
             return;
         }
         lastSlotOverrideTick.put(id, now);
-        DeployLoadoutDto base = ArcadeLoadoutBridge.readDeployLoadout(player);
-        String item = itemName != null ? itemName : "";
-        if (base.isValidOverride(slotIndex, item)) {
-            loadoutOverrides.computeIfAbsent(id, ignored -> new LinkedHashMap<>()).put(slotIndex, item);
-        }
-        BattlefieldNetwork.sendDeployLoadout(player, base.withOverrides(loadoutOverrides.get(id)));
+        BattlefieldLoadoutService.setPick(player, arenaKey, slotIndex, itemName);
+        BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
     }
 
     /**
@@ -266,10 +264,9 @@ public final class RedeployService {
         return lastTick != null && nowTick - lastTick < MIN_SLOT_OVERRIDE_INTERVAL_TICKS;
     }
 
-    /** 把本次对局会话覆盖叠加到 Arcade 原始配装快照上，供部署界面展示。 */
+    /** 本图目录 + 玩家存档解析出的配装快照，供部署界面展示。 */
     private DeployLoadoutDto deployLoadoutFor(ServerPlayer player) {
-        DeployLoadoutDto base = ArcadeLoadoutBridge.readDeployLoadout(player);
-        return base.withOverrides(loadoutOverrides.get(player.getUUID()));
+        return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey);
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
@@ -339,13 +336,15 @@ public final class RedeployService {
         protectedUntil.clear();
         spectateTarget.clear();
         deployPanState.clear();
-        loadoutOverrides.clear();
         lastSlotOverrideTick.clear();
     }
 
-    /** 玩家退出对局时调用：清除其本次对局的槽位覆盖会话状态，避免残留造成内存泄漏。 */
+    /**
+     * 玩家退出对局时调用：清除其换装节流记录，避免残留造成内存泄漏。
+     *
+     * <p>配装选择本身<b>不</b>清除——它按玩家×地图持久化在存档里，退出对局不该让人忘掉自己的选枪。
+     */
     public void clearLoadoutOverride(UUID id) {
-        loadoutOverrides.remove(id);
         lastSlotOverrideTick.remove(id);
     }
 
@@ -716,9 +715,7 @@ public final class RedeployService {
         downedUntil.remove(id);
         cancelRevive.accept(id);
         p.setPose(Pose.STANDING);
-        ArcadeLoadoutBridge.apply(p);
-        purgeInvalidOverrides(p, id);
-        ArcadeLoadoutBridge.applyOverrides(p, loadoutOverrides.get(id));
+        BattlefieldLoadoutService.apply(p, arenaKey);
         drawIssuedGunForBot(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);
@@ -749,23 +746,6 @@ public final class RedeployService {
             LOGGER.warn("[ACT0] bot {} 部署后主手没有 TaCZ 枪械，本次配装未发到武器，它将无法开火",
                     p.getGameProfile().getName());
         }
-    }
-
-    /**
-     * P1-1 修复：落地这一刻用最新的 Arcade 解锁/职业快照重新校验本次对局会话覆盖，原地移除
-     * 任何此刻已不再合法的槽位覆盖。{@code loadoutOverrides} 只在收到覆盖包那一刻校验过一次
-     * （见 {@link #handleSlotOverride}），但覆盖状态跨越整场对局持续有效——玩家保存的 Arcade
-     * 配装引用的物品后来被撤销解锁，或对局中途 Arcade 激活配装的职业发生变化，旧覆盖都可能
-     * 变成越权物品/跨职业武器夹带。在 {@link ArcadeLoadoutBridge#applyOverrides} 真正把
-     * ItemStack 写进背包之前拦住这个窗口。
-     */
-    private void purgeInvalidOverrides(ServerPlayer player, UUID id) {
-        Map<Integer, String> ov = loadoutOverrides.get(id);
-        if (ov == null || ov.isEmpty()) {
-            return;
-        }
-        DeployLoadoutDto fresh = ArcadeLoadoutBridge.readDeployLoadout(player);
-        ov.entrySet().removeIf(e -> !fresh.isValidOverride(e.getKey(), e.getValue()));
     }
 
     private String deployLocationLabel(String kind, String targetId, Faction f) {

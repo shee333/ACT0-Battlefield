@@ -12,10 +12,10 @@ import java.util.function.Supplier;
 /**
  * C2S：部署界面底部武器更换面板（《部署界面动效规格文档》3.6 节）提交一次槽位覆盖选择。
  *
- * <p>这是"这一命"临时换装——只影响本次重生落地时应用的装备，不改变 Arcade 里保存的配装本身
- * （见 {@code RedeployService} 的 {@code loadoutOverrides} 会话状态）。服务端收到后会重新校验
- * 该物品确实在该槽位的已解锁可选项内（防止伪造包塞入未解锁物品），通过后写入会话状态并重新
- * 下发一次 {@link DeployLoadoutDto} 让客户端 UI 立即反映新选择。
+ * <p>选择按<b>玩家×地图</b>持久化（见 {@code PlayerLoadoutStore}），不是只管这一命的临时覆盖：
+ * 玩家在这张图惯用的枪下次进来还在。服务端收到后会重新校验该物品确实在该槽位的本图目录可选项内
+ * （防止伪造包塞入没上架的武器），无论通过与否都重新下发一次 {@link DeployLoadoutDto}，
+ * 让客户端的乐观更新要么被确认、要么回滚到真实状态。
  *
  * <p>玩家可能同时只在 Conquest 或 Breakthrough 一种模式对局中，具体路由到哪个模式由
  * {@link #handle} 里同时尝试两个管理器决定（与 {@code DownedActionPacket}/

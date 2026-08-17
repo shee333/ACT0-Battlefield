@@ -59,7 +59,7 @@ public final class BattlefieldClientInput {
         if (mc.player == null || mc.screen != null) return;
 
         while (BattlefieldKeyMappings.OPEN_MENU.consumeClick()) {
-            BattlefieldNetwork.CHANNEL.sendToServer(new ActionPacket(ActionPacket.Action.OPEN_LOADOUT));
+            BattlefieldNetwork.CHANNEL.sendToServer(new ActionPacket(ActionPacket.Action.OPEN));
         }
         while (BattlefieldKeyMappings.SPOT_ENEMY.consumeClick()) {
             if (mc.hitResult instanceof EntityHitResult hit && hit.getEntity() instanceof Player) {

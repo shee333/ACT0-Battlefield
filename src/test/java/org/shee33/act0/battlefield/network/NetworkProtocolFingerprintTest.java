@@ -34,7 +34,7 @@ class NetworkProtocolFingerprintTest {
     private static final Path SOURCE = NETWORK_DIR.resolve("BattlefieldNetwork.java");
 
     /** 改动包表或任何包的 payload 结构后，请连同 PROTOCOL 一起更新此处。 */
-    private static final String EXPECTED_PROTOCOL = "15";
+    private static final String EXPECTED_PROTOCOL = "16";
 
     /** 包表指纹（index:ClassName:DIRECTION 逐行拼接后的 SHA-256）。 */
     private static final String EXPECTED_FINGERPRINT =
@@ -43,6 +43,10 @@ class NetworkProtocolFingerprintTest {
     /** 线格式指纹（network 包下每个文件的 buf.writeXxx / 嵌套 encode 调用序列）。 */
     private static final String EXPECTED_WIRE_FORMAT =
             "92618555d49247df29062975cc5ad00d94a06c44f78e0da920db649bc34adccb";
+
+    /** 枚举常量指纹（network 包下所有枚举的常量顺序）。 */
+    private static final String EXPECTED_ENUM_CONSTANTS =
+            "7b6e5961584618acf786389d58d7346996311f5e6150e8f06e0fee784706031d";
 
     @Test
     void packetTableMatchesFingerprint() throws IOException {
@@ -70,6 +74,23 @@ class NetworkProtocolFingerprintTest {
                         + "必须 bump BattlefieldNetwork.PROTOCOL 并更新本测试的 EXPECTED_PROTOCOL /\n"
                         + "EXPECTED_WIRE_FORMAT 常量。\n\n"
                         + "当前线格式：\n  " + String.join("\n  ", wire) + "\n");
+    }
+
+    /**
+     * 锁住枚举常量顺序。{@code buf.writeEnum} 写的是<b>序号</b>，因此往枚举中间增删一个常量
+     * 就是一次实打实的线格式变更——但它既不改包表、也不改 {@code buf.writeXxx} 的调用序列，
+     * 上面两个指纹对它完全无感。0.2.x 移除 {@code Action.OPEN_LOADOUT} 时正是这样悄悄溜过去的：
+     * 旧客户端发 {@code OPEN} 之后的任何动作，新服务端都会解成错位的另一个动作。
+     */
+    @Test
+    void enumConstantsMatchFingerprint() throws IOException {
+        List<String> enums = readEnumConstants();
+        assertTrue(!enums.isEmpty(), "枚举解析失败，一个都没解析出来——正则可能与源码格式脱节");
+        assertEquals(EXPECTED_ENUM_CONSTANTS, sha256(String.join("\n", enums)),
+                "\n\n包内枚举的常量顺序已变更。writeEnum 写的是序号，增删常量会让旧客户端把动作\n"
+                        + "解码成错位的另一个值，必须 bump BattlefieldNetwork.PROTOCOL 并更新本测试的\n"
+                        + "EXPECTED_PROTOCOL / EXPECTED_ENUM_CONSTANTS 常量。\n\n"
+                        + "当前枚举：\n  " + String.join("\n  ", enums) + "\n");
     }
 
     @Test
@@ -104,14 +125,8 @@ class NetworkProtocolFingerprintTest {
             Pattern.compile("buf\\.(write\\w+)\\(|(\\w+)\\.encode\\(buf\\)");
 
     private static List<String> readWireFormat() throws IOException {
-        List<Path> files;
-        try (Stream<Path> stream = Files.list(NETWORK_DIR)) {
-            files = stream.filter(p -> p.getFileName().toString().endsWith(".java"))
-                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
-                    .toList();
-        }
         List<String> lines = new ArrayList<>();
-        for (Path file : files) {
+        for (Path file : networkSources()) {
             Matcher m = WIRE_TOKEN.matcher(Files.readString(file, StandardCharsets.UTF_8));
             List<String> tokens = new ArrayList<>();
             while (m.find()) {
@@ -122,6 +137,42 @@ class NetworkProtocolFingerprintTest {
             }
         }
         return lines;
+    }
+
+    private static final Pattern ENUM_BODY =
+            Pattern.compile("enum\\s+(\\w+)\\s*\\{([^}]*)\\}", Pattern.DOTALL);
+
+    private static List<String> readEnumConstants() throws IOException {
+        List<String> lines = new ArrayList<>();
+        for (Path file : networkSources()) {
+            Matcher m = ENUM_BODY.matcher(stripComments(Files.readString(file, StandardCharsets.UTF_8)));
+            while (m.find()) {
+                List<String> constants = new ArrayList<>();
+                for (String token : m.group(2).split("[,;]")) {
+                    String name = token.trim();
+                    if (name.matches("[A-Z][A-Z0-9_]*")) {
+                        constants.add(name);
+                    }
+                }
+                if (!constants.isEmpty()) {
+                    lines.add(file.getFileName() + ":" + m.group(1) + "=" + String.join(",", constants));
+                }
+            }
+        }
+        return lines;
+    }
+
+    /** 去掉注释，避免 javadoc 里提到的枚举名混进指纹——改注释不该让线格式指纹变红。 */
+    private static String stripComments(String src) {
+        return src.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
+    }
+
+    private static List<Path> networkSources() throws IOException {
+        try (Stream<Path> stream = Files.list(NETWORK_DIR)) {
+            return stream.filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .toList();
+        }
     }
 
     private static String sha256(String s) {
