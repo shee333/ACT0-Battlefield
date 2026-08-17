@@ -11,7 +11,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingEvent;
@@ -23,7 +22,6 @@ import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.BattlefieldConfig;
-import org.shee33.act0.battlefield.command.BreakthroughCommand;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
@@ -526,11 +524,6 @@ public final class BreakthroughManager {
     }
 
     // ---- 事件 ----
-
-    @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
-        BreakthroughCommand.register(event.getDispatcher());
-    }
 
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {

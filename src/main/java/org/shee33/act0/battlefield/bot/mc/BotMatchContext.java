@@ -129,7 +129,7 @@ final class BotMatchContext {
     /**
      * 本小队当前的进攻/防守指令；无指令返回 {@code null}。
      *
-     * <p>指令由真人小队长下达（{@code /battlefield squad order}），AI 服从它——玩家下了指令却看到
+     * <p>指令由真人小队长下达（{@code /aew1 order}），AI 服从它——玩家下了指令却看到
      * AI 各干各的，是比走错点严重得多的体验问题。
      */
     @Nullable

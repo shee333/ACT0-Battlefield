@@ -77,12 +77,12 @@ public final class BattlefieldConfig {
                 .defineInRange("ticketPerDeath", 1.0, 0.0, 100.0);
         MIN_PLAYERS_TO_START = builder
                 .comment("Default auto-start threshold (combined ALPHA+BRAVO lobby size) for worlds "
-                        + "that have not set their own via '/battlefield map minplayers'. Match "
+                        + "that have not set their own via '/aew1 map minplayers'. Match "
                         + "capacity is a separate setting, see maxPlayers.")
                 .defineInRange("minPlayersToStart", 8, 2, 64);
         MAX_PLAYERS = builder
                 .comment("Default match capacity (ALPHA+BRAVO combined) for worlds that have not "
-                        + "set their own via '/battlefield map maxplayers'. Joining is refused once "
+                        + "set their own via '/aew1 map maxplayers'. Joining is refused once "
                         + "this many players are in the lobby or match.")
                 .defineInRange("maxPlayers", 32, 2, 128);
         MINIMAP_NORTH_UP = builder

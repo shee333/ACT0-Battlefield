@@ -302,7 +302,7 @@ public final class BattlefieldData extends SavedData {
         }
     }
 
-    /** 清空所有据点、两个阵营基地与显式战斗区域，供 {@code /battlefield preset load} 使用。 */
+    /** 清空所有据点、两个阵营基地与显式战斗区域，供 {@code /aew1 preset load} 使用。 */
     public void clearAll() {
         points.clear();
         alphaBase = null;

@@ -1,6 +1,5 @@
 package org.shee33.act0.battlefield.command;
 
-import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -43,17 +42,21 @@ import java.util.Locale;
 import java.io.IOException;
 
 /**
- * {@code /battlefield} 命令：布场（基地/据点参数）、开局/停止、加入/离开候选名单、查看状态。
+ * 征服模式与通用管理指令：布场（基地/据点参数）、开局/停止、加入/离开候选名单、查看状态。
  *
  * <p>布场与开局为 OP（权限等级 2）操作；加入/离开/状态对所有玩家开放。
+ *
+ * <p>这些子命令直接挂在 {@link Aew1Command#ROOT} 根下（即 {@code /aew1 join} 而不是
+ * {@code /aew1 battlefield join}）——征服是本模组的主模式，多一层前缀只是让最常用的指令更难打。
  */
 public final class BattlefieldCommand {
 
     private BattlefieldCommand() {
     }
 
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(Commands.literal("battlefield")
+    /** 把本类的全部子命令挂到给定根节点上，由 {@link Aew1Command} 统一注册。 */
+    public static void attachTo(LiteralArgumentBuilder<CommandSourceStack> root) {
+        root
                 .executes(BattlefieldCommand::openUi)
                 .then(Commands.literal("ui").executes(BattlefieldCommand::openUi))
             .then(Commands.literal("browse").executes(BattlefieldCommand::openUi))
@@ -166,17 +169,13 @@ public final class BattlefieldCommand {
                                                 .executes(c -> ticketsOp(c, "sub", Faction.ALPHA))))
                                 .then(Commands.literal("bravo")
                                         .then(Commands.argument("amount", IntegerArgumentType.integer(1, 100000))
-                                                .executes(c -> ticketsOp(c, "sub", Faction.BRAVO)))))));
-        dispatcher.register(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
+                                                .executes(c -> ticketsOp(c, "sub", Faction.BRAVO))))))
+                .then(Commands.literal("suicide").executes(BattlefieldCommand::suicide));
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> buildHologramBranch() {
         return Commands.literal("hologram")
             .requires(src -> src.hasPermission(2))
-            .then(Commands.literal("browser")
-                .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.BROWSER)))
-            .then(Commands.literal("loadout")
-                .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.LOADOUT)))
             .then(Commands.literal("battlefield")
                 .executes(ctx -> createHologram(ctx, BattlefieldEntranceHolograms.EntryType.BATTLEFIELD)))
             .then(Commands.literal("all")
@@ -197,7 +196,7 @@ public final class BattlefieldCommand {
                                 .executes(c -> setOrder(c, false))));
     }
 
-    /** /battlefield area {info|set|clear|here}：管理战斗区域边界。 */
+    /** /aew1 area {info|set|clear|here}：管理战斗区域边界。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildAreaBranch() {
         return Commands.literal("area")
             .then(Commands.literal("info")
@@ -397,7 +396,7 @@ public final class BattlefieldCommand {
     }
 
     /**
-     * {@code /battlefield point add <x> <y> <z>}：按坐标登记一个据点。
+     * {@code /aew1 point add <x> <y> <z>}：按坐标登记一个据点。
      *
      * <p>据点原本只能通过<b>实体放置</b>据点方块来登记（{@code ControlPointBlock.setPlacedBy}）。
      * 这条命令补上了按坐标登记的入口，作用是让布场可以脚本化：服务端自动开图、批量部署地图模板、
@@ -607,7 +606,7 @@ public final class BattlefieldCommand {
 
     // ---- 模板管理 ----
 
-    /** /battlefield template {save|list|delete|info}：管理地图模板。 */
+    /** /aew1 template {save|list|delete|info}：管理地图模板。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildTemplateBranch() {
         return Commands.literal("template")
             .requires(s -> s.hasPermission(2))
@@ -629,7 +628,7 @@ public final class BattlefieldCommand {
         BattlefieldData data = BattlefieldData.get(level);
         BattleArea area = data.effectiveArea();
         if (!area.isSet()) {
-            feedback(c, "§c当前世界没有设置战斗区域，无法保存模板。请先使用 /battlefield area 设置区域。");
+            feedback(c, "§c当前世界没有设置战斗区域，无法保存模板。请先使用 /aew1 area 设置区域。");
             return 0;
         }
         String name = StringArgumentType.getString(c, "name");
@@ -704,7 +703,7 @@ public final class BattlefieldCommand {
 
     // ---- 预设管理 ----
 
-    /** /battlefield preset {save|load|list|delete}：把据点+基地+区域另存为命名预设，省去重启后重新布场。 */
+    /** /aew1 preset {save|load|list|delete}：把据点+基地+区域另存为命名预设，省去重启后重新布场。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildPresetBranch() {
         return Commands.literal("preset")
             .requires(s -> s.hasPermission(2))
@@ -855,7 +854,7 @@ public final class BattlefieldCommand {
      *
      * <p>因此走标准命令输出，仅在该规则被关掉时补发给玩家本人——两条保证各自成立且不会重复投递。
      */
-    private static void feedback(CommandContext<CommandSourceStack> c, String msg) {
+    static void feedback(CommandContext<CommandSourceStack> c, String msg) {
         CommandSourceStack source = c.getSource();
         source.sendSuccess(() -> Component.literal(msg), false);
         if (!source.getServer().getGameRules().getBoolean(GameRules.RULE_SENDCOMMANDFEEDBACK)
@@ -948,7 +947,7 @@ public final class BattlefieldCommand {
     // ---------------- bot（AI 士兵） ----------------
 
     /**
-     * {@code /battlefield bot ...}：对<b>进行中的对局</b>手动补入 AI 士兵。
+     * {@code /aew1 bot ...}：对<b>进行中的对局</b>手动补入 AI 士兵。
      *
      * <p>刻意不做成"开局前配置席位"：大战场的对局是长时间连续进行的，管理员真正需要的是在人数
      * 不够或一边被打崩时随时补人，而不是开局那一刻定好数量。
@@ -1025,7 +1024,7 @@ public final class BattlefieldCommand {
         return added.size();
     }
 
-    /** {@code /battlefield bot spawn [n]}：在执行者位置裸生成 AI 士兵，用作管理命令的执行者。 */
+    /** {@code /aew1 bot spawn [n]}：在执行者位置裸生成 AI 士兵，用作管理命令的执行者。 */
     private static int botSpawnBare(CommandContext<CommandSourceStack> ctx, int count) {
         var src = ctx.getSource();
         var pos = src.getPosition();

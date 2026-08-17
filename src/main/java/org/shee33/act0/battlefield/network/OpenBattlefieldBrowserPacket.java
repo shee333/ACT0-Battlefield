@@ -9,7 +9,7 @@ import org.shee33.act0.battlefield.client.ClientBattlefieldRoomList;
 import java.util.function.Supplier;
 
 /**
- * S→C：告知客户端打开对局浏览器（无载荷）。由战地终端物品右键 / {@code /battlefield ui} 等
+ * S→C：告知客户端打开对局浏览器（无载荷）。由战地终端物品右键 / {@code /aew1 ui} 等
  * 服务端触发点发出——这些入口本身运行在服务端，无法直接调用客户端的 {@code Minecraft.setScreen}，
  * 需要这一跳网络包。
  *

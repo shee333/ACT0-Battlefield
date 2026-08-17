@@ -12,7 +12,7 @@ import org.shee33.act0.battlefield.network.RequestBattlefieldRoomListPacket;
 /**
  * 对局浏览器界面（《游戏浏览器动效双版本规格文档》§1 + §3「浏览器 B · 战地模式 · 对局浏览器」）。
  *
- * <p>入口：战地终端物品右键 / {@code /battlefield ui|browse|browser} → 服务端发
+ * <p>入口：战地终端物品右键 / {@code /aew1 ui|browse|browser} → 服务端发
  * {@code OpenBattlefieldBrowserPacket} → 客户端 {@code setScreen(new BattlefieldRoomBrowserScreen())}。
  *
  * <p><b>本类刻意保持很薄</b>：视觉与动效全在 {@link BattlefieldRoomBrowserAnimator} 里，因为补间引擎

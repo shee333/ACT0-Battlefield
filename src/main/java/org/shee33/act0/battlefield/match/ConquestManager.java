@@ -24,7 +24,7 @@ import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.BattlefieldConfig;
-import org.shee33.act0.battlefield.command.BattlefieldCommand;
+import org.shee33.act0.battlefield.command.Aew1Command;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
@@ -601,9 +601,15 @@ public final class ConquestManager {
         player.sendSystemMessage(Component.literal("§c大战场中无法使用该指令，使用退出按钮可离开。"));
     }
 
+    /**
+     * 注册本模组唯一的命令根 {@code /aew1}（含突破模式与地图军械库子树）。
+     *
+     * <p>突破模式的子树也在这里一并注册，{@code BreakthroughManager} 不再单独注册命令——
+     * 同一个根被两个事件处理器各注册一次会让节点归属散开，改一处可能无声覆盖另一处。
+     */
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
-        BattlefieldCommand.register(event.getDispatcher());
+        Aew1Command.register(event.getDispatcher());
     }
 
     @SubscribeEvent

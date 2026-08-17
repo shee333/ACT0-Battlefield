@@ -1,6 +1,5 @@
 package org.shee33.act0.battlefield.command;
 
-import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -27,7 +26,7 @@ import org.shee33.act0.battlefield.BattlefieldConfig;
 import static org.shee33.act0.battlefield.Act0Battlefield.BREAKTHROUGH_MANAGER;
 
 /**
- * {@code /breakthrough} 命令树：突破模式（Breakthrough）的布场、开局、入队与状态查询。
+ * {@code /aew1 breakthrough} 命令子树：突破模式（Breakthrough）的布场、开局、入队与状态查询。
  *
  * <p>所有布场/开局/停止操作均为 OP（权限等级 2）；{@code join}、{@code leave}、{@code status}
  * 对所有玩家开放。
@@ -40,8 +39,9 @@ public final class BreakthroughCommand {
     private BreakthroughCommand() {
     }
 
-    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
-        dispatcher.register(
+    /** 突破模式子树，挂在 {@link Aew1Command#ROOT} 下成为 {@code /aew1 breakthrough ...}。 */
+    public static LiteralArgumentBuilder<CommandSourceStack> tree() {
+        return (
             Commands.literal("breakthrough")
                 .then(Commands.literal("setup").requires(s -> s.hasPermission(2))
                     .executes(BreakthroughCommand::setup))
@@ -74,7 +74,7 @@ public final class BreakthroughCommand {
         );
     }
 
-    /** /breakthrough order {attack|defend} <pointId>：小队长下达攻防命令。 */
+    /** /aew1 breakthrough order {attack|defend} <pointId>：小队长下达攻防命令。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildOrderBranch() {
         return Commands.literal("order")
                 .then(Commands.literal("attack")
@@ -102,7 +102,7 @@ public final class BreakthroughCommand {
         return result != null ? 0 : 1;
     }
 
-    /** /breakthrough start [tickets] [name] [template]：四档可选参数链。 */
+    /** /aew1 breakthrough start [tickets] [name] [template]：四档可选参数链。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildStartBranch() {
         return Commands.literal("start")
             .requires(s -> s.hasPermission(2))
@@ -121,7 +121,7 @@ public final class BreakthroughCommand {
                             StringArgumentType.getString(c, "template"))))));
     }
 
-    /** /breakthrough sector {add|list|remove}：管理突破模式的多个 sector。 */
+    /** /aew1 breakthrough sector {add|list|remove}：管理突破模式的多个 sector。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildSectorBranch() {
         return Commands.literal("sector").requires(s -> s.hasPermission(2))
             .then(Commands.literal("add")
@@ -298,7 +298,7 @@ public final class BreakthroughCommand {
     }
 
     /**
-     * {@code /breakthrough quickjoin <roomKey>}：给 ACT0-Arcade 房间浏览器用，把玩家加入一个
+     * {@code /aew1 breakthrough quickjoin <roomKey>}：给 ACT0-Arcade 房间浏览器用，把玩家加入一个
      * 正在进行中的突破对局（而不是预开局候选名单）。{@code roomKey} 接受
      * {@code browserRows()} 返回的 {@code bt@<dimension>} 格式，也接受裸维度 key。
      */

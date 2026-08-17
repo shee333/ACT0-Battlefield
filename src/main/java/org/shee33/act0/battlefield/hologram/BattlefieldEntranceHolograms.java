@@ -152,9 +152,7 @@ public final class BattlefieldEntranceHolograms {
     }
 
     public enum EntryType {
-        BROWSER("browser", "§e§l打开游戏浏览器", "打开游戏浏览器", "arcade browse"),
-        LOADOUT("loadout", "§a§l打开配装", "打开配装", "arcade loadout edit"),
-        BATTLEFIELD("battlefield", "§b§l打开大战场模式界面", "打开大战场模式界面", "battlefield ui");
+        BATTLEFIELD("battlefield", "§b§l打开大战场模式界面", "打开大战场模式界面", "aew1 ui");
 
         private final String id;
         private final String title;

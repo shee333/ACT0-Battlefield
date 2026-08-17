@@ -29,7 +29,7 @@ import java.util.function.BiPredicate;
  * AI 士兵的生命周期与驱动循环，是 bot 子系统对外的唯一入口。
  *
  * <p><b>加入方式是"对进行中的对局手动补人"</b>，而非街机那套房间席位：管理员用
- * {@code /battlefield bot add} 把 bot 塞进当前对局，走的是本体既有的
+ * {@code /aew1 bot add} 把 bot 塞进当前对局，走的是本体既有的
  * {@link ConquestMatch#addLatecomer} 中途加入路径——因此分阵营、进小队、发配装、部署落点
  * 全部由本体处理，bot 侧不复制任何一条。
  */
