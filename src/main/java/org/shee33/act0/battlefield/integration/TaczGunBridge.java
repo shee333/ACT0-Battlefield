@@ -4,8 +4,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraftforge.registries.ForgeRegistries;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Method;
 
 /**
@@ -42,7 +46,10 @@ public final class TaczGunBridge {
     private static Method boxIsAllTypeCreative;
 
     private static Method gunGetGunId;
+    private static Method gunSetGunId;
+    private static Method gunSetDummyAmmoAmount;
     private static Method timelessGetClientGunIndex;
+    private static Method timelessGetCommonGunIndex;
     private static Method clientIndexGetGunData;
     private static Method gunDataGetBolt;
     private static Object openBoltConstant;
@@ -82,10 +89,19 @@ public final class TaczGunBridge {
     static final String CLASS_GUN_DATA = "com.tacz.guns.resource.pojo.data.gun.GunData";
     static final String CLASS_BOLT = "com.tacz.guns.resource.pojo.data.gun.Bolt";
     static final String M_GET_GUN_ID = "getGunId";
+    static final String M_SET_GUN_ID = "setGunId";
+    static final String M_SET_DUMMY_AMMO_AMOUNT = "setDummyAmmoAmount";
     static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
+    static final String M_GET_COMMON_GUN_INDEX = "getCommonGunIndex";
     static final String M_GET_GUN_DATA = "getGunData";
     static final String M_GET_BOLT = "getBolt";
     static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
+
+    /**
+     * TaCZ 的枪械物品注册名。所有枪械共用这一个物品，具体是哪把枪由 NBT 里的 {@code GunId} 决定，
+     * 因此按 ID 造枪 = 取这个物品 + {@code setGunId}，不需要反射 TaCZ 的注册表对象。
+     */
+    static final String GUN_ITEM_ID = "tacz:modern_kinetic_gun";
 
     private static final boolean AVAILABLE;
 
@@ -106,9 +122,13 @@ public final class TaczGunBridge {
         gunGetDummyAmmoAmount = optional(iGunClass, M_DUMMY_AMMO_AMOUNT, ItemStack.class);
         gunUseInventoryAmmo = optional(iGunClass, M_USE_INVENTORY_AMMO, ItemStack.class);
 
+        gunSetGunId = optional(iGunClass, M_SET_GUN_ID, ItemStack.class, ResourceLocation.class);
+        gunSetDummyAmmoAmount = optional(iGunClass, M_SET_DUMMY_AMMO_AMOUNT, ItemStack.class, int.class);
+
         try {
             gunGetGunId = iGunClass == null ? null : iGunClass.getMethod(M_GET_GUN_ID, ItemStack.class);
             Class<?> timelessApi = Class.forName(CLASS_TIMELESS_API);
+            timelessGetCommonGunIndex = optional(timelessApi, M_GET_COMMON_GUN_INDEX, ResourceLocation.class);
             timelessGetClientGunIndex = timelessApi.getMethod(M_GET_CLIENT_GUN_INDEX, ResourceLocation.class);
             clientIndexGetGunData = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_GUN_DATA);
             gunDataGetBolt = Class.forName(CLASS_GUN_DATA).getMethod(M_GET_BOLT);
@@ -181,6 +201,106 @@ public final class TaczGunBridge {
             return getIGunOrNull.invoke(null, stack);
         } catch (Throwable e) {
             return null;
+        }
+    }
+
+    /**
+     * 读取枪械 ID（形如 {@code tacz:ak47}）；非枪或不可用返回 {@code null}。
+     *
+     * <p>{@code /aew1 arena ... weapon add} 靠它把管理员主手的枪登记进地图武器池——录入的是 ID
+     * 而不是整个 ItemStack，所以玩家出生时拿到的是一把全新的干净枪，不会继承管理员那把枪身上的
+     * 配件、磨损与弹药状态。
+     */
+    @Nullable
+    public static String gunId(ItemStack stack) {
+        Object gun = iGun(stack);
+        if (gun == null || gunGetGunId == null) {
+            return null;
+        }
+        try {
+            Object id = gunGetGunId.invoke(gun, stack);
+            return id == null ? null : id.toString();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /**
+     * 该枪械 ID 是否已被 TaCZ 加载（服务端可用的通用索引）。
+     *
+     * <p>解析不到判定方法时一律返回 {@code true}：宁可发一把可能有问题的枪，也不能因为"无法验证"
+     * 就让玩家空手出生。真正的资源包缺失由 TaCZ 自己以错误模型呈现，比无武器可用要清楚得多。
+     */
+    public static boolean isKnownGun(@Nullable String gunId) {
+        if (!AVAILABLE || gunId == null || gunId.isBlank()) {
+            return false;
+        }
+        if (timelessGetCommonGunIndex == null) {
+            return true;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(gunId);
+        if (id == null) {
+            return false;
+        }
+        try {
+            Object optional = timelessGetCommonGunIndex.invoke(null, id);
+            return optional instanceof java.util.Optional<?> opt && opt.isPresent();
+        } catch (Throwable e) {
+            return true;
+        }
+    }
+
+    /**
+     * 按枪械 ID 造一把全新的枪；造不出来返回 {@link ItemStack#EMPTY}。
+     *
+     * <p>TaCZ 所有枪械共用 {@value #GUN_ITEM_ID} 这一个物品，区别只在 NBT 的 {@code GunId}，
+     * 因此造枪 = 取物品 + {@code setGunId}。
+     */
+    public static ItemStack createGun(@Nullable String gunId) {
+        if (!AVAILABLE || gunSetGunId == null || gunId == null || gunId.isBlank()) {
+            return ItemStack.EMPTY;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(gunId);
+        ResourceLocation itemId = ResourceLocation.tryParse(GUN_ITEM_ID);
+        if (id == null || itemId == null) {
+            return ItemStack.EMPTY;
+        }
+        Item item = ForgeRegistries.ITEMS.getValue(itemId);
+        if (item == null || item == Items.AIR) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = new ItemStack(item);
+        Object gun = iGun(stack);
+        if (gun == null) {
+            return ItemStack.EMPTY;
+        }
+        try {
+            gunSetGunId.invoke(gun, stack, id);
+            return stack;
+        } catch (Throwable e) {
+            return ItemStack.EMPTY;
+        }
+    }
+
+    /**
+     * 写入虚拟备弹数，同时也就把这把枪切到了虚拟备弹模式（TaCZ 用 {@code DummyAmmo} 标签是否存在
+     * 判断模式，见 {@code GunItemDataAccessor#useDummyAmmo}）。
+     *
+     * <p><b>刻意不设 MaxDummyAmmo</b>：设了上限之后弹药箱就补不过初始值，而大战场的补给道具
+     * 正是靠"补到超过出生携带量"来提供战术价值。不设上限则补给不受限。
+     *
+     * @return 是否写入成功
+     */
+    public static boolean setDummyAmmo(ItemStack stack, int amount) {
+        Object gun = iGun(stack);
+        if (gun == null || gunSetDummyAmmoAmount == null || amount < 0) {
+            return false;
+        }
+        try {
+            gunSetDummyAmmoAmount.invoke(gun, stack, amount);
+            return true;
+        } catch (Throwable e) {
+            return false;
         }
     }
 

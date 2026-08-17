@@ -41,6 +41,19 @@ class TaczGunBridgeTest {
         assertEquals("useInventoryAmmo", TaczGunBridge.M_USE_INVENTORY_AMMO);
     }
 
+    /** 按 ID 造枪与写虚拟备弹这条链路：拼错同样不报错，只会让玩家出生时空手。 */
+    @Test
+    void loadoutMethodNamesMatchUpstream() {
+        assertEquals("getGunId", TaczGunBridge.M_GET_GUN_ID);
+        assertEquals("setGunId", TaczGunBridge.M_SET_GUN_ID);
+        assertEquals("setDummyAmmoAmount", TaczGunBridge.M_SET_DUMMY_AMMO_AMOUNT,
+                "TaCZ 的写入方法是 setDummyAmmoAmount，读取才叫 getDummyAmmoAmount");
+        assertEquals("getCommonGunIndex", TaczGunBridge.M_GET_COMMON_GUN_INDEX,
+                "服务端要用 Common 索引，Client 索引在专用服务端上永远是空的");
+        assertEquals("tacz:modern_kinetic_gun", TaczGunBridge.GUN_ITEM_ID,
+                "所有 TaCZ 枪械共用这一个物品，靠 NBT GunId 区分");
+    }
+
     @Test
     void ammoMethodNamesMatchUpstream() {
         assertEquals("isAmmoOfGun", TaczGunBridge.M_IS_AMMO_OF_GUN);
