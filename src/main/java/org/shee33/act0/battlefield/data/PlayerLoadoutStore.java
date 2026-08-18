@@ -5,8 +5,10 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
+import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
 
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
@@ -15,6 +17,9 @@ import java.util.UUID;
 
 /**
  * 玩家在每张地图上的配装选择，按 {@code 玩家 UUID × 地图名} 持久化在<b>主世界</b>的 {@link SavedData} 里。
+ *
+ * <p>每张图下再按兵种分四套（见 {@link PlayerMapLoadout}）：四个兵种共用地图的武器池，但各记一套
+ * 选择，切兵种不该逼玩家重选主武器。
  *
  * <p><b>为什么按玩家×地图而不是按玩家全局</b>：每张图的武器池是独立配置的，全局记一套的话换图之后
  * 大概率整套失效、玩家每局都要重新选。按图记住则"我在这张图惯用的枪"能一直保留。
@@ -30,26 +35,48 @@ public final class PlayerLoadoutStore extends SavedData {
     private static final String KEY_UUID = "uuid";
     private static final String KEY_MAPS = "maps";
 
-    /** 玩家 UUID → (地图名 → 选择)。 */
-    private final Map<UUID, Map<String, PlayerArenaLoadout>> byPlayer = new LinkedHashMap<>();
+    /** 玩家 UUID → (地图名 → 该图的整套兵种配装)。 */
+    private final Map<UUID, Map<String, PlayerMapLoadout>> byPlayer = new LinkedHashMap<>();
 
     public static PlayerLoadoutStore get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
                 PlayerLoadoutStore::load, PlayerLoadoutStore::new, NAME);
     }
 
-    /** 该玩家在该图上的选择；没选过返回 {@link PlayerArenaLoadout#EMPTY}。 */
-    public PlayerArenaLoadout loadout(UUID playerId, @Nullable String mapName) {
+    /** 该玩家在该图上的整套兵种配装；没记录返回 {@link PlayerMapLoadout#EMPTY}。 */
+    public PlayerMapLoadout mapLoadout(UUID playerId, @Nullable String mapName) {
         String key = normalize(mapName);
         if (playerId == null || key == null) {
-            return PlayerArenaLoadout.EMPTY;
+            return PlayerMapLoadout.EMPTY;
         }
-        Map<String, PlayerArenaLoadout> maps = byPlayer.get(playerId);
+        Map<String, PlayerMapLoadout> maps = byPlayer.get(playerId);
         if (maps == null) {
-            return PlayerArenaLoadout.EMPTY;
+            return PlayerMapLoadout.EMPTY;
         }
-        PlayerArenaLoadout l = maps.get(key);
-        return l != null ? l : PlayerArenaLoadout.EMPTY;
+        PlayerMapLoadout l = maps.get(key);
+        return l != null ? l : PlayerMapLoadout.EMPTY;
+    }
+
+    public SoldierClass selectedClass(UUID playerId, @Nullable String mapName) {
+        return mapLoadout(playerId, mapName).selected();
+    }
+
+    /** 该玩家在该图、该兵种下的槽位选择；没选过返回 {@link PlayerArenaLoadout#EMPTY}。 */
+    public PlayerArenaLoadout loadout(UUID playerId, @Nullable String mapName, SoldierClass soldierClass) {
+        return soldierClass == null
+                ? PlayerArenaLoadout.EMPTY
+                : mapLoadout(playerId, mapName).loadout(soldierClass);
+    }
+
+    /** 切换该玩家在该图上的兵种，各兵种已存的槽位选择保持不动。 */
+    public PlayerMapLoadout setSelectedClass(UUID playerId, String mapName, SoldierClass soldierClass) {
+        String key = normalize(mapName);
+        if (playerId == null || key == null || soldierClass == null) {
+            return PlayerMapLoadout.EMPTY;
+        }
+        PlayerMapLoadout next = mapLoadout(playerId, key).withSelected(soldierClass);
+        put(playerId, key, next);
+        return next;
     }
 
     /**
@@ -64,24 +91,25 @@ public final class PlayerLoadoutStore extends SavedData {
      * @param id 必须已由调用方对着目录校验过；这里不再重复校验，也就不会把非法提交
      *           误当成"清除该槽位"
      */
-    public PlayerArenaLoadout setPick(UUID playerId, String mapName, LoadoutSlot slot, String id) {
+    public PlayerArenaLoadout setPick(UUID playerId, String mapName, SoldierClass soldierClass,
+                                      LoadoutSlot slot, String id) {
         String key = normalize(mapName);
-        if (playerId == null || key == null || slot == null) {
+        if (playerId == null || key == null || soldierClass == null || slot == null) {
             return PlayerArenaLoadout.EMPTY;
         }
-        PlayerArenaLoadout next = loadout(playerId, key).with(slot, id);
+        PlayerMapLoadout next = mapLoadout(playerId, key).withPick(soldierClass, slot, id);
         put(playerId, key, next);
-        return next;
+        return next.loadout(soldierClass);
     }
 
-    /** 覆盖该玩家在该图上的整套选择；空选择等同于删除这条记录，避免存档里堆空壳。 */
-    public void put(UUID playerId, String mapName, PlayerArenaLoadout loadout) {
+    /** 覆盖该玩家在该图上的整套兵种配装；空记录等同于删除，避免存档里堆空壳。 */
+    public void put(UUID playerId, String mapName, PlayerMapLoadout loadout) {
         String key = normalize(mapName);
         if (playerId == null || key == null || loadout == null) {
             return;
         }
         if (loadout.isEmpty()) {
-            Map<String, PlayerArenaLoadout> maps = byPlayer.get(playerId);
+            Map<String, PlayerMapLoadout> maps = byPlayer.get(playerId);
             if (maps != null && maps.remove(key) != null) {
                 if (maps.isEmpty()) {
                     byPlayer.remove(playerId);
@@ -108,13 +136,13 @@ public final class PlayerLoadoutStore extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag) {
         ListTag players = new ListTag();
-        for (Map.Entry<UUID, Map<String, PlayerArenaLoadout>> e : byPlayer.entrySet()) {
+        for (Map.Entry<UUID, Map<String, PlayerMapLoadout>> e : byPlayer.entrySet()) {
             CompoundTag entry = new CompoundTag();
             entry.putUUID(KEY_UUID, e.getKey());
             CompoundTag maps = new CompoundTag();
-            for (Map.Entry<String, PlayerArenaLoadout> m : e.getValue().entrySet()) {
+            for (Map.Entry<String, PlayerMapLoadout> m : e.getValue().entrySet()) {
                 if (!m.getValue().isEmpty()) {
-                    maps.put(m.getKey(), ArenaCatalogCodec.saveLoadout(m.getValue()));
+                    maps.put(m.getKey(), ArenaCatalogCodec.saveMapLoadout(m.getValue()));
                 }
             }
             if (!maps.isEmpty()) {
@@ -136,9 +164,9 @@ public final class PlayerLoadoutStore extends SavedData {
             }
             UUID id = entry.getUUID(KEY_UUID);
             CompoundTag maps = entry.getCompound(KEY_MAPS);
-            Map<String, PlayerArenaLoadout> byName = new LinkedHashMap<>();
+            Map<String, PlayerMapLoadout> byName = new LinkedHashMap<>();
             for (String name : maps.getAllKeys()) {
-                PlayerArenaLoadout l = ArenaCatalogCodec.loadLoadout(maps.getCompound(name));
+                PlayerMapLoadout l = ArenaCatalogCodec.loadMapLoadout(maps.getCompound(name));
                 if (!l.isEmpty()) {
                     byName.put(name, l);
                 }

@@ -3,11 +3,13 @@ package org.shee33.act0.battlefield.data;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.ArenaCatalog;
 import org.shee33.act0.battlefield.core.arena.ArenaItemEntry;
 import org.shee33.act0.battlefield.core.arena.ArenaWeaponEntry;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
+import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
 import org.shee33.act0.battlefield.core.arena.WeaponCategory;
 
 import java.util.EnumMap;
@@ -31,6 +33,8 @@ public final class ArenaCatalogCodec {
     private static final String KEY_NAME = "name";
     private static final String KEY_AMMO = "ammo";
     private static final String KEY_COUNT = "count";
+    private static final String KEY_CLASS = "class";
+    private static final String KEY_BY_CLASS = "byClass";
 
     private ArenaCatalogCodec() {
     }
@@ -138,5 +142,43 @@ public final class ArenaCatalogCodec {
             }
         }
         return picks.isEmpty() ? PlayerArenaLoadout.EMPTY : new PlayerArenaLoadout(picks);
+    }
+
+    /** 把一张图上的整套兵种配装写成 NBT。空兵种桶不落键。 */
+    public static CompoundTag saveMapLoadout(PlayerMapLoadout loadout) {
+        CompoundTag out = new CompoundTag();
+        out.putString(KEY_CLASS, loadout.selected().id());
+        CompoundTag buckets = new CompoundTag();
+        for (Map.Entry<SoldierClass, PlayerArenaLoadout> e : loadout.byClass().entrySet()) {
+            buckets.put(e.getKey().id(), saveLoadout(e.getValue()));
+        }
+        out.put(KEY_BY_CLASS, buckets);
+        return out;
+    }
+
+    /**
+     * 读出一张图上的整套兵种配装，兼容 0.2.9 及更早的单套格式。
+     *
+     * <p>旧格式直接把「槽位 → ID」平铺在这一层，没有 {@code byClass} 子节点。靠这个键的有无区分：
+     * 旧记录整套迁移进 {@link SoldierClass#DEFAULT} 桶，玩家原来惯用的枪落在突击兵上，
+     * 不会凭空消失。
+     */
+    public static PlayerMapLoadout loadMapLoadout(CompoundTag tag) {
+        if (!tag.contains(KEY_BY_CLASS, Tag.TAG_COMPOUND)) {
+            PlayerArenaLoadout legacy = loadLoadout(tag);
+            return legacy.isEmpty()
+                    ? PlayerMapLoadout.EMPTY
+                    : new PlayerMapLoadout(SoldierClass.DEFAULT,
+                            Map.of(SoldierClass.DEFAULT, legacy));
+        }
+        CompoundTag buckets = tag.getCompound(KEY_BY_CLASS);
+        Map<SoldierClass, PlayerArenaLoadout> byClass = new EnumMap<>(SoldierClass.class);
+        for (String key : buckets.getAllKeys()) {
+            SoldierClass soldierClass = SoldierClass.byId(key);
+            if (soldierClass != null) {
+                byClass.put(soldierClass, loadLoadout(buckets.getCompound(key)));
+            }
+        }
+        return new PlayerMapLoadout(SoldierClass.byIdOrDefault(tag.getString(KEY_CLASS)), byClass);
     }
 }

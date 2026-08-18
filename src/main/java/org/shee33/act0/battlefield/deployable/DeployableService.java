@@ -63,17 +63,21 @@ public final class DeployableService {
         final UUID ownerId;
         final String ownerName;
         final long deployTick;
+        /** 本条目的存活时长；工程兵部署的箱子更久，因此按条目记而不是全局常量。 */
+        final int lifetimeTicks;
         final Set<UUID> supplied = new HashSet<>();
         double x;
         double y;
         double z;
 
-        Entry(UUID entityId, DeployableKind kind, UUID ownerId, String ownerName, long deployTick) {
+        Entry(UUID entityId, DeployableKind kind, UUID ownerId, String ownerName, long deployTick,
+              int lifetimeTicks) {
             this.entityId = entityId;
             this.kind = kind;
             this.ownerId = ownerId;
             this.ownerName = ownerName;
             this.deployTick = deployTick;
+            this.lifetimeTicks = lifetimeTicks;
         }
     }
 
@@ -94,7 +98,7 @@ public final class DeployableService {
      * @return 部署出的实体；世界不可用时返回 {@code null}
      */
     public ItemEntity deploy(ServerLevel level, ServerPlayer owner, DeployableKind kind, ItemStack display,
-                             long now) {
+                             long now, int lifetimeTicks) {
         Vec3 look = owner.getLookAngle();
         Vec3 spawn = owner.getEyePosition().add(look.x * 0.4D, -0.2D, look.z * 0.4D);
         // 打上唯一标记，否则两个箱子挨得近时会被原版掉落物合并逻辑并成一个实体（同物品同 NBT
@@ -111,7 +115,7 @@ public final class DeployableService {
         level.addFreshEntity(entity);
 
         entries.add(new Entry(entity.getUUID(), kind, owner.getUUID(),
-                owner.getGameProfile().getName(), now));
+                owner.getGameProfile().getName(), now, lifetimeTicks));
         return entity;
     }
 
@@ -140,7 +144,7 @@ public final class DeployableService {
                 it.remove();
                 continue;
             }
-            if (SupplyRules.expired(now, entry.deployTick, SupplyRules.LIFETIME_TICKS)) {
+            if (SupplyRules.expired(now, entry.deployTick, entry.lifetimeTicks)) {
                 entity.discard();
                 it.remove();
                 continue;

@@ -29,6 +29,7 @@ import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.network.SquadRosterDto;
 import org.shee33.act0.battlefield.network.SquadActionPacket;
@@ -40,6 +41,7 @@ import org.shee33.act0.battlefield.deployable.DeployableKind;
 import org.shee33.act0.battlefield.core.SupplyRules;
 import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.data.BattlefieldData;
+import org.shee33.act0.battlefield.loadout.BattlefieldLoadoutService;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.network.BattleResultDto;
@@ -115,6 +117,9 @@ public final class BreakthroughMatch {
     private final SquadManager squadManager;
     private final KillTracker killTracker;
     private final RedeployService redeployService;
+
+    /** 本图的军械库键，用于解析每名玩家生效的兵种。 */
+    private final String arenaKey;
     private final ConquestRules captureRules;
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
 
@@ -219,9 +224,10 @@ public final class BreakthroughMatch {
         this.squadManager = new SquadManager(squadSize, factionOf);
         squadManager.buildSquads();
         squadManager.initDeployContext(this::player, level, downedUntil, squadDeployEnemyBlockRadius);
+        this.arenaKey = ArenaKey.of(lobbyLevel);
         this.redeployService = new RedeployService(level, data, factionOf, squadManager, points, defs,
                 downedUntil, escapeTicks, lastHurtTick, this::cancelRevive,
-                spawnProtectionTicks, redeployDelayTicks, "突破模式", ArenaKey.of(lobbyLevel));
+                spawnProtectionTicks, redeployDelayTicks, "突破模式", arenaKey);
         this.captureRules = ConquestRules.builder()
                 .startingTickets(1)
                 .captureSeconds(rules.captureSeconds())
@@ -1289,7 +1295,31 @@ public final class BreakthroughMatch {
         if (rf == null || rf != factionOf.get(targetId)) {
             return false;
         }
-        return squadManager.isSameSquad(reviverId, targetId) || holdsSyringe(reviver);
+        // 医疗兵是唯一不靠道具就能跨小队救人的兵种；医疗针对所有兵种仍然给速度加成，两者不重叠。
+        return squadManager.isSameSquad(reviverId, targetId)
+                || holdsSyringe(reviver)
+                || classOf(reviver) == SoldierClass.MEDIC;
+    }
+
+    private SoldierClass classOf(ServerPlayer player) {
+        return BattlefieldLoadoutService.classOf(player, arenaKey);
+    }
+
+    /**
+     * 突击兵的呼吸回血启动更快。
+     *
+     * <p>按玩家逐个解析而非开局定死：兵种是在部署界面选的，一名玩家整场里可以换。
+     */
+    private int breathHealDelayOf(ServerPlayer player) {
+        return classOf(player) == SoldierClass.ASSAULT
+                ? Math.max(1, breathHealDelayTicks / SoldierClass.ASSAULT_HEAL_DELAY_DIVISOR)
+                : breathHealDelayTicks;
+    }
+
+    private int deployableLifetimeOf(ServerPlayer owner) {
+        return classOf(owner) == SoldierClass.ENGINEER
+                ? SupplyRules.LIFETIME_TICKS * SoldierClass.ENGINEER_DEPLOYABLE_LIFETIME_MULTIPLIER
+                : SupplyRules.LIFETIME_TICKS;
     }
 
     private static boolean holdsSyringe(ServerPlayer player) {
@@ -1345,7 +1375,7 @@ public final class BreakthroughMatch {
         if (ended || !factionOf.containsKey(id) || downedUntil.containsKey(id)) {
             return false;
         }
-        deployables.deploy(level, player, kind, display, server.getTickCount());
+        deployables.deploy(level, player, kind, display, server.getTickCount(), deployableLifetimeOf(player));
         return true;
     }
 
@@ -1965,7 +1995,7 @@ public final class BreakthroughMatch {
                 continue;
             }
             long last = lastHurtTick.getOrDefault(id, now);
-            if (now - last >= breathHealDelayTicks) {
+            if (now - last >= breathHealDelayOf(p)) {
                 p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 1, false, false, true));
             }
         }

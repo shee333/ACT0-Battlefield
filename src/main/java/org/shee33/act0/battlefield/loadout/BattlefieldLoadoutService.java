@@ -9,6 +9,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.shee33.act0.battlefield.bot.mc.BotSpawner;
+import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.ArenaCatalog;
 import org.shee33.act0.battlefield.core.arena.ArenaItemEntry;
 import org.shee33.act0.battlefield.core.arena.ArenaWeaponEntry;
@@ -130,8 +131,47 @@ public final class BattlefieldLoadoutService {
         if (!catalog.hasOption(slot, id)) {
             return false;
         }
-        PlayerLoadoutStore.get(player.server).setPick(player.getUUID(), arenaKey, slot, id);
+        PlayerLoadoutStore.get(player.server)
+                .setPick(player.getUUID(), arenaKey, classOf(player, arenaKey), slot, id);
         return true;
+    }
+
+    /**
+     * 记录玩家切换兵种。
+     *
+     * @param classId {@link SoldierClass#id()}；未知值一律拒绝而非回落默认，避免客户端拼错
+     *                兵种 ID 时玩家莫名被切回突击兵
+     * @return 是否被接受
+     */
+    public static boolean setSelectedClass(ServerPlayer player, @Nullable String arenaKey,
+                                           @Nullable String classId) {
+        SoldierClass soldierClass = SoldierClass.byId(classId);
+        if (player == null || arenaKey == null || soldierClass == null) {
+            return false;
+        }
+        PlayerLoadoutStore.get(player.server).setSelectedClass(player.getUUID(), arenaKey, soldierClass);
+        return true;
+    }
+
+    /**
+     * 该玩家在该图上生效的兵种，供对局侧解析兵种能力。
+     *
+     * <p>AI 士兵没有存档，按 UUID 定死一个兵种——让四种能力在 bot 身上也有分布，
+     * 否则一场纯 bot 的测试局永远只能观察到突击兵。
+     */
+    public static SoldierClass classOf(ServerPlayer player, @Nullable String arenaKey) {
+        if (player == null) {
+            return SoldierClass.DEFAULT;
+        }
+        if (BotSpawner.isBot(player)) {
+            return botClass(player.getUUID());
+        }
+        return PlayerLoadoutStore.get(player.server).selectedClass(player.getUUID(), arenaKey);
+    }
+
+    private static SoldierClass botClass(UUID botId) {
+        SoldierClass[] all = SoldierClass.values();
+        return all[Math.floorMod(botId.hashCode(), all.length)];
     }
 
     /**
@@ -188,7 +228,8 @@ public final class BattlefieldLoadoutService {
         if (BotSpawner.isBot(player)) {
             return botLoadout(player.getUUID(), catalog);
         }
-        return PlayerLoadoutStore.get(player.server).loadout(player.getUUID(), arenaKey);
+        return PlayerLoadoutStore.get(player.server)
+                .loadout(player.getUUID(), arenaKey, classOf(player, arenaKey));
     }
 
     /**
