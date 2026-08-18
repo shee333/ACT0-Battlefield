@@ -34,6 +34,7 @@ import org.shee33.act0.battlefield.core.LatecomerAssignment;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
 import org.shee33.act0.battlefield.data.BattlefieldData;
+import org.shee33.act0.battlefield.loadout.BattlefieldLoadoutService;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.network.ActionPacket;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
@@ -827,6 +828,7 @@ public final class ConquestManager {
         battleNames.clear();
         lobbyWorlds.clear();
         lobbies.clear();
+        BattlefieldLoadoutService.resetDiagnostics();
     }
 
     private static String defaultBattleName(ResourceKey<Level> key) {

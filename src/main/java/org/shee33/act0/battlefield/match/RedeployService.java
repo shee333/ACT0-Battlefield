@@ -30,8 +30,10 @@ import org.slf4j.Logger;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -91,6 +93,15 @@ public final class RedeployService {
      * 间隔太短直接丢弃"写法。
      */
     private final Map<UUID, Long> lastSlotOverrideTick = new LinkedHashMap<>();
+    /**
+     * 因节流被丢弃过换装请求、需要补发一次快照的玩家。
+     *
+     * <p>丢包时<b>不能就地回包</b>：那正好把节流要挡的回包放大重新打开，狂发小包的客户端会
+     * 收到等量的回复。但也不能什么都不做——真实玩家的一次快速双击同样会被丢掉，而客户端已经
+     * 乐观翻转了显示，界面从此停在一个服务端根本没接受的选择上。折中是记下来，在既有的每秒
+     * 部署刷新里补发一次：真人在 1 秒内看到纠正，恶意客户端最多每秒收到一个包。
+     */
+    private final Set<UUID> pendingLoadoutResync = new LinkedHashSet<>();
     /** 换装覆盖包最小处理间隔：100ms（20 tick/s，2 tick）。 */
     private static final int MIN_SLOT_OVERRIDE_INTERVAL_TICKS = 2;
 
@@ -208,6 +219,9 @@ public final class RedeployService {
             if (p != null && faction != null) {
                 teleportToDeployOverview(p, faction);
                 BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
+                if (pendingLoadoutResync.remove(id)) {
+                    BattlefieldNetwork.sendDeployLoadout(p, deployLoadoutFor(p));
+                }
             }
         }
     }
@@ -246,8 +260,10 @@ public final class RedeployService {
         }
         long now = server.getTickCount();
         if (isSlotOverrideThrottled(lastSlotOverrideTick.get(id), now)) {
-            // 请求间隔太短(<100ms):直接丢弃,不回复任何东西——正常客户端点击换装面板的频率
-            // 不会撞上这个门槛,只有异常/恶意客户端狂发这个C2S小包才会被限制住(P1-2修复)。
+            // 请求间隔太短(<100ms):就地丢弃,不回包——正常客户端点击换装面板的频率不会撞上这个
+            // 门槛,只有异常/恶意客户端狂发这个C2S小包才会被限制住(P1-2修复)。补发推迟到下一次
+            // 部署刷新,见 pendingLoadoutResync。
+            pendingLoadoutResync.add(id);
             return;
         }
         lastSlotOverrideTick.put(id, now);
@@ -337,6 +353,7 @@ public final class RedeployService {
         spectateTarget.clear();
         deployPanState.clear();
         lastSlotOverrideTick.clear();
+        pendingLoadoutResync.clear();
     }
 
     /**
@@ -346,6 +363,7 @@ public final class RedeployService {
      */
     public void clearLoadoutOverride(UUID id) {
         lastSlotOverrideTick.remove(id);
+        pendingLoadoutResync.remove(id);
     }
 
     /** Entity id of the living squadmate closest to {@code player}, or -1 if none. */

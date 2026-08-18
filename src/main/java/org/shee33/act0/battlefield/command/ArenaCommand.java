@@ -25,6 +25,7 @@ import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.integration.TaczGunBridge;
 
 import javax.annotation.Nullable;
+import java.util.Set;
 
 /**
  * {@code /aew1 arena <地图名> ...}：逐图配置武器与道具池。
@@ -52,6 +53,9 @@ public final class ArenaCommand {
      */
     private static final int DEFAULT_SPARE_MAGAZINES = 3;
 
+    /** 与地图名参数同级的字面量子命令；地图名撞上它们时必须加引号才能走到参数分支。 */
+    private static final Set<String> SIBLING_LITERALS = Set.of("list");
+
     /**
      * 地图名补全。
      *
@@ -63,9 +67,24 @@ public final class ArenaCommand {
     private static final SuggestionProvider<CommandSourceStack> MAP_NAMES =
             (ctx, builder) -> SharedSuggestionProvider.suggest(
                     ArenaKey.knownNames(ctx.getSource().getServer()).stream()
-                            .map(StringArgumentType::escapeIfRequired)
+                            .map(ArenaCommand::suggestable)
                             .toList(),
                     builder);
+
+    /**
+     * 把地图名转成"补全出来就能直接用"的形式。
+     *
+     * <p>除了 {@link StringArgumentType#escapeIfRequired} 处理的非法字符，还要额外给撞名同级
+     * 字面量的地图强制加引号：Brigadier 先匹配字面量，所以一张真叫 {@code list} 的地图，
+     * 裸写 {@code /aew1 arena list} 永远会被 {@code list} 子命令截走，这张图就再也访问不到了。
+     * 加了引号才落到地图名参数上。
+     */
+    static String suggestable(String mapName) {
+        if (!SIBLING_LITERALS.contains(mapName)) {
+            return StringArgumentType.escapeIfRequired(mapName);
+        }
+        return '"' + mapName.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    }
 
     public static LiteralArgumentBuilder<CommandSourceStack> tree() {
         return Commands.literal("arena")

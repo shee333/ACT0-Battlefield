@@ -62,6 +62,18 @@ public final class BattlefieldLoadoutService {
     }
 
     /**
+     * 清空"已告警过"的记录，随服务器停止调用。
+     *
+     * <p>这两个集合是静态的，而单人存档里同一个 JVM 会连续开关多个世界。不清的话：管理员在 A 世界
+     * 见过一次告警、退出、改好配置再进 B 世界，同名条目的问题就再也不会提示了——而"提示只出现一次"
+     * 本来是为了防刷屏，不是为了永久闭嘴。
+     */
+    public static void resetDiagnostics() {
+        REPORTED_BAD_ENTRIES.clear();
+        REPORTED_EMPTY_ARENAS.clear();
+    }
+
+    /**
      * 部署界面用的配装快照：槽位与可选项来自地图目录，当前选中来自玩家存档（失效项已回落）。
      *
      * <p>目录里一项都没配的槽位不出现在 DTO 里，面板因此不会画出空槽。
