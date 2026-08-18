@@ -103,7 +103,7 @@ public final class SquadManager {
 
     // ---- Squad building ----
 
-    /** 按阵营自动分队：每个小队最多 squadSize 人，北大西洋公约/无邦军团各自独立连续编号。 */
+    /** 按阵营自动分队：每个小队最多 squadSize 人，ALPHA/BRAVO 各自独立连续编号。 */
     public void buildSquads() {
         squadOf.clear();
         squads.clear();

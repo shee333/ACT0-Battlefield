@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.Sector;
 
@@ -47,6 +48,9 @@ public final class BattlefieldData extends SavedData {
 
     /** 管理员为当前世界命名的地图名，供对局浏览器展示；空字符串表示未命名。 */
     private String mapName = "";
+
+    /** 该地图的两个阵营名称；建图时必填，0.2.7 及更早的存档读档时回落 {@link FactionNames#LEGACY}。 */
+    private FactionNames factionNames = FactionNames.LEGACY;
 
     /** 该地图的自动开始人数；{@code 0} 表示跟随全局配置（见 {@link MatchCapacity#resolve}）。 */
     private int minPlayersToStart;
@@ -162,6 +166,16 @@ public final class BattlefieldData extends SavedData {
     /** 当前世界的地图名；未命名返回空字符串（由调用方决定占位显示）。 */
     public String mapName() {
         return mapName;
+    }
+
+    public void setFactionNames(FactionNames names) {
+        this.factionNames = names != null ? names : FactionNames.LEGACY;
+        setDirty();
+    }
+
+    /** 该地图的阵营名称；永不为 {@code null}。 */
+    public FactionNames factionNames() {
+        return factionNames;
     }
 
     // ---- 按地图自定义的人数规则 ----
@@ -367,6 +381,8 @@ public final class BattlefieldData extends SavedData {
         if (!mapName.isEmpty()) {
             tag.putString("mapName", mapName);
         }
+        tag.putString("factionAlpha", factionNames.alpha());
+        tag.putString("factionBravo", factionNames.bravo());
         return tag;
     }
 
@@ -410,6 +426,8 @@ public final class BattlefieldData extends SavedData {
         if (tag.contains("mapName")) {
             data.mapName = tag.getString("mapName");
         }
+        data.factionNames = FactionNames.sanitize(
+                tag.getString("factionAlpha"), tag.getString("factionBravo"));
         return data;
     }
 

@@ -25,9 +25,9 @@ public final class LatecomerAssignment {
      * 为中途加入的玩家挑选阵营：双方都还有名额时 50/50 随机；只有一方满员时强制分到未满的
      * 一方；双方都满员时返回 {@code null}，交由调用方决定兜底行为（例如拒绝加入）。
      *
-     * @param alphaCount ALPHA（北大西洋公约）当前人数
+     * @param alphaCount ALPHA 当前人数
      * @param alphaCap   ALPHA 人数上限；没有上限传 {@link Integer#MAX_VALUE}
-     * @param bravoCount BRAVO（无邦军团）当前人数
+     * @param bravoCount BRAVO 当前人数
      * @param bravoCap   BRAVO 人数上限；没有上限传 {@link Integer#MAX_VALUE}
      * @return 挑中的阵营；双方都已满员时返回 {@code null}
      */

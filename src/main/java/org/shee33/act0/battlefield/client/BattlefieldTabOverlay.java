@@ -10,6 +10,7 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.client.screen.PixelTheme;
 import org.shee33.act0.battlefield.network.BattleTabDto;
 import org.shee33.act0.battlefield.network.TabEntryDto;
 
@@ -70,8 +71,8 @@ public final class BattlefieldTabOverlay {
         String tickets = "§b" + tab.alphaTickets() + " §7- §c" + tab.bravoTickets();
         gg.drawString(font, tickets, x + w / 2 - font.width(tickets) / 2, y + 12, WHITE, false);
 
-        renderTeam(gg, font, x, y + 30, colW, "北大西洋公约", BLUE, tab.alpha(), tab.myFaction() == 1);
-        renderTeam(gg, font, x + colW + colGap, y + 30, colW, "无邦军团", RED, tab.bravo(), tab.myFaction() == 2);
+        renderTeam(gg, font, x, y + 30, colW, tab.alphaName(), BLUE, tab.alpha(), tab.myFaction() == 1);
+        renderTeam(gg, font, x + colW + colGap, y + 30, colW, tab.bravoName(), RED, tab.bravo(), tab.myFaction() == 2);
     }
 
     private static void renderTeam(GuiGraphics gg, Font font, int x, int y, int w, String name, int color,
@@ -79,8 +80,10 @@ public final class BattlefieldTabOverlay {
         int h = 22 + Math.max(6, entries.size()) * 13;
         gg.fill(x, y, x + w, y + h, PANEL);
         gg.fill(x, y, x + w, y + 2, color);
-        String header = (mine ? "● " : "") + name + "  " + entries.size() + "人";
-        gg.drawString(font, header, x + 6, y + 7, color, false);
+        String prefix = mine ? "● " : "";
+        String suffix = "  " + entries.size() + "人";
+        int nameAvail = (w - 68) - 6 - font.width(prefix) - font.width(suffix);
+        gg.drawString(font, prefix + PixelTheme.fit(font, name, nameAvail) + suffix, x + 6, y + 7, color, false);
         gg.drawString(font, "K", x + w - 68, y + 7, DIM, false);
         gg.drawString(font, "D", x + w - 48, y + 7, DIM, false);
         gg.drawString(font, "ms", x + w - 30, y + 7, DIM, false);

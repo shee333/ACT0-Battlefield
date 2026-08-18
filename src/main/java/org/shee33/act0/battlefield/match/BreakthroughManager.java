@@ -24,6 +24,7 @@ import org.shee33.act0.battlefield.Act0Battlefield;
 import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.BreakthroughRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.data.BattlefieldData;
@@ -163,8 +164,8 @@ public final class BreakthroughManager {
                         maxPlayers,
                         minPlayers,
                         match.contains(viewerId),
-                        Faction.ALPHA.coloredName(),
-                        Faction.BRAVO.coloredName(),
+                        namesOf(level).colored(Faction.ALPHA),
+                        namesOf(level).colored(Faction.BRAVO),
                         match.displayTickets(Faction.ALPHA),
                         match.displayTickets(Faction.BRAVO),
                         match.startingTicketsHint(),
@@ -188,11 +189,15 @@ public final class BreakthroughManager {
                     maxPlayers,
                     minPlayers,
                     viewerIn,
-                    Faction.ALPHA.coloredName(),
-                    Faction.BRAVO.coloredName(),
+                    namesOf(level).colored(Faction.ALPHA),
+                    namesOf(level).colored(Faction.BRAVO),
                     0, 0, 0, 0));
         }
         return rows;
+    }
+
+    private static FactionNames namesOf(ServerLevel level) {
+        return BattlefieldData.get(level).factionNames();
     }
 
     private static String mapNameOrFallback(ServerLevel level, ResourceKey<Level> key) {
@@ -251,7 +256,7 @@ public final class BreakthroughManager {
         if (match.addLatecomer(player, faction)) {
             ResourceKey<Level> battleKey = levelKey != null ? levelKey : player.serverLevel().dimension();
             player.displayClientMessage(Component.literal("§a已加入 "
-                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + faction.coloredName()), true);
+                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + namesOf(match.level()).colored(faction)), true);
         } else {
             player.displayClientMessage(Component.literal("§c无法加入该突破对局"), true);
         }
@@ -364,7 +369,7 @@ public final class BreakthroughManager {
             return;
         }
         Faction faction = lobby.get(player.getUUID());
-        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
+        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + namesOf(standbyLevel).colored(faction)), true);
         Act0Battlefield.broadcastRoomList(server);
         tryAutoStart(standbyLevel);
     }

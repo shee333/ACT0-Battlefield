@@ -28,6 +28,7 @@ import org.shee33.act0.battlefield.BattlefieldConfig;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchPhase;
 import org.shee33.act0.battlefield.network.SquadRosterDto;
 import org.shee33.act0.battlefield.network.SquadActionPacket;
@@ -228,7 +229,7 @@ public final class ConquestMatch {
             if (p != null) {
                 deploy(p, e.getValue());
                 BattlefieldNetwork.sendFireLock(p, true);
-                p.sendSystemMessage(Component.literal("§6大战场即将开始！你属于 " + e.getValue().coloredName()
+                p.sendSystemMessage(Component.literal("§6大战场即将开始！你属于 " + coloredFaction(e.getValue())
                         + "§6，占领据点压制敌方票数。"));
             }
         }
@@ -255,7 +256,7 @@ public final class ConquestMatch {
         } else {
             beginRedeploy(player, faction);
         }
-        broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + faction.coloredName() + "§7。");
+        broadcast("§b" + player.getGameProfile().getName() + " §7加入了 " + coloredFaction(faction) + "§7。");
         broadcastHud();
         return true;
     }
@@ -493,9 +494,9 @@ public final class ConquestMatch {
             if (st == CapturePoint.CaptureStatus.CAPTURED) {
                 Faction owner = point.owner();
                 if (owner != null) {
-                    broadcast(owner.coloredName() + " §7占领了据点 §e" + point.displayName());
+                    broadcast(coloredFaction(owner) + " §7占领了据点 §e" + point.displayName());
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
-                    actionBarNear(point.displayName(), zone, owner.coloredName() + " §a已控制 " + point.displayName());
+                    actionBarNear(point.displayName(), zone, coloredFaction(owner) + " §a已控制 " + point.displayName());
                     rewardAttackOrder(defs.get(i).pointId(), owner);
                     CapturePointEventPacket.Kind kind = ownerBeforeTick == null
                             ? CapturePointEventPacket.Kind.CAPTURED_NEW
@@ -521,7 +522,7 @@ public final class ConquestMatch {
                 }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
-                actionBarNear(point.displayName(), zone, pushing.coloredName() + " §7正在占领 " + point.displayName());
+                actionBarNear(point.displayName(), zone, coloredFaction(pushing) + " §7正在占领 " + point.displayName());
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
                     Vec3 fxPos = zone.getCenter();
@@ -550,7 +551,7 @@ public final class ConquestMatch {
                     if (factionOf.get(first) == capturer) {
                         squadBroadcast(e.getKey(), "§6★ 小队完成了攻击命令！据点已占领。");
                         tickets.addTickets(capturer, 5);
-                        squadBroadcast(e.getKey(), "§a" + capturer.coloredName() + " §7获得 +5 票数奖励。");
+                        squadBroadcast(e.getKey(), "§a" + coloredFaction(capturer) + " §7获得 +5 票数奖励。");
                         squadManager.clearOrder(e.getKey());
                     }
                 }
@@ -888,7 +889,7 @@ public final class ConquestMatch {
         // activeByWorld 中摘除并丢弃引用；如果下面逐人结算（网络发包/传送）抛出异常，必须保证
         // 这行已经执行过，否则队伍会永久残留在服务器 Scoreboard 里，再也没有代码路径能碰到它。
         clearNameTagTeams();
-        broadcast("§6§l对局结束：" + w.coloredName() + " §6§l取得票数压制。");
+        broadcast("§6§l对局结束：" + coloredFaction(w) + " §6§l取得票数压制。");
         broadcastServerResult(w);
         broadcastMatchResult(w);
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
@@ -940,11 +941,11 @@ public final class ConquestMatch {
     private void sendPersonalResult(ServerPlayer player, Faction mine, Faction winner) {
         boolean won = mine == winner;
         sendTitle(player, won ? "§a§l胜利" : "§c§l失败",
-                winner.coloredName() + " §7取得胜利", 5, 60, 15);
+                coloredFaction(winner) + " §7取得胜利", 5, 60, 15);
         UUID id = player.getUUID();
         player.sendSystemMessage(Component.literal("§6战报 §8| " + (won ? "§a胜利" : "§c失败")
-                + " §8| §7剩余票数 §9北大西洋公约 §f" + tickets.displayTickets(Faction.ALPHA)
-                + " §8/ §c无邦军团 §f" + tickets.displayTickets(Faction.BRAVO)
+                + " §8| §7剩余票数 " + coloredFaction(Faction.ALPHA) + " §f" + tickets.displayTickets(Faction.ALPHA)
+                + " §8/ " + coloredFaction(Faction.BRAVO) + " §f" + tickets.displayTickets(Faction.BRAVO)
             + " §8| §7你的 K/D §e" + killTracker.killsOf(id) + "§7/§c" + killTracker.deathsOf(id)));
     }
 
@@ -967,8 +968,8 @@ public final class ConquestMatch {
         String sq = bestK > 0 ? " §8| §7最佳小队 §e第" + displaySquad(bestId) + "小队 §7(" + bestK + "杀)" : "";
 
         Component message = Component.literal("§6[ACT0赛果] §f大战场 · 征服 §8| §a"
-                + winner.displayName() + " §7胜出 §8| §7票数 §9北大西洋公约 §f"
-                + tickets.displayTickets(Faction.ALPHA) + " §8/ §c无邦军团 §f"
+                + factionName(winner) + " §7胜出 §8| §7票数 " + coloredFaction(Faction.ALPHA) + " §f"
+                + tickets.displayTickets(Faction.ALPHA) + " §8/ " + coloredFaction(Faction.BRAVO) + " §f"
                 + tickets.displayTickets(Faction.BRAVO) + mvp + cp + sq);
         for (ServerPlayer online : server.getPlayerList().getPlayers()) {
             online.sendSystemMessage(message);
@@ -981,12 +982,12 @@ public final class ConquestMatch {
                 battleId(),
                 "大战场",
                 elapsedSeconds(),
-                winner.displayName(),
-                List.of(winner.displayName()),
+                factionName(winner),
+                List.of(factionName(winner)),
                 top.name(),
                 top.kills(),
-                "北大西洋公约 " + tickets.displayTickets(Faction.ALPHA)
-                        + " / 无邦军团 " + tickets.displayTickets(Faction.BRAVO));
+                factionName(Faction.ALPHA) + " " + tickets.displayTickets(Faction.ALPHA)
+                        + " / " + factionName(Faction.BRAVO) + " " + tickets.displayTickets(Faction.BRAVO));
     }
 
     private String battleId() {
@@ -1062,6 +1063,7 @@ public final class ConquestMatch {
 
         return new BattleResultDto(factionCode(winner), factionCode(factionOf.get(viewerId)),
                 tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
+                factionName(Faction.ALPHA), factionName(Faction.BRAVO),
                 killTracker.killsOf(viewerId), killTracker.deathsOf(viewerId), entries,
                 topCapturer, topCapturerTime / 20, bestSquad, bestSquadKills,
                 elapsedSeconds(), 0, 0);
@@ -1491,7 +1493,8 @@ public final class ConquestMatch {
         alpha.sort(order);
         bravo.sort(order);
         return new BattleTabDto(factionCode(factionOf.get(viewer.getUUID())),
-                tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO), alpha, bravo);
+                tickets.displayTickets(Faction.ALPHA), tickets.displayTickets(Faction.BRAVO),
+                factionName(Faction.ALPHA), factionName(Faction.BRAVO), alpha, bravo);
     }
 
     private BattleHudDto buildHudFor(ServerPlayer viewer) {
@@ -1618,6 +1621,14 @@ public final class ConquestMatch {
         squad.add(new SquadMateHudDto(player.getGameProfile().getName(), hp,
                 player.isAlive() || downed, self, downed, isSquadLeader,
                 player.getX(), player.getZ()));
+    }
+
+    private String factionName(Faction faction) {
+        return data.factionNames().name(faction);
+    }
+
+    private String coloredFaction(Faction faction) {
+        return data.factionNames().colored(faction);
     }
 
     static int factionCode(@Nullable Faction faction) {

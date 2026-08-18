@@ -19,6 +19,7 @@ import java.util.List;
  */
 public record BattleResultDto(int winnerFaction, int myFaction,
                               int alphaTickets, int bravoTickets,
+                              String alphaName, String bravoName,
                               int myKills, int myDeaths,
                               List<TabEntryDto> leaderboard,
                               String topCapturer, int topCapturerTime,
@@ -32,6 +33,8 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         buf.writeVarInt(myFaction);
         buf.writeVarInt(alphaTickets);
         buf.writeVarInt(bravoTickets);
+        buf.writeUtf(alphaName);
+        buf.writeUtf(bravoName);
         buf.writeVarInt(myKills);
         buf.writeVarInt(myDeaths);
         buf.writeVarInt(leaderboard.size());
@@ -50,6 +53,8 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         int mine = buf.readVarInt();
         int alpha = buf.readVarInt();
         int bravo = buf.readVarInt();
+        String alphaName = buf.readUtf();
+        String bravoName = buf.readUtf();
         int myKills = buf.readVarInt();
         int myDeaths = buf.readVarInt();
         int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
@@ -62,7 +67,8 @@ public record BattleResultDto(int winnerFaction, int myFaction,
         int matchSeconds = buf.readVarInt();
         int sectorsCaptured = buf.readVarInt();
         int totalSectors = buf.readVarInt();
-        return new BattleResultDto(winner, mine, alpha, bravo, myKills, myDeaths, entries, tc, tct, bs, bsk,
+        return new BattleResultDto(winner, mine, alpha, bravo, alphaName, bravoName,
+                myKills, myDeaths, entries, tc, tct, bs, bsk,
                 matchSeconds, sectorsCaptured, totalSectors);
     }
 }

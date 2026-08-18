@@ -141,9 +141,11 @@ public final class BattleResultScreen extends Screen {
         int cx = left + PANEL_W / 2;
 
         // Faction names + score on one line
-        String alphaName = "北大西洋公约";
-        String bravoName = "无邦军团";
         String score = result.alphaTickets() + " - " + result.bravoTickets();
+        // 两侧名称各自只有「面板半宽 - 居中比分的一半」可用，长名不裁会盖住比分。
+        int nameAvail = PANEL_W / 2 - PAD - font.width(score) / 2 - 6;
+        String alphaName = PixelTheme.fit(font, result.alphaName(), nameAvail);
+        String bravoName = PixelTheme.fit(font, result.bravoName(), nameAvail);
 
         gg.drawString(font, alphaName, left + PAD, y, ALPHA_COLOR, false);
         gg.drawString(font, score, cx - font.width(score) / 2, y, TEXT_HEADER, false);

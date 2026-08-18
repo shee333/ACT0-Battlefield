@@ -30,7 +30,7 @@ public final class SyncBattleTabPacket {
     public static SyncBattleTabPacket decode(FriendlyByteBuf buf) {
         boolean show = buf.readBoolean();
         BattleTabDto tab = show ? BattleTabDto.decode(buf)
-                : new BattleTabDto(0, 0, 0, List.of(), List.of());
+                : new BattleTabDto(0, 0, 0, "", "", List.of(), List.of());
         return new SyncBattleTabPacket(show, tab);
     }
 

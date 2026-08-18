@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -25,6 +26,7 @@ import org.shee33.act0.battlefield.bot.mc.BotManager;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
 import org.shee33.act0.battlefield.data.ArenaCatalogStore;
@@ -86,8 +88,18 @@ public final class BattlefieldCommand {
                                 .then(Commands.literal("bravo").executes(c -> setBase(c, Faction.BRAVO)))))
                 .then(Commands.literal("map").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("name")
-                                .then(Commands.argument("name", StringArgumentType.greedyString())
-                                        .executes(BattlefieldCommand::setMapName)))
+                                .then(Commands.argument("name", StringArgumentType.string())
+                                        .then(Commands.argument("faction1", StringArgumentType.string())
+                                                .suggests(FACTION_NAMES)
+                                                .then(Commands.argument("faction2", StringArgumentType.string())
+                                                        .suggests(FACTION_NAMES)
+                                                        .executes(BattlefieldCommand::setMapName)))))
+                        .then(Commands.literal("factions")
+                                .then(Commands.argument("faction1", StringArgumentType.string())
+                                        .suggests(FACTION_NAMES)
+                                        .then(Commands.argument("faction2", StringArgumentType.string())
+                                                .suggests(FACTION_NAMES)
+                                                .executes(BattlefieldCommand::setFactions))))
                         .then(Commands.literal("minplayers")
                                 .then(Commands.argument("value", IntegerArgumentType.integer(0, 128))
                                         .executes(BattlefieldCommand::setMinPlayers)))
@@ -256,7 +268,7 @@ public final class BattlefieldCommand {
             feedback(c, "§c该大战场已满员，无法加入。");
             return 0;
         }
-        feedback(c, "§a已加入 " + faction.coloredName() + "§a，等待开局。");
+        feedback(c, "§a已加入 " + namesOf(player.serverLevel()).colored(faction) + "§a，等待开局。");
         return 1;
     }
 
@@ -289,7 +301,7 @@ public final class BattlefieldCommand {
         int squadId = match.squadIdOf(player.getUUID());
         int size = match.squadSizeOf(player.getUUID());
         Faction faction = match.factionOf(player.getUUID());
-        feedback(c, "§a你在 " + (faction != null ? faction.coloredName() : "§7未知")
+        feedback(c, "§a你在 " + (faction != null ? namesOf(match.level()).colored(faction) : "§7未知")
                 + " §a第 §e" + displaySquadNumber(squadId) + " §a小队（" + size + "/4）。");
         return 1;
     }
@@ -326,7 +338,7 @@ public final class BattlefieldCommand {
         ServerLevel level = player.serverLevel();
         BattlefieldData.get(level).setBase(faction, new BattlefieldData.BaseSpawn(
                 player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot()));
-        feedback(c, "§a已把 " + faction.coloredName() + " §a的基地设在你当前位置。");
+        feedback(c, "§a已把 " + namesOf(level).colored(faction) + " §a的基地设在你当前位置。");
         return 1;
     }
 
@@ -338,14 +350,96 @@ public final class BattlefieldCommand {
      * 目录，发现"旧键有货、新键没有"就当场说清楚，否则这个后果要等到下一局开打才暴露，
      * 而且现场看起来像配装系统坏了。
      */
-    private static int setMapName(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
-        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+    static FactionNames namesOf(ServerLevel level) {
+        return BattlefieldData.get(level).factionNames();
+    }
+
+    /**
+     * 把两个阵营名解析成 {@link FactionNames}，不合法时就地 {@code sendFailure} 并返回 {@code null}。
+     *
+     * <p>调用方必须判空后才写入：漏判等于让整张图带着非法阵营名上线。
+     */
+    @Nullable
+    private static FactionNames parseFactions(CommandContext<CommandSourceStack> c) {
+        String alpha = StringArgumentType.getString(c, "faction1");
+        String bravo = StringArgumentType.getString(c, "faction2");
+        FactionNames.Problem problem = FactionNames.check(alpha, bravo);
+        if (problem == FactionNames.Problem.OK) {
+            return new FactionNames(alpha, bravo);
+        }
+        c.getSource().sendFailure(Component.literal(switch (problem) {
+            case BLANK -> "§c阵营名不能为空。";
+            case TOO_LONG -> "§c阵营名最多 " + FactionNames.MAX_LENGTH
+                    + " 个字符——TAB 面板与对局浏览器按这个宽度排版，更长的名字会被截断。";
+            case ILLEGAL_CHAR -> "§c阵营名不能含 § 格式码或控制字符（会覆盖阵营配色、打乱 HUD 排版）。";
+            case DUPLICATE -> "§c两个阵营不能同名，否则玩家分不清敌我。";
+            case OK -> "";
+        }));
+        return null;
+    }
+
+    static void reportFactions(CommandContext<CommandSourceStack> c, FactionNames names) {
+        feedback(c, "§7阵营 " + names.colored(Faction.ALPHA) + " §8vs " + names.colored(Faction.BRAVO));
+    }
+
+    static int setFactions(CommandContext<CommandSourceStack> c, ServerLevel level) {
+        FactionNames names = parseFactions(c);
+        if (names == null) {
+            return 0;
+        }
+        BattlefieldData.get(level).setFactionNames(names);
+        feedback(c, "§a已更新本图阵营名称。");
+        reportFactions(c, names);
+        return 1;
+    }
+
+    /**
+     * 建图与阵营命名都按<b>命令来源所在世界</b>取，不要求执行者是玩家。
+     *
+     * <p>据点、基地、军械库全都能从控制台脚本化布置（见 {@link #addPointAt}），唯独"创建地图"
+     * 这一步卡着必须有真人在场，整条自动开图链路就断在这里。
+     */
+    private static int setFactions(CommandContext<CommandSourceStack> c) {
+        return setFactions(c, c.getSource().getLevel());
+    }
+
+    private static int setMapName(CommandContext<CommandSourceStack> c) {
+        return setMapName(c, c.getSource().getLevel());
+    }
+
+    /**
+     * 补全当前地图已有的阵营名，并按 Brigadier 规则加引号。
+     *
+     * <p>不加引号的参数只接受 ASCII，中文阵营名不带引号会撞上
+     * {@code Expected whitespace to end one argument} 这种和"要加引号"毫无字面关联的报错。
+     * 让 Tab 直接补出合法形式，管理员就不必先踩一次坑。
+     */
+    static final SuggestionProvider<CommandSourceStack> FACTION_NAMES = (c, b) -> {
+        FactionNames names = BattlefieldData.get(c.getSource().getLevel()).factionNames();
+        for (String name : List.of(names.alpha(), names.bravo())) {
+            b.suggest(StringArgumentType.escapeIfRequired(name));
+        }
+        return b.buildFuture();
+    };
+
+    /**
+     * 命名地图并同时设定阵营名。两个模式共用：地图名与阵营名都是 {@code BattlefieldData} 里
+     * 与模式无关的元数据，改名对军械库键的影响也完全一样。
+     */
+    static int setMapName(CommandContext<CommandSourceStack> c, ServerLevel level) {
         String name = StringArgumentType.getString(c, "name");
+        FactionNames names = parseFactions(c);
+        if (names == null) {
+            return 0;
+        }
         ArenaCatalogStore arenas = ArenaCatalogStore.get(level.getServer());
         String oldKey = ArenaKey.of(level);
         boolean hadCatalog = arenas.has(oldKey);
-        BattlefieldData.get(level).setMapName(name);
+        BattlefieldData data = BattlefieldData.get(level);
+        data.setMapName(name);
+        data.setFactionNames(names);
         feedback(c, "§a已将当前世界地图命名为 §e" + name);
+        reportFactions(c, names);
         String newKey = ArenaKey.of(level);
         if (hadCatalog && !newKey.equals(oldKey) && !arenas.has(newKey)) {
             feedback(c, "§e注意：原地图键 §f" + oldKey + " §e下的军械库不会跟着改名，"
@@ -404,12 +498,13 @@ public final class BattlefieldCommand {
     }
 
     /** 展示本地图当前生效的人数规则，并标明是自定义还是跟随全局。 */
-    private static int mapInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
-        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+    private static int mapInfo(CommandContext<CommandSourceStack> c) {
+        ServerLevel level = c.getSource().getLevel();
         BattlefieldData data = BattlefieldData.get(level);
         int min = data.effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get());
         int max = data.effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get());
         feedback(c, "§7地图 §e" + (data.mapName().isBlank() ? level.dimension().location() : data.mapName()));
+        reportFactions(c, data.factionNames());
         feedback(c, "§7自动开始人数：§e" + min + (data.minPlayersToStartRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         feedback(c, "§7人数上限：§e" + max + (data.maxPlayersRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         return 1;
@@ -911,10 +1006,10 @@ public final class BattlefieldCommand {
             Act0Battlefield.manager().leaveMatch(target);
         }
         if (!match.addLatecomer(target, faction)) {
-            feedback(c, "§c无法将 " + target.getGameProfile().getName() + " 分配到 " + faction.coloredName() + "。");
+            feedback(c, "§c无法将 " + target.getGameProfile().getName() + " 分配到 " + namesOf(match.level()).colored(faction) + "。");
             return 0;
         }
-        feedback(c, "§a已将 " + target.getGameProfile().getName() + " 强制分配至 " + faction.coloredName() + "。");
+        feedback(c, "§a已将 " + target.getGameProfile().getName() + " 强制分配至 " + namesOf(match.level()).colored(faction) + "。");
         return 1;
     }
 
@@ -960,7 +1055,7 @@ public final class BattlefieldCommand {
             case "add" -> match.addTickets(faction, amount);
             case "sub" -> match.subTickets(faction, amount);
         }
-        feedback(c, "§a已修改 " + faction.coloredName() + " §a票数（当前：" + match.displayTickets(faction) + "）。");
+        feedback(c, "§a已修改 " + namesOf(match.level()).colored(faction) + " §a票数（当前：" + match.displayTickets(faction) + "）。");
         return 1;
     }
 
@@ -1039,7 +1134,7 @@ public final class BattlefieldCommand {
                     "§c未能加入任何 AI 士兵（该方基地未设置、名字用尽或对局已满）。"));
             return 0;
         }
-        ctx.getSource().sendSuccess(() -> Component.literal("§a已向 " + target.coloredName()
+        ctx.getSource().sendSuccess(() -> Component.literal("§a已向 " + namesOf(match.level()).colored(target)
                 + " §a补入 §e" + added.size() + " §a名 AI 士兵：§7" + String.join(", ", added)), true);
         return added.size();
     }

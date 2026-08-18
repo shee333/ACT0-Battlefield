@@ -1,11 +1,12 @@
 package org.shee33.act0.battlefield.client.screen;
 
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * 大战场像素风主题：军事配色 + 程序化九宫格面板，<b>不依赖任何贴图</b>，避免缺图渲染失败。
  *
- * <p>沿用街机界面同款斜角面板风格，但偏冷峻军绿/钢灰；两阵营各有专属强调色（北大西洋公约 / 无邦军团）。
+ * <p>沿用街机界面同款斜角面板风格，但偏冷峻军绿/钢灰；两阵营各有专属强调色（ALPHA 蓝 / BRAVO 红；名称随地图配置，颜色固定）。
  */
 public final class PixelTheme {
 
@@ -22,9 +23,9 @@ public final class PixelTheme {
     /** 次文本。 */
     public static final int TEXT_DIM = 0xFF8A8F88;
 
-    /** 北大西洋公约强调色（扁平蓝）。 */
+    /** ALPHA 阵营强调色（扁平蓝）。 */
     public static final int ALPHA_COLOR = 0xFF4A90D9;
-    /** 无邦军团强调色（扁平红）。 */
+    /** BRAVO 阵营强调色（扁平红）。 */
     public static final int BRAVO_COLOR = 0xFFD94A4A;
 
     private PixelTheme() {
@@ -76,6 +77,21 @@ public final class PixelTheme {
         gg.fill(x + 1, y + 1, x2 - 1, y2 - 1, face);
         gg.fill(x + 1, y + 1, x2 - 1, y + 2, blend(face, 0xFFFFFFFF, 0.18f));
         gg.fill(x + 1, y2 - 2, x2 - 1, y2 - 1, BEVEL_SHADOW);
+    }
+
+    /**
+     * 把文本裁到 {@code maxW} 像素内，超出部分以 {@code ..} 收尾。
+     *
+     * <p>阵营名称由建图者按地图配置，长度不受代码控制，凡是把它画进定宽栏位的地方都必须先过
+     * 这一道，否则中文名会直接压到相邻列上。
+     */
+    public static String fit(Font font, String text, int maxW) {
+        String s = text == null ? "" : text;
+        if (font.width(s) <= maxW) {
+            return s;
+        }
+        int dots = font.width("..");
+        return font.plainSubstrByWidth(s, Math.max(0, maxW - dots)) + "..";
     }
 
     /** 线性混合两个 ARGB 颜色（保留 a=ff）。 */

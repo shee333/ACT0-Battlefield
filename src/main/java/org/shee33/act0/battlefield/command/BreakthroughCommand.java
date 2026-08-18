@@ -52,8 +52,18 @@ public final class BreakthroughCommand {
                         .then(Commands.literal("defender").executes(c -> setBase(c, Faction.BRAVO)))))
                 .then(Commands.literal("map").requires(s -> s.hasPermission(2))
                     .then(Commands.literal("name")
-                        .then(Commands.argument("name", StringArgumentType.greedyString())
-                            .executes(BreakthroughCommand::setMapName)))
+                        .then(Commands.argument("name", StringArgumentType.string())
+                            .then(Commands.argument("faction1", StringArgumentType.string())
+                                .suggests(BattlefieldCommand.FACTION_NAMES)
+                                .then(Commands.argument("faction2", StringArgumentType.string())
+                                    .suggests(BattlefieldCommand.FACTION_NAMES)
+                                    .executes(BreakthroughCommand::setMapName)))))
+                    .then(Commands.literal("factions")
+                        .then(Commands.argument("faction1", StringArgumentType.string())
+                            .suggests(BattlefieldCommand.FACTION_NAMES)
+                            .then(Commands.argument("faction2", StringArgumentType.string())
+                                .suggests(BattlefieldCommand.FACTION_NAMES)
+                                .executes(BreakthroughCommand::setFactions))))
                     .then(Commands.literal("minplayers")
                         .then(Commands.argument("value", IntegerArgumentType.integer(0, 128))
                             .executes(BreakthroughCommand::setMinPlayers)))
@@ -148,15 +158,16 @@ public final class BreakthroughCommand {
         ServerLevel level = player.serverLevel();
         BattlefieldData.get(level).setBase(faction, new BattlefieldData.BaseSpawn(
                 player.getX(), player.getY(), player.getZ(), player.getYRot(), player.getXRot()));
-        feedback(c, "§a已把 " + faction.coloredName() + " §a的基地设在你当前位置。");
+        feedback(c, "§a已把 " + BattlefieldCommand.namesOf(level).colored(faction) + " §a的基地设在你当前位置。");
         return 1;
     }
 
     private static int setMapName(CommandContext<CommandSourceStack> c) {
-        String name = StringArgumentType.getString(c, "name");
-        BattlefieldData.get(c.getSource().getLevel()).setMapName(name);
-        feedback(c, "§a已将当前世界地图命名为 §e" + name);
-        return 1;
+        return BattlefieldCommand.setMapName(c, c.getSource().getLevel());
+    }
+
+    private static int setFactions(CommandContext<CommandSourceStack> c) {
+        return BattlefieldCommand.setFactions(c, c.getSource().getLevel());
     }
 
     private static int sectorAdd(CommandContext<CommandSourceStack> c) {
@@ -273,12 +284,13 @@ public final class BreakthroughCommand {
     }
 
     /** 展示本地图当前生效的人数规则。 */
-    private static int mapInfo(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
-        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+    private static int mapInfo(CommandContext<CommandSourceStack> c) {
+        ServerLevel level = c.getSource().getLevel();
         BattlefieldData data = BattlefieldData.get(level);
         int min = data.effectiveMinPlayers(BattlefieldConfig.MIN_PLAYERS_TO_START.get());
         int max = data.effectiveMaxPlayers(BattlefieldConfig.MAX_PLAYERS.get());
         feedback(c, "§7地图 §e" + (data.mapName().isBlank() ? level.dimension().location() : data.mapName()));
+        BattlefieldCommand.reportFactions(c, data.factionNames());
         feedback(c, "§7自动开始人数：§e" + min + (data.minPlayersToStartRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         feedback(c, "§7人数上限：§e" + max + (data.maxPlayersRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         return 1;
@@ -293,7 +305,7 @@ public final class BreakthroughCommand {
             feedback(c, "§c该突破对局已满员，无法加入。");
             return 0;
         }
-        feedback(c, "§a已加入 " + faction.coloredName() + "§a，等待开局。");
+        feedback(c, "§a已加入 " + BattlefieldCommand.namesOf(player.serverLevel()).colored(faction) + "§a，等待开局。");
         return 1;
     }
 

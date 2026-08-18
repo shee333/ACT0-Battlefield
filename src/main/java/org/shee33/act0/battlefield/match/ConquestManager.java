@@ -30,6 +30,7 @@ import org.shee33.act0.battlefield.command.Aew1Command;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.LatecomerAssignment;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
@@ -133,12 +134,12 @@ public final class ConquestManager {
             } else {
                 bravo++;
             }
-            player.sendSystemMessage(Component.literal("§6你已被加入大战场候选名单：" + target.coloredName()));
+            player.sendSystemMessage(Component.literal("§6你已被加入大战场候选名单：" + namesOf(level).colored(target)));
             added++;
         }
         Act0Battlefield.broadcastRoomList(operator.getServer());
         operator.sendSystemMessage(Component.literal("§a已将当前世界 §e" + added
-                + " §a名玩家加入候选名单 §7(北大西洋公约 " + alpha + " / 无邦军团 " + bravo + ")"));
+                + " §a名玩家加入候选名单 §7(" + namesOf(level).alpha() + " " + alpha + " / " + namesOf(level).bravo() + " " + bravo + ")"));
         tryAutoStart(level);
         return added;
     }
@@ -221,8 +222,8 @@ public final class ConquestManager {
                         maxPlayers,
                         minPlayers,
                         match.contains(viewerId),
-                        Faction.ALPHA.coloredName(),
-                        Faction.BRAVO.coloredName(),
+                        namesOf(level).colored(Faction.ALPHA),
+                        namesOf(level).colored(Faction.BRAVO),
                         match.displayTickets(Faction.ALPHA),
                         match.displayTickets(Faction.BRAVO),
                         match.startingTicketsHint(),
@@ -246,11 +247,15 @@ public final class ConquestManager {
                     maxPlayers,
                     minPlayers,
                     viewerIn,
-                    Faction.ALPHA.coloredName(),
-                    Faction.BRAVO.coloredName(),
+                    namesOf(level).colored(Faction.ALPHA),
+                    namesOf(level).colored(Faction.BRAVO),
                     0, 0, 0, 0));
         }
         return rows;
+    }
+
+    private static FactionNames namesOf(ServerLevel level) {
+        return BattlefieldData.get(level).factionNames();
     }
 
     private static String mapNameOrFallback(ServerLevel level, ResourceKey<Level> key) {
@@ -281,7 +286,7 @@ public final class ConquestManager {
         if (match.addLatecomer(player, faction)) {
             ResourceKey<Level> battleKey = levelKey != null ? levelKey : player.serverLevel().dimension();
             player.displayClientMessage(Component.literal("§a已加入 "
-                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + faction.coloredName()), true);
+                + battleNames.getOrDefault(battleKey, defaultBattleName(battleKey)) + " §7- " + namesOf(match.level()).colored(faction)), true);
         } else {
             player.displayClientMessage(Component.literal("§c无法加入该大战场"), true);
         }
@@ -337,7 +342,7 @@ public final class ConquestManager {
             return;
         }
         Faction faction = lobby.get(player.getUUID());
-        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + faction.coloredName()), true);
+        player.displayClientMessage(Component.literal("§a已加入候选名单 §7- " + namesOf(standbyLevel).colored(faction)), true);
         Act0Battlefield.broadcastRoomList(server);
         tryAutoStart(standbyLevel);
     }
