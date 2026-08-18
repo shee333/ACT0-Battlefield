@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.food.FoodData;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -51,6 +52,8 @@ public final class RedeployService {
     private final MinecraftServer server;
     private final ServerLevel level;
     private final BattlefieldData data;
+    private static final int MAX_FOOD_LEVEL = 20;
+
     private final Map<UUID, Faction> factionOf;
     private final SquadManager squadManager;
     private final List<CapturePoint> points;
@@ -203,6 +206,28 @@ public final class RedeployService {
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
         BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
         player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
+    }
+
+    /**
+     * 把对局内所有成员的饥饿值锁死在满值。
+     *
+     * <p>出生时设满不够用：冲刺与跳跃每几十秒就能掀掉一格，所以必须每 tick 压住。
+     *
+     * <p><b>饱食度刻意归零</b>：原版把「饱食度 &gt; 0」当成快速自然回血的开关（每 10 tick 回
+     * 1/6~1 HP），留着它等于在本模组的呼吸回血之外再开一条不受交火延迟约束的回血通道，
+     * 玩家被压在掩体后面也能持续恢复。疲劳值一并归零，避免它累积到 4.0 后反过来吃掉饥饿值。
+     */
+    public void tickHungerLock() {
+        for (UUID id : factionOf.keySet()) {
+            ServerPlayer p = player(id);
+            if (p == null || p.level() != level) {
+                continue;
+            }
+            FoodData food = p.getFoodData();
+            food.setFoodLevel(MAX_FOOD_LEVEL);
+            food.setSaturation(0.0f);
+            food.setExhaustion(0.0f);
+        }
     }
 
     public void processRedeployTick() {

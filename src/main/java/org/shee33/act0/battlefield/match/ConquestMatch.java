@@ -373,6 +373,7 @@ public final class ConquestMatch {
             iffAccum = 0;
             syncEnemyIdentification();
         }
+        redeployService.tickHungerLock();
         tickBreathHealing();
         tickEscapeBoundary();
         tickDownedPlayers();

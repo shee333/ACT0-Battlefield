@@ -379,6 +379,7 @@ public final class BreakthroughMatch {
             iffAccum = 0;
             syncEnemyIdentification();
         }
+        redeployService.tickHungerLock();
         tickBreathHealing();
         tickEscapeBoundary();
         tickDownedPlayers();
