@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.client;
 
+import org.shee33.act0.battlefield.client.screen.BattlefieldLoadoutScreen;
 import org.shee33.act0.battlefield.command.Aew1Command;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -32,7 +33,8 @@ public final class BattlefieldPauseScreen extends Screen {
     /** 危险操作的反馈延时：Toast 淡入完再多留 240ms，否则玩家永远看不到自己触发了什么。 */
     private static final int DEFER_MS = PauseMenuAnim.TOAST_IN_MS + 240;
 
-    private final BattlefieldPauseAnimator animator = new BattlefieldPauseAnimator(Tween.now());
+    private final BattlefieldPauseAnimator animator =
+            new BattlefieldPauseAnimator(Tween.now(), isInBattlefield());
 
     /** 待延迟执行的危险动作与其执行时刻；{@code null} 表示无。 */
     @Nullable
@@ -67,17 +69,6 @@ public final class BattlefieldPauseScreen extends Screen {
         }
     }
 
-    /**
-     * 对局结束/被踢出时兜底关闭：菜单里的票数与小队卡片全靠 {@link ClientBattleHud} 驱动，
-     * 对局一没了就会画出上一局的残影。
-     */
-    @Override
-    public void tick() {
-        if (deferred == null && !animator.isClosing() && !isInBattlefield()) {
-            Minecraft.getInstance().setScreen(null);
-        }
-    }
-
     // ============================================================
     // 动作分发
     // ============================================================
@@ -94,6 +85,7 @@ public final class BattlefieldPauseScreen extends Screen {
                 deferred = item;
                 deferredAtMs = now + DEFER_MS;
             }
+            case LOADOUT -> Minecraft.getInstance().setScreen(new BattlefieldLoadoutScreen());
             case SQUAD -> {
                 // 子面板由动画层内部处理，不会走到这里。
             }

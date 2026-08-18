@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.network;
 
 import org.junit.jupiter.api.Test;
+import org.shee33.act0.battlefield.core.SoldierClass;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,7 +33,7 @@ class DeployLoadoutOverrideTest {
                 opts("m4a1", "ak74", "scar_h"));
         DeploySlotOptionsDto secondary = new DeploySlotOptionsDto(1, "副武器", "g17",
                 opts("g17", "deagle"));
-        return new DeployLoadoutDto(List.of(primary, secondary));
+        return new DeployLoadoutDto(SoldierClass.DEFAULT.id(), List.of(primary, secondary));
     }
 
     private static String currentOf(DeployLoadoutDto dto, int slotIndex) {

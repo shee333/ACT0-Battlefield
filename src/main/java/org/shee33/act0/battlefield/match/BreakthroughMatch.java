@@ -1833,6 +1833,10 @@ public final class BreakthroughMatch {
         redeployService.handleSlotOverride(player, slotIndex, itemName);
     }
 
+    public void handleDeployClassChange(ServerPlayer player, String classId) {
+        redeployService.handleClassChange(player, classId);
+    }
+
     public void refreshDeployStatus(ServerPlayer player) {
         redeployService.refreshDeployStatus(player);
     }

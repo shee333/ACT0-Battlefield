@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.network;
 
 import net.minecraft.network.FriendlyByteBuf;
+import org.shee33.act0.battlefield.core.SoldierClass;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,11 +14,12 @@ import java.util.Map;
  * {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）展示，
  * 并供换装提交（{@code RedeployService#handleSlotOverride}）校验。
  */
-public record DeployLoadoutDto(List<DeploySlotOptionsDto> slots) {
+public record DeployLoadoutDto(String selectedClassId, List<DeploySlotOptionsDto> slots) {
 
     private static final int MAX_LIST_ENTRIES = 64;
 
     public void encode(FriendlyByteBuf buf) {
+        buf.writeUtf(selectedClassId);
         buf.writeVarInt(slots.size());
         for (DeploySlotOptionsDto slot : slots) {
             slot.encode(buf);
@@ -25,16 +27,17 @@ public record DeployLoadoutDto(List<DeploySlotOptionsDto> slots) {
     }
 
     public static DeployLoadoutDto decode(FriendlyByteBuf buf) {
+        String selectedClassId = buf.readUtf();
         int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<DeploySlotOptionsDto> slots = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             slots.add(DeploySlotOptionsDto.decode(buf));
         }
-        return new DeployLoadoutDto(slots);
+        return new DeployLoadoutDto(selectedClassId, slots);
     }
 
     public static DeployLoadoutDto empty() {
-        return new DeployLoadoutDto(List.of());
+        return new DeployLoadoutDto(SoldierClass.DEFAULT.id(), List.of());
     }
 
     /**
@@ -60,6 +63,6 @@ public record DeployLoadoutDto(List<DeploySlotOptionsDto> slots) {
                 merged.add(slot);
             }
         }
-        return changed ? new DeployLoadoutDto(merged) : this;
+        return changed ? new DeployLoadoutDto(selectedClassId, merged) : this;
     }
 }

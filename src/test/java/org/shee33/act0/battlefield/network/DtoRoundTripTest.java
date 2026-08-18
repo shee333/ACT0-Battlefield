@@ -3,6 +3,7 @@ package org.shee33.act0.battlefield.network;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
+import org.shee33.act0.battlefield.core.SoldierClass;
 
 import java.util.List;
 
@@ -99,7 +100,7 @@ class DtoRoundTripTest {
         DeploySlotOptionsDto slot = new DeploySlotOptionsDto(0, "主武器", "tacz:m4a1",
                 List.of(new DeployOptionDto("tacz:m4a1", "M4A1 卡宾枪"),
                         new DeployOptionDto("tacz:ak74", "AK-74")));
-        DeployLoadoutDto dto = new DeployLoadoutDto(List.of(slot));
+        DeployLoadoutDto dto = new DeployLoadoutDto("medic", List.of(slot));
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         dto.encode(buf);
         DeployLoadoutDto decoded = DeployLoadoutDto.decode(buf);

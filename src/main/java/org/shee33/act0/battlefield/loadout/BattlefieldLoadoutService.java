@@ -91,7 +91,7 @@ public final class BattlefieldLoadoutService {
             slots.add(new DeploySlotOptionsDto(slot.hotbarIndex(), slot.displayName(), e.getValue(),
                     optionsForSlot(catalog, slot)));
         }
-        return new DeployLoadoutDto(slots);
+        return new DeployLoadoutDto(classOf(player, arenaKey).id(), slots);
     }
 
     /**
@@ -100,7 +100,7 @@ public final class BattlefieldLoadoutService {
      * <p>显示名取录入时管理员手上那件物品的名字，因此中文资源包下天然是中文——服务端不需要
      * 也无法在运行时把 {@code tacz:ak47} 翻译成玩家语言（枪械名来自 TaCZ 的资源包，只有客户端有）。
      */
-    private static List<DeployOptionDto> optionsForSlot(ArenaCatalog catalog, LoadoutSlot slot) {
+    static List<DeployOptionDto> optionsForSlot(ArenaCatalog catalog, LoadoutSlot slot) {
         List<DeployOptionDto> out = new ArrayList<>();
         if (slot.isGadget()) {
             for (ArenaItemEntry entry : catalog.items(slot)) {

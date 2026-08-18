@@ -810,6 +810,13 @@ public final class ConquestManager {
         }
     }
 
+    public void handleDeployClassChange(ServerPlayer player, String classId) {
+        ConquestMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.handleDeployClassChange(player, classId);
+        }
+    }
+
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();

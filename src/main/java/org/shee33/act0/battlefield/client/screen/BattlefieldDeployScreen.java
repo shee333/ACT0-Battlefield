@@ -9,6 +9,7 @@ import org.shee33.act0.battlefield.client.BattlefieldKeyMappings;
 import org.shee33.act0.battlefield.client.ClientDeployStatus;
 import org.shee33.act0.battlefield.client.ClientSquadSpectate;
 import org.shee33.act0.battlefield.client.DeployConfirmFx;
+import org.shee33.act0.battlefield.client.DeployClassBar;
 import org.shee33.act0.battlefield.client.DeployMapPanel;
 import org.shee33.act0.battlefield.client.DeployModeLabel;
 import org.shee33.act0.battlefield.client.DeployWeaponPanel;
@@ -73,11 +74,12 @@ public final class BattlefieldDeployScreen extends Screen {
         updateSquadSpectate(st);
 
         int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployWeaponPanel.barHeight();
+        int classBarTopY = barTopY - DeployClassBar.barHeight();
 
         int mapX = MAP_MARGIN;
         int mapY = HEADER_H + 6;
         int mapW = Math.max(160, width - SIDE_W - mapX - 8);
-        int mapH = Math.max(120, barTopY - mapY - 6);
+        int mapH = Math.max(120, classBarTopY - mapY - 6);
         DeployMapPanel.render(gg, font, st, mapX, mapY, mapW, mapH, mouseX, mouseY);
 
         int sideX = width - SIDE_W;
@@ -92,6 +94,7 @@ public final class BattlefieldDeployScreen extends Screen {
 
         renderSpectateFade(gg);
 
+        DeployClassBar.render(gg, font, width, classBarTopY, mouseX, mouseY);
         DeployWeaponPanel.render(gg, font, width, height, barTopY, mouseX, mouseY);
     }
 
@@ -155,6 +158,9 @@ public final class BattlefieldDeployScreen extends Screen {
         if (button == 0) {
             // 武器栏/上拉面板优先命中：命中槍位或可选项时直接消费，不落到地图选点逻辑；未命中
             // 任何交互区域时它会把已打开的面板顺手关闭（同规格文档"点空白"语义），再放行给地图。
+            if (DeployClassBar.handleClick(mouseX, mouseY)) {
+                return true;
+            }
             if (DeployWeaponPanel.handleClick(mouseX, mouseY)) {
                 return true;
             }

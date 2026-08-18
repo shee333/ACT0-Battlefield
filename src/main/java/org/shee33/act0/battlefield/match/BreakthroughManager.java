@@ -659,6 +659,13 @@ public final class BreakthroughManager {
         }
     }
 
+    public void handleDeployClassChange(ServerPlayer player, String classId) {
+        BreakthroughMatch match = activeContaining(player.getUUID());
+        if (match != null) {
+            match.handleDeployClassChange(player, classId);
+        }
+    }
+
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID id = event.getEntity().getUUID();

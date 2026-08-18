@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "19";
+    private static final String PROTOCOL = "20";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -138,6 +138,18 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SquadActionPacket.class,
             SquadActionPacket::encode, SquadActionPacket::decode,
             SquadActionPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, RequestLoadoutConfigPacket.class,
+            RequestLoadoutConfigPacket::encode, RequestLoadoutConfigPacket::decode,
+            RequestLoadoutConfigPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, SyncLoadoutConfigPacket.class,
+            SyncLoadoutConfigPacket::encode, SyncLoadoutConfigPacket::decode,
+            SyncLoadoutConfigPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, LoadoutEditPacket.class,
+            LoadoutEditPacket::encode, LoadoutEditPacket::decode,
+            LoadoutEditPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, LoadoutSelectClassPacket.class,
+            LoadoutSelectClassPacket::encode, LoadoutSelectClassPacket::decode,
+            LoadoutSelectClassPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 
     /**
@@ -191,6 +203,10 @@ public final class BattlefieldNetwork {
 
     public static void sendDeployLoadout(ServerPlayer player, DeployLoadoutDto loadout) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncDeployLoadoutPacket(loadout));
+    }
+
+    public static void sendLoadoutConfig(ServerPlayer player, LoadoutConfigDto config) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncLoadoutConfigPacket(config));
     }
 
     public static void clearBreakthroughHud(ServerPlayer player) {

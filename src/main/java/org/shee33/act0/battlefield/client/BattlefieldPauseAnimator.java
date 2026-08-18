@@ -9,6 +9,7 @@ import org.shee33.act0.battlefield.network.SquadMateHudDto;
 import org.shee33.act0.battlefield.network.SquadRosterDto;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -87,6 +88,7 @@ final class BattlefieldPauseAnimator {
         RESUME("回到游戏", false, 0, ""),
         SQUAD("小队管理", false, 0, ""),
         SETTINGS("设置", false, 0, ""),
+        LOADOUT("配装", false, 0, ""),
         LEAVE_MATCH("退出战局", true, DocPalette.PROGRESS, "已退出战局"),
         QUIT_GAME("退出游戏", true, DocPalette.ENEMY, "正在退出游戏");
 
@@ -104,7 +106,25 @@ final class BattlefieldPauseAnimator {
         }
     }
 
-    private static final Item[] ITEMS = Item.values();
+    /**
+     * 本次打开实际展示的菜单项。
+     *
+     * <p>不是 {@code Item.values()}：ESC 菜单现在全局接管，对局外「小队管理」与「退出战局」
+     * 无从执行，画出来只会让玩家点到一个没有反应的按钮。列表在构造时定下，之后不再变——
+     * 菜单开着的这几百毫秒里对局状态不会翻转，而一个长度会变的数组会让所有按索引推进的
+     * 级联动画错位。
+     */
+    private final Item[] items;
+
+    private static Item[] itemsFor(boolean inMatch) {
+        List<Item> out = new ArrayList<>(Item.values().length);
+        for (Item item : Item.values()) {
+            if (inMatch || (item != Item.SQUAD && item != Item.LEAVE_MATCH)) {
+                out.add(item);
+            }
+        }
+        return out.toArray(new Item[0]);
+    }
 
     private final PauseSquadPanel squadPanel = new PauseSquadPanel();
     private final Ticker alphaTicker = new Ticker();
@@ -134,7 +154,8 @@ final class BattlefieldPauseAnimator {
     @Nullable
     private Item pendingItem;
 
-    BattlefieldPauseAnimator(long nowMs) {
+    BattlefieldPauseAnimator(long nowMs, boolean inMatch) {
+        this.items = itemsFor(inMatch);
         this.openedAtMs = nowMs;
         this.indicatorStartMs = nowMs;
         this.indicatorFrom = indicatorTargetY(0);
@@ -176,7 +197,7 @@ final class BattlefieldPauseAnimator {
 
     /** 关闭序列结束时刻（毫秒绝对时间）；未在关闭中返回 {@link Long#MAX_VALUE}。 */
     long closeDoneAt() {
-        return closingAtMs < 0L ? Long.MAX_VALUE : closingAtMs + PauseMenuAnim.closeTotalMs(ITEMS.length);
+        return closingAtMs < 0L ? Long.MAX_VALUE : closingAtMs + PauseMenuAnim.closeTotalMs(items.length);
     }
 
     /** 取走一次已达成的菜单动作（长按填满 / 普通项点击 / 键盘确认）。 */
@@ -201,16 +222,16 @@ final class BattlefieldPauseAnimator {
     }
 
     Item focusedItem() {
-        return ITEMS[focus];
+        return items[focus];
     }
 
     Item itemOf(int index) {
-        return ITEMS[Math.floorMod(index, ITEMS.length)];
+        return items[Math.floorMod(index, items.length)];
     }
 
     /** 移动焦点（键盘上下 / 鼠标悬停共用；指示器是唯一焦点指示物，因此这里只动指示器）。 */
     void setFocus(int index, long now) {
-        int clamped = Math.floorMod(index, ITEMS.length);
+        int clamped = Math.floorMod(index, items.length);
         if (clamped == focus) {
             return;
         }
@@ -238,7 +259,7 @@ final class BattlefieldPauseAnimator {
         if (mx < MARGIN_LEFT || mx >= MARGIN_LEFT + MENU_W) {
             return -1;
         }
-        for (int i = 0; i < ITEMS.length; i++) {
+        for (int i = 0; i < items.length; i++) {
             int top = MENU_TOP + i * ITEM_STRIDE;
             if (my >= top && my < top + ITEM_H) {
                 return i;
@@ -249,7 +270,7 @@ final class BattlefieldPauseAnimator {
 
     /** 开始长按确认（鼠标按下或 Enter 按下）。 */
     void beginHold(int index, long now) {
-        if (index < 0 || index >= ITEMS.length || !ITEMS[index].hold) {
+        if (index < 0 || index >= items.length || !items[index].hold) {
             return;
         }
         holdIndex = index;
@@ -346,7 +367,7 @@ final class BattlefieldPauseAnimator {
         if (holdIndex < 0 || !PauseMenuAnim.holdCompleted(now - holdStartMs)) {
             return;
         }
-        Item item = ITEMS[holdIndex];
+        Item item = items[holdIndex];
         holdIndex = -1;
         rewindIndex = -1;
         pendingItem = item;
@@ -360,9 +381,9 @@ final class BattlefieldPauseAnimator {
             float fade = 1f - PauseMenuAnim.inCubic(PauseMenuAnim.progress(e, 0, PauseMenuAnim.CLOSE_FADE_MS));
             float ov = 1f - PauseMenuAnim.inCubic(PauseMenuAnim.progress(e,
                     PauseMenuAnim.CLOSE_OVERLAY_DELAY_MS, PauseMenuAnim.CLOSE_OVERLAY_MS));
-            float[] itemA = new float[ITEMS.length];
-            float[] itemX = new float[ITEMS.length];
-            for (int i = 0; i < ITEMS.length; i++) {
+            float[] itemA = new float[items.length];
+            float[] itemX = new float[items.length];
+            for (int i = 0; i < items.length; i++) {
                 float v = PauseMenuAnim.itemCloseProgress(e, i);
                 itemA[i] = 1f - v;
                 itemX[i] = PauseMenuAnim.CLOSE_ITEM_SLIDE_PX * v;
@@ -377,9 +398,9 @@ final class BattlefieldPauseAnimator {
                 PauseMenuAnim.PANEL_DELAY_MS, PauseMenuAnim.PANEL_IN_MS));
         float ind = PauseMenuAnim.outCubic(PauseMenuAnim.progress(e,
                 PauseMenuAnim.INDICATOR_DELAY_MS, PauseMenuAnim.INDICATOR_IN_MS));
-        float[] itemA = new float[ITEMS.length];
-        float[] itemX = new float[ITEMS.length];
-        for (int i = 0; i < ITEMS.length; i++) {
+        float[] itemA = new float[items.length];
+        float[] itemX = new float[items.length];
+        for (int i = 0; i < items.length; i++) {
             float v = PauseMenuAnim.itemOpenProgress(e, i);
             itemA[i] = v;
             itemX[i] = PauseMenuAnim.ITEM_SLIDE_PX * (1f - v);
@@ -425,12 +446,12 @@ final class BattlefieldPauseAnimator {
     }
 
     private void drawMenu(GuiGraphics gg, Font font, Frame f, long now, int mouseX, int mouseY) {
-        for (int i = 0; i < ITEMS.length; i++) {
+        for (int i = 0; i < items.length; i++) {
             float a = f.itemAlpha[i];
             if (a <= 0.002f) {
                 continue;
             }
-            Item item = ITEMS[i];
+            Item item = items[i];
             int top = MENU_TOP + i * ITEM_STRIDE;
             int x = MARGIN_LEFT + Math.round(f.itemShiftX[i]);
             float fill = holdFillOf(i, now);

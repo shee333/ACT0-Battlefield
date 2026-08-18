@@ -272,6 +272,25 @@ public final class RedeployService {
     }
 
     /**
+     * 部署界面切换兵种。与换枪共用同一条节流：两者都是同一个面板上的点击，分开计限额等于
+     * 给刷包留一条并行通道。
+     */
+    public void handleClassChange(ServerPlayer player, String classId) {
+        UUID id = player.getUUID();
+        if (!redeployReadyTick.containsKey(id)) {
+            return;
+        }
+        long now = server.getTickCount();
+        if (isSlotOverrideThrottled(lastSlotOverrideTick.get(id), now)) {
+            pendingLoadoutResync.add(id);
+            return;
+        }
+        lastSlotOverrideTick.put(id, now);
+        BattlefieldLoadoutService.setSelectedClass(player, arenaKey, classId);
+        BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
+    }
+
+    /**
      * 纯函数(P1-2修复):给定"上次处理这个包的tick"与"当前tick",判断这次请求是否应该被节流
      * 拒绝——间隔小于 {@link #MIN_SLOT_OVERRIDE_INTERVAL_TICKS}(100ms)时拒绝。不依赖
      * {@code ServerPlayer}/{@code MinecraftServer},可直接单测。
