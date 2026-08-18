@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.client.screen;
 
+import org.shee33.act0.battlefield.command.Aew1Command;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -75,10 +76,11 @@ public final class BattlefieldRoomBrowserScreen extends Screen {
             onClose();
             return;
         }
-        String root = action.breakthrough() ? "breakthrough" : "battlefield";
+        boolean breakthrough = action.breakthrough();
         String command = switch (action.action()) {
-            case JOIN -> root + " quickjoin \"" + action.roomKey() + "\"";
-            case LEAVE -> root + " leave";
+            case JOIN -> (breakthrough ? Aew1Command.CMD_BREAKTHROUGH_QUICKJOIN : Aew1Command.CMD_QUICKJOIN)
+                    + " \"" + action.roomKey() + "\"";
+            case LEAVE -> breakthrough ? Aew1Command.CMD_BREAKTHROUGH_LEAVE : Aew1Command.CMD_LEAVE;
         };
         player.connection.sendCommand(command);
         if (action.closesBrowser()) {

@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.client;
 
+import org.shee33.act0.battlefield.command.Aew1Command;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.OptionsScreen;
@@ -104,7 +105,7 @@ public final class BattlefieldPauseScreen extends Screen {
         if (item == BattlefieldPauseAnimator.Item.LEAVE_MATCH) {
             LocalPlayer player = mc.player;
             if (player != null) {
-                player.connection.sendCommand("battlefield leave");
+                player.connection.sendCommand(Aew1Command.CMD_LEAVE);
             }
             mc.setScreen(null);
             return;

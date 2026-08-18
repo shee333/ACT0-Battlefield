@@ -13,12 +13,11 @@ import java.util.Map;
  * {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）展示，
  * 并供换装提交（{@code RedeployService#handleSlotOverride}）校验。
  */
-public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slots) {
+public record DeployLoadoutDto(List<DeploySlotOptionsDto> slots) {
 
     private static final int MAX_LIST_ENTRIES = 64;
 
     public void encode(FriendlyByteBuf buf) {
-        buf.writeUtf(className);
         buf.writeVarInt(slots.size());
         for (DeploySlotOptionsDto slot : slots) {
             slot.encode(buf);
@@ -26,35 +25,16 @@ public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slot
     }
 
     public static DeployLoadoutDto decode(FriendlyByteBuf buf) {
-        String cn = buf.readUtf();
         int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
         List<DeploySlotOptionsDto> slots = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             slots.add(DeploySlotOptionsDto.decode(buf));
         }
-        return new DeployLoadoutDto(cn, slots);
+        return new DeployLoadoutDto(slots);
     }
 
     public static DeployLoadoutDto empty() {
-        return new DeployLoadoutDto("", List.of());
-    }
-
-    /**
-     * 纯校验：提交的槽位序号+物品名组合是否为本快照下的合法可选项。
-     *
-     * <p>用于防止伪造的 {@link DeploySlotOverridePacket} 塞入未解锁/不存在的物品——不依赖
-     * {@code ServerPlayer}，可直接单测。
-     */
-    public boolean isValidOverride(int slotIndex, String itemName) {
-        if (itemName == null || itemName.isBlank()) {
-            return false;
-        }
-        for (DeploySlotOptionsDto slot : slots) {
-            if (slot.slotIndex() == slotIndex) {
-                return slot.availableItemNames().contains(itemName);
-            }
-        }
-        return false;
+        return new DeployLoadoutDto(List.of());
     }
 
     /**
@@ -80,6 +60,6 @@ public record DeployLoadoutDto(String className, List<DeploySlotOptionsDto> slot
                 merged.add(slot);
             }
         }
-        return changed ? new DeployLoadoutDto(className, merged) : this;
+        return changed ? new DeployLoadoutDto(merged) : this;
     }
 }

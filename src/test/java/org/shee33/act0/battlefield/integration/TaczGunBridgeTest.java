@@ -45,13 +45,32 @@ class TaczGunBridgeTest {
     @Test
     void loadoutMethodNamesMatchUpstream() {
         assertEquals("getGunId", TaczGunBridge.M_GET_GUN_ID);
-        assertEquals("setGunId", TaczGunBridge.M_SET_GUN_ID);
         assertEquals("setDummyAmmoAmount", TaczGunBridge.M_SET_DUMMY_AMMO_AMOUNT,
                 "TaCZ 的写入方法是 setDummyAmmoAmount，读取才叫 getDummyAmmoAmount");
         assertEquals("getCommonGunIndex", TaczGunBridge.M_GET_COMMON_GUN_INDEX,
                 "服务端要用 Common 索引，Client 索引在专用服务端上永远是空的");
-        assertEquals("tacz:modern_kinetic_gun", TaczGunBridge.GUN_ITEM_ID,
-                "所有 TaCZ 枪械共用这一个物品，靠 NBT GunId 区分");
+    }
+
+    /**
+     * 造枪走 TaCZ 自己的 Builder。这些名字拼错的后果不是发不出枪，而是发出一把
+     * 弹匣为 0、射击模式 UNKNOWN 的"哑枪"——物品非空，调用方的失败告警不会触发。
+     */
+    @Test
+    void gunBuilderNamesMatchUpstream() {
+        assertEquals("com.tacz.guns.api.item.builder.GunItemBuilder", TaczGunBridge.CLASS_GUN_ITEM_BUILDER);
+        assertEquals("com.tacz.guns.resource.index.CommonGunIndex", TaczGunBridge.CLASS_COMMON_GUN_INDEX);
+        assertEquals("com.tacz.guns.api.item.gun.FireMode", TaczGunBridge.CLASS_FIRE_MODE);
+        assertEquals("create", TaczGunBridge.M_BUILDER_CREATE);
+        assertEquals("setId", TaczGunBridge.M_BUILDER_SET_ID);
+        assertEquals("setFireMode", TaczGunBridge.M_BUILDER_SET_FIRE_MODE);
+        assertEquals("setAmmoCount", TaczGunBridge.M_BUILDER_SET_AMMO_COUNT);
+        assertEquals("setAmmoInBarrel", TaczGunBridge.M_BUILDER_SET_AMMO_IN_BARREL);
+        assertEquals("setHeatData", TaczGunBridge.M_BUILDER_SET_HEAT_DATA);
+        assertEquals("build", TaczGunBridge.M_BUILDER_BUILD,
+                "必须是 build（未加载的枪械 ID 会返回 EMPTY），不是跳过校验的 forceBuild");
+        assertEquals("getFireModeSet", TaczGunBridge.M_GET_FIRE_MODE_SET);
+        assertEquals("getAmmoAmount", TaczGunBridge.M_GET_AMMO_AMOUNT);
+        assertEquals("hasHeatData", TaczGunBridge.M_HAS_HEAT_DATA);
     }
 
     @Test

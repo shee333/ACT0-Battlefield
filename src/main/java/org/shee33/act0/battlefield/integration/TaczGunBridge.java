@@ -4,13 +4,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
+import java.util.List;
 
 /**
  * TaCZ（Timeless and Classics Zero）<b>弹药与换弹状态</b>的反射软依赖桥，供作战 HUD 的武器栏使用。
@@ -46,13 +44,30 @@ public final class TaczGunBridge {
     private static Method boxIsAllTypeCreative;
 
     private static Method gunGetGunId;
-    private static Method gunSetGunId;
     private static Method gunSetDummyAmmoAmount;
     private static Method timelessGetClientGunIndex;
     private static Method timelessGetCommonGunIndex;
     private static Method clientIndexGetGunData;
     private static Method gunDataGetBolt;
     private static Object openBoltConstant;
+
+    private static Method builderCreate;
+    private static Method builderSetId;
+    private static Method builderSetFireMode;
+    private static Method builderSetAmmoCount;
+    private static Method builderSetAmmoInBarrel;
+    private static Method builderSetHeatData;
+    private static Method builderBuild;
+    /**
+     * {@code CommonGunIndex#getGunData}。<b>惰性解析</b>：对这个类做方法解析需要链接 TaCZ 自带的
+     * luaj，而那不在本模组的测试 classpath 上——放进静态初始化会让整条造枪链路在测试环境里被判定为
+     * 不可用。真正调用它时（服务器运行期）luaj 必定在场。
+     */
+    @Nullable
+    private static Method commonIndexGetGunData;
+    private static Method gunDataGetFireModeSet;
+    private static Method gunDataGetAmmoAmount;
+    private static Method gunDataHasHeatData;
 
     private static Method operatorFromLivingEntity;
     private static Method operatorGetSynReloadState;
@@ -89,7 +104,6 @@ public final class TaczGunBridge {
     static final String CLASS_GUN_DATA = "com.tacz.guns.resource.pojo.data.gun.GunData";
     static final String CLASS_BOLT = "com.tacz.guns.resource.pojo.data.gun.Bolt";
     static final String M_GET_GUN_ID = "getGunId";
-    static final String M_SET_GUN_ID = "setGunId";
     static final String M_SET_DUMMY_AMMO_AMOUNT = "setDummyAmmoAmount";
     static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
     static final String M_GET_COMMON_GUN_INDEX = "getCommonGunIndex";
@@ -97,11 +111,19 @@ public final class TaczGunBridge {
     static final String M_GET_BOLT = "getBolt";
     static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
 
-    /**
-     * TaCZ 的枪械物品注册名。所有枪械共用这一个物品，具体是哪把枪由 NBT 里的 {@code GunId} 决定，
-     * 因此按 ID 造枪 = 取这个物品 + {@code setGunId}，不需要反射 TaCZ 的注册表对象。
-     */
-    static final String GUN_ITEM_ID = "tacz:modern_kinetic_gun";
+    static final String CLASS_GUN_ITEM_BUILDER = "com.tacz.guns.api.item.builder.GunItemBuilder";
+    static final String CLASS_COMMON_GUN_INDEX = "com.tacz.guns.resource.index.CommonGunIndex";
+    static final String CLASS_FIRE_MODE = "com.tacz.guns.api.item.gun.FireMode";
+    static final String M_BUILDER_CREATE = "create";
+    static final String M_BUILDER_SET_ID = "setId";
+    static final String M_BUILDER_SET_FIRE_MODE = "setFireMode";
+    static final String M_BUILDER_SET_AMMO_COUNT = "setAmmoCount";
+    static final String M_BUILDER_SET_AMMO_IN_BARREL = "setAmmoInBarrel";
+    static final String M_BUILDER_SET_HEAT_DATA = "setHeatData";
+    static final String M_BUILDER_BUILD = "build";
+    static final String M_GET_FIRE_MODE_SET = "getFireModeSet";
+    static final String M_GET_AMMO_AMOUNT = "getAmmoAmount";
+    static final String M_HAS_HEAT_DATA = "hasHeatData";
 
     private static final boolean AVAILABLE;
 
@@ -122,8 +144,24 @@ public final class TaczGunBridge {
         gunGetDummyAmmoAmount = optional(iGunClass, M_DUMMY_AMMO_AMOUNT, ItemStack.class);
         gunUseInventoryAmmo = optional(iGunClass, M_USE_INVENTORY_AMMO, ItemStack.class);
 
-        gunSetGunId = optional(iGunClass, M_SET_GUN_ID, ItemStack.class, ResourceLocation.class);
         gunSetDummyAmmoAmount = optional(iGunClass, M_SET_DUMMY_AMMO_AMOUNT, ItemStack.class, int.class);
+
+        // 逐个解析而不是塞进一个 try：把它们绑在一起时，任何一个目标解析失败都会连坐清空其余目标。
+        // CommonGunIndex 的方法解析恰好需要链接 TaCZ 自带的 luaj，缺它就会拖垮整条造枪链路。
+        Class<?> builderClass = classOrNull(CLASS_GUN_ITEM_BUILDER);
+        Class<?> fireModeClass = classOrNull(CLASS_FIRE_MODE);
+        Class<?> gunDataClass = classOrNull(CLASS_GUN_DATA);
+        builderCreate = optional(builderClass, M_BUILDER_CREATE);
+        builderSetId = optional(builderClass, M_BUILDER_SET_ID, ResourceLocation.class);
+        builderSetFireMode = fireModeClass == null
+                ? null : optional(builderClass, M_BUILDER_SET_FIRE_MODE, fireModeClass);
+        builderSetAmmoCount = optional(builderClass, M_BUILDER_SET_AMMO_COUNT, int.class);
+        builderSetAmmoInBarrel = optional(builderClass, M_BUILDER_SET_AMMO_IN_BARREL, boolean.class);
+        builderSetHeatData = optional(builderClass, M_BUILDER_SET_HEAT_DATA, boolean.class);
+        builderBuild = optional(builderClass, M_BUILDER_BUILD);
+        gunDataGetFireModeSet = optional(gunDataClass, M_GET_FIRE_MODE_SET);
+        gunDataGetAmmoAmount = optional(gunDataClass, M_GET_AMMO_AMOUNT);
+        gunDataHasHeatData = optional(gunDataClass, M_HAS_HEAT_DATA);
 
         try {
             gunGetGunId = iGunClass == null ? null : iGunClass.getMethod(M_GET_GUN_ID, ItemStack.class);
@@ -167,6 +205,15 @@ public final class TaczGunBridge {
             stateTypeIsReloading = stateTypeClass.getMethod(M_IS_RELOADING);
         } catch (Throwable ignored) {
             operatorFromLivingEntity = null;
+        }
+    }
+
+    @Nullable
+    private static Class<?> classOrNull(String name) {
+        try {
+            return Class.forName(name);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
@@ -226,60 +273,104 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 该枪械 ID 是否已被 TaCZ 加载（服务端可用的通用索引）。
+     * 按枪械 ID 造一把<b>可以直接作战</b>的新枪；造不出来返回 {@link ItemStack#EMPTY}。
      *
-     * <p>解析不到判定方法时一律返回 {@code true}：宁可发一把可能有问题的枪，也不能因为"无法验证"
-     * 就让玩家空手出生。真正的资源包缺失由 TaCZ 自己以错误模型呈现，比无武器可用要清楚得多。
+     * <p><b>必须走 TaCZ 自己的 {@code GunItemBuilder}</b>，不能只是"新建物品 + 写 GunId"。
+     * 只写 GunId 得到的枪，其余 NBT 全部缺省，而 TaCZ 的缺省值意味着：弹匣 0 发、
+     * 射击模式 {@code UNKNOWN}（客户端只对 BURST/AUTO 分支，UNKNOWN 会落到单发路径，
+     * 于是自动步枪表现得像半自动）、膛内无弹、过热数据未初始化。玩家会拿到一把打不响的枪，
+     * 而这一切没有任何报错——本方法返回的是非空物品，调用方的失败告警也不会触发。
+     *
+     * <p>用 Builder 还顺带拿到两件事：{@code build()} 在枪械 ID 未被 TaCZ 加载时返回 EMPTY
+     * （替代一次单独的存在性校验），以及按枪械 type 映射到正确的物品——TaCZ 并非所有枪都共用
+     * 同一个物品，附加包可以注册新的枪械类型。
      */
-    public static boolean isKnownGun(@Nullable String gunId) {
-        if (!AVAILABLE || gunId == null || gunId.isBlank()) {
-            return false;
-        }
-        if (timelessGetCommonGunIndex == null) {
-            return true;
+    public static ItemStack createGun(@Nullable String gunId) {
+        if (!AVAILABLE || builderCreate == null || gunId == null || gunId.isBlank()) {
+            return ItemStack.EMPTY;
         }
         ResourceLocation id = ResourceLocation.tryParse(gunId);
         if (id == null) {
-            return false;
+            return ItemStack.EMPTY;
         }
         try {
-            Object optional = timelessGetCommonGunIndex.invoke(null, id);
-            return optional instanceof java.util.Optional<?> opt && opt.isPresent();
+            Object builder = builderCreate.invoke(null);
+            builderSetId.invoke(builder, id);
+            applyGunDefaults(builder, id);
+            Object built = builderBuild.invoke(builder);
+            return built instanceof ItemStack stack ? stack : ItemStack.EMPTY;
         } catch (Throwable e) {
-            return true;
+            return ItemStack.EMPTY;
         }
     }
 
     /**
-     * 按枪械 ID 造一把全新的枪；造不出来返回 {@link ItemStack#EMPTY}。
+     * 按该枪的定义补齐出厂状态：首个射击模式、满弹匣、膛内一发、过热数据。
      *
-     * <p>TaCZ 所有枪械共用 {@value #GUN_ITEM_ID} 这一个物品，区别只在 NBT 的 {@code GunId}，
-     * 因此造枪 = 取物品 + {@code setGunId}。
+     * <p>与 TaCZ 自己给创造模式物品栏发枪时的做法保持一致。取不到枪械定义时静默跳过——
+     * 此时 {@code build()} 也会返回 EMPTY，调用方会走告警分支，不需要在这里重复报错。
      */
-    public static ItemStack createGun(@Nullable String gunId) {
-        if (!AVAILABLE || gunSetGunId == null || gunId == null || gunId.isBlank()) {
-            return ItemStack.EMPTY;
+    private static void applyGunDefaults(Object builder, ResourceLocation id) throws ReflectiveOperationException {
+        Object gunData = gunData(id);
+        if (gunData == null) {
+            return;
+        }
+        if (builderSetFireMode != null && gunDataGetFireModeSet != null
+                && gunDataGetFireModeSet.invoke(gunData) instanceof List<?> modes && !modes.isEmpty()) {
+            builderSetFireMode.invoke(builder, modes.get(0));
+        }
+        if (builderSetAmmoCount != null && gunDataGetAmmoAmount != null
+                && gunDataGetAmmoAmount.invoke(gunData) instanceof Integer amount && amount > 0) {
+            builderSetAmmoCount.invoke(builder, amount);
+        }
+        if (builderSetAmmoInBarrel != null) {
+            builderSetAmmoInBarrel.invoke(builder, true);
+        }
+        if (builderSetHeatData != null && gunDataHasHeatData != null) {
+            builderSetHeatData.invoke(builder, Boolean.TRUE.equals(gunDataHasHeatData.invoke(gunData)));
+        }
+    }
+
+    /**
+     * 该枪一个弹匣的容量；查不到返回 {@code -1}。
+     *
+     * <p>登记武器时用它推导默认备弹——备弹给多少只有对着弹匣容量才有意义，
+     * 一个固定常数对狙击枪和机枪必然有一边是错的。
+     */
+    public static int magazineSize(@Nullable String gunId) {
+        if (!AVAILABLE || gunDataGetAmmoAmount == null || gunId == null) {
+            return -1;
         }
         ResourceLocation id = ResourceLocation.tryParse(gunId);
-        ResourceLocation itemId = ResourceLocation.tryParse(GUN_ITEM_ID);
-        if (id == null || itemId == null) {
-            return ItemStack.EMPTY;
-        }
-        Item item = ForgeRegistries.ITEMS.getValue(itemId);
-        if (item == null || item == Items.AIR) {
-            return ItemStack.EMPTY;
-        }
-        ItemStack stack = new ItemStack(item);
-        Object gun = iGun(stack);
-        if (gun == null) {
-            return ItemStack.EMPTY;
+        if (id == null) {
+            return -1;
         }
         try {
-            gunSetGunId.invoke(gun, stack, id);
-            return stack;
+            Object gunData = gunData(id);
+            return gunData != null && gunDataGetAmmoAmount.invoke(gunData) instanceof Integer n ? n : -1;
         } catch (Throwable e) {
-            return ItemStack.EMPTY;
+            return -1;
         }
+    }
+
+    /** TaCZ 服务端侧的枪械定义；未加载该枪或解析不到返回 {@code null}。 */
+    @Nullable
+    private static Object gunData(ResourceLocation id) throws ReflectiveOperationException {
+        if (timelessGetCommonGunIndex == null) {
+            return null;
+        }
+        Object optional = timelessGetCommonGunIndex.invoke(null, id);
+        if (!(optional instanceof java.util.Optional<?> opt) || opt.isEmpty()) {
+            return null;
+        }
+        Object index = opt.get();
+        if (commonIndexGetGunData == null) {
+            commonIndexGetGunData = optional(index.getClass(), M_GET_GUN_DATA);
+            if (commonIndexGetGunData == null) {
+                return null;
+            }
+        }
+        return commonIndexGetGunData.invoke(index);
     }
 
     /**

@@ -5,7 +5,6 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
-import org.shee33.act0.battlefield.core.arena.ArenaCatalog;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
 
@@ -54,20 +53,23 @@ public final class PlayerLoadoutStore extends SavedData {
     }
 
     /**
-     * 记下该玩家在该图上某个槽位的选择，并按当前目录清理掉已失效的旧选择。
+     * 记下该玩家在该图上某个槽位的选择。
      *
-     * <p>写入时顺手 {@code sanitize}：这是玩家存档唯一会被写的时机，在这里收敛就不必再单独跑
-     * 一遍全服清理任务。传入的 ID 若不在目录里则视为清除该槽位——校验由调用方在收包时先做过一次，
-     * 这里再兜一次，避免有人绕过界面直接发包塞进一把没上架的枪。
+     * <p><b>只动被点的那个槽位</b>，不对整套选择做 {@code sanitize}。曾经这里顺手清理了当前
+     * 目录里已失效的其余槽位，后果是：管理员临时下架一把枪、玩家在此期间改了任意<b>别的</b>槽位，
+     * 那把枪的选择就被永久抹掉，管理员再上架回来也回不来了——这与 {@link PlayerArenaLoadout}
+     * 承诺的"误删再加回，玩家原选择还在"直接矛盾。失效选择在读取时由
+     * {@link PlayerArenaLoadout#resolve} 自动回落，本来就不需要写时清理。
+     *
+     * @param id 必须已由调用方对着目录校验过；这里不再重复校验，也就不会把非法提交
+     *           误当成"清除该槽位"
      */
-    public PlayerArenaLoadout setPick(UUID playerId, String mapName, LoadoutSlot slot,
-                                      @Nullable String id, ArenaCatalog catalog) {
+    public PlayerArenaLoadout setPick(UUID playerId, String mapName, LoadoutSlot slot, String id) {
         String key = normalize(mapName);
         if (playerId == null || key == null || slot == null) {
             return PlayerArenaLoadout.EMPTY;
         }
-        String accepted = catalog.hasOption(slot, id) ? id : null;
-        PlayerArenaLoadout next = loadout(playerId, key).with(slot, accepted).sanitize(catalog);
+        PlayerArenaLoadout next = loadout(playerId, key).with(slot, id);
         put(playerId, key, next);
         return next;
     }

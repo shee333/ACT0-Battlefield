@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "17";
+    private static final String PROTOCOL = "18";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(

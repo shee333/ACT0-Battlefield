@@ -41,6 +41,17 @@ public final class ArenaCommand {
     private ArenaCommand() {
     }
 
+    /** 不带 {@code dummy_ammo} 参数时传入的哨兵值，表示"按这把枪的弹匣容量推导"。 */
+    private static final int DERIVE_RESERVE = -1;
+
+    /**
+     * 推导默认备弹时给几个备用弹匣。
+     *
+     * <p>取 3 是战地系列的惯例手感：出生时枪里一个满弹匣，身上三个备用。写死一个绝对数字
+     * （比如 120）对狙击枪是二十多个弹匣、对机枪却不到一个，必然有一边荒谬。
+     */
+    private static final int DEFAULT_SPARE_MAGAZINES = 3;
+
     /**
      * 地图名补全。
      *
@@ -71,7 +82,7 @@ public final class ArenaCommand {
         for (WeaponCategory category : WeaponCategory.values()) {
             weapon.then(Commands.literal(category.id())
                     .then(Commands.literal("add")
-                            .executes(c -> addWeapon(c, category, 0))
+                            .executes(c -> addWeapon(c, category, DERIVE_RESERVE))
                             .then(Commands.argument("dummy_ammo",
                                             IntegerArgumentType.integer(0, ArenaWeaponEntry.MAX_DUMMY_AMMO))
                                     .executes(c -> addWeapon(c, category,
@@ -153,12 +164,13 @@ public final class ArenaCommand {
         if (gunId == null) {
             return fail(c, "§c主手不是 TaCZ 枪械，读不出枪械 ID。");
         }
+        int reserve = dummyAmmo >= 0 ? dummyAmmo : deriveReserve(gunId);
         ArenaCatalogStore store = ArenaCatalogStore.get(c.getSource().getServer());
         EditResult result = store.addWeapon(map, category,
-                new ArenaWeaponEntry(gunId, held.getHoverName().getString(), dummyAmmo));
+                new ArenaWeaponEntry(gunId, held.getHoverName().getString(), reserve));
         return switch (result) {
             case OK -> ok(c, "§a已上架 §f" + gunId + " §7→ 【" + map + "】" + category.displayName()
-                    + (dummyAmmo > 0 ? "，虚拟备弹 " + dummyAmmo : "，走背包弹药"));
+                    + describeReserve(reserve, dummyAmmo < 0));
             case DUPLICATE -> fail(c, "§c这把枪已在本图的 §f"
                     + describeCategory(store.view(map).categoryOf(gunId)) + " §c池里。");
             case FULL -> fail(c, "§c【" + map + "】" + category.slot().displayName()
@@ -264,6 +276,28 @@ public final class ArenaCommand {
                     "§c没有名为 §f" + input + " §c的地图。用 §f/aew1 arena list §c查看已知地图。"));
         }
         return resolved;
+    }
+
+    /**
+     * 未指定备弹时按弹匣容量推导；查不到弹匣容量则退回 0。
+     *
+     * <p>退回 0 意味着这把枪只有出厂的那一个弹匣、打完无弹可换，因此
+     * {@link #describeReserve} 会在这种情况下明确提示管理员手动指定。
+     */
+    private static int deriveReserve(String gunId) {
+        int magazine = TaczGunBridge.magazineSize(gunId);
+        return magazine > 0
+                ? Math.min(magazine * DEFAULT_SPARE_MAGAZINES, ArenaWeaponEntry.MAX_DUMMY_AMMO)
+                : 0;
+    }
+
+    private static String describeReserve(int reserve, boolean derived) {
+        if (reserve > 0) {
+            return "，备弹 " + reserve + (derived ? "（按 " + DEFAULT_SPARE_MAGAZINES + " 个备用弹匣推导）" : "");
+        }
+        return derived
+                ? " §e备弹 0：读不到该枪弹匣容量，请用 §fadd <备弹数> §e手动指定，否则打完一匣就没子弹了"
+                : "，备弹 0（打完出厂弹匣即无弹可换）";
     }
 
     private static String describeCategory(@Nullable WeaponCategory category) {

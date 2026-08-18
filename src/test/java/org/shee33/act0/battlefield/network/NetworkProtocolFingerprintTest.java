@@ -34,7 +34,7 @@ class NetworkProtocolFingerprintTest {
     private static final Path SOURCE = NETWORK_DIR.resolve("BattlefieldNetwork.java");
 
     /** 改动包表或任何包的 payload 结构后，请连同 PROTOCOL 一起更新此处。 */
-    private static final String EXPECTED_PROTOCOL = "17";
+    private static final String EXPECTED_PROTOCOL = "18";
 
     /** 包表指纹（index:ClassName:DIRECTION 逐行拼接后的 SHA-256）。 */
     private static final String EXPECTED_FINGERPRINT =
@@ -42,7 +42,7 @@ class NetworkProtocolFingerprintTest {
 
     /** 线格式指纹（network 包下每个文件的 buf.writeXxx / 嵌套 encode 调用序列）。 */
     private static final String EXPECTED_WIRE_FORMAT =
-            "f7f056a343d5ac094486f5e6dd54ed3b2aae44419a02044da1ebf64064d1e6b8";
+            "6f013443fbe5f744264dcc9fc0c331f17e67783b6c48f5f67a8f100c7db5a8f2";
 
     /** 枚举常量指纹（network 包下所有枚举的常量顺序）。 */
     private static final String EXPECTED_ENUM_CONSTANTS =

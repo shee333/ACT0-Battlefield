@@ -27,6 +27,8 @@ import org.shee33.act0.battlefield.core.ConquestRules;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
+import org.shee33.act0.battlefield.data.ArenaCatalogStore;
+import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
@@ -328,11 +330,29 @@ public final class BattlefieldCommand {
         return 1;
     }
 
+    /**
+     * 给当前世界命名。
+     *
+     * <p>地图名同时是军械库的主键（见 {@code ArenaKey}），所以改名会让原来那份武器配置<b>失去
+     * 引用</b>——它还在存档里，但再也没有对局会去读它，玩家从此裸着出生。这里在改名前后各查一次
+     * 目录，发现"旧键有货、新键没有"就当场说清楚，否则这个后果要等到下一局开打才暴露，
+     * 而且现场看起来像配装系统坏了。
+     */
     private static int setMapName(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
         String name = StringArgumentType.getString(c, "name");
+        ArenaCatalogStore arenas = ArenaCatalogStore.get(level.getServer());
+        String oldKey = ArenaKey.of(level);
+        boolean hadCatalog = arenas.has(oldKey);
         BattlefieldData.get(level).setMapName(name);
         feedback(c, "§a已将当前世界地图命名为 §e" + name);
+        String newKey = ArenaKey.of(level);
+        if (hadCatalog && !newKey.equals(oldKey) && !arenas.has(newKey)) {
+            feedback(c, "§e注意：原地图键 §f" + oldKey + " §e下的军械库不会跟着改名，"
+                    + "本图现在按 §f" + newKey + " §e查询、目前为空——玩家将不会拿到任何装备。");
+            feedback(c, "§7请用 §f/aew1 arena " + newKey + " weapon <类别> add §7重新配置，"
+                    + "或把地图名改回 §f" + oldKey + "§7。");
+        }
         return 1;
     }
 

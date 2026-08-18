@@ -29,9 +29,14 @@ import java.util.function.Function;
  * 粒度是整个文件。管理员改一次目录就重写一遍全服玩家的配装选择（可能上千条）是纯浪费，
  * 反之亦然。两者变更频率与体积都不同，分开存。
  *
- * <p>对外只暴露"读视图 + 四个写操作"，不把可变的 {@link ArenaCatalog} 交出去改，
- * 免得调用方改完忘了 {@code setDirty()} 导致改动不落盘。
- */
+     * <p>对外只暴露"读视图 + 四个写操作"，不把可变的 {@link ArenaCatalog} 交出去改，
+     * 免得调用方改完忘了 {@code setDirty()} 导致改动不落盘。
+     *
+     * <p><b>读写必须走同一套键解析</b>（{@link #resolveName}，忽略大小写）。曾经 {@code view}
+     * 用精确匹配、写操作用忽略大小写，结果是管理员对 {@code dust2} 执行 add 时数据被写进既有的
+     * {@code Dust2} 桶、回显却说成功，紧接着的 list 又读不到——同一条命令链里自相矛盾，
+     * 且玩家会因为读不到目录而裸着出生。
+     */
 public final class ArenaCatalogStore extends SavedData {
 
     public static final String NAME = "act0_aew1_arenas";
@@ -55,18 +60,14 @@ public final class ArenaCatalogStore extends SavedData {
      * 出生发装与部署界面都不必写空判断。
      */
     public ArenaCatalog view(@Nullable String mapName) {
-        String key = normalize(mapName);
-        if (key == null) {
-            return new ArenaCatalog();
-        }
-        ArenaCatalog catalog = byMap.get(key);
+        String key = resolveName(mapName);
+        ArenaCatalog catalog = key == null ? null : byMap.get(key);
         return catalog != null ? catalog : new ArenaCatalog();
     }
 
     /** 是否已为该地图配置过目录。 */
     public boolean has(@Nullable String mapName) {
-        String key = normalize(mapName);
-        return key != null && byMap.containsKey(key);
+        return resolveName(mapName) != null;
     }
 
     /** 已配置目录的全部地图名，按录入顺序。 */
@@ -117,16 +118,6 @@ public final class ArenaCatalogStore extends SavedData {
     /** 从该地图的指定道具槽移除一件道具。 */
     public EditResult removeItem(String mapName, LoadoutSlot slot, String itemId) {
         return mutateExisting(mapName, catalog -> catalog.removeItem(slot, itemId));
-    }
-
-    /** 整张地图的目录清空并从存档移除；不存在则 no-op。 */
-    public boolean clear(@Nullable String mapName) {
-        String key = resolveName(mapName);
-        if (key == null || byMap.remove(key) == null) {
-            return false;
-        }
-        setDirty();
-        return true;
     }
 
     /** 需要新建目录的写操作（add）。 */

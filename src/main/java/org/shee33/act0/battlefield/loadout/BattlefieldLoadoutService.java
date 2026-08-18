@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.loadout;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -54,6 +55,9 @@ public final class BattlefieldLoadoutService {
      */
     private static final Set<String> REPORTED_BAD_ENTRIES = ConcurrentHashMap.newKeySet();
 
+    /** 已经报告过"目录为空"的地图键，避免每次出生刷屏。 */
+    private static final Set<String> REPORTED_EMPTY_ARENAS = ConcurrentHashMap.newKeySet();
+
     private BattlefieldLoadoutService() {
     }
 
@@ -74,7 +78,7 @@ public final class BattlefieldLoadoutService {
             slots.add(new DeploySlotOptionsDto(slot.hotbarIndex(), slot.displayName(), e.getValue(),
                     optionsForSlot(catalog, slot)));
         }
-        return new DeployLoadoutDto("", slots);
+        return new DeployLoadoutDto(slots);
     }
 
     /**
@@ -114,7 +118,7 @@ public final class BattlefieldLoadoutService {
         if (!catalog.hasOption(slot, id)) {
             return false;
         }
-        PlayerLoadoutStore.get(player.server).setPick(player.getUUID(), arenaKey, slot, id, catalog);
+        PlayerLoadoutStore.get(player.server).setPick(player.getUUID(), arenaKey, slot, id);
         return true;
     }
 
@@ -130,6 +134,9 @@ public final class BattlefieldLoadoutService {
         }
         ArenaCatalog catalog = catalogOf(player.server, arenaKey);
         Map<LoadoutSlot, String> resolved = loadoutOf(player, arenaKey, catalog).resolve(catalog);
+        if (resolved.isEmpty()) {
+            reportEmptyCatalog(player, arenaKey);
+        }
         player.getInventory().clearContent();
         for (Map.Entry<LoadoutSlot, String> e : resolved.entrySet()) {
             ItemStack stack = stackFor(catalog, e.getKey(), e.getValue());
@@ -138,6 +145,26 @@ public final class BattlefieldLoadoutService {
             }
         }
         player.getInventory().setChanged();
+    }
+
+    /**
+     * 目录为空时的告警。
+     *
+     * <p>没有这条提示，"本图没配军械库"与"配装系统坏了"在玩家眼里完全一样：都是清空背包后
+     * 一件装备都没发，没有日志、没有报错。管理员唯一的线索只有去敲 {@code /aew1 arena list}。
+     * 这里把实际用于查询的 {@code arenaKey} 一并说出来——地图改名导致目录被孤立时，
+     * 这个键与管理员以为的图名不一致，正是唯一能看出问题的地方。
+     */
+    private static void reportEmptyCatalog(ServerPlayer player, @Nullable String arenaKey) {
+        String key = arenaKey == null ? "" : arenaKey;
+        if (REPORTED_EMPTY_ARENAS.add(key)) {
+            LOGGER.warn("[ACT/0/Battlefield] 地图\"{}\"没有配置军械库，该图所有出生都将不发任何装备"
+                    + "（用 /aew1 arena list 检查键名是否与实际地图名一致）", key);
+        }
+        if (!BotSpawner.isBot(player)) {
+            player.sendSystemMessage(Component.literal(
+                    "§c本图（§f" + key + "§c）尚未配置军械库，未发放任何装备。请管理员执行 §f/aew1 arena list §c检查。"));
+        }
     }
 
     private static ArenaCatalog catalogOf(MinecraftServer server, @Nullable String arenaKey) {

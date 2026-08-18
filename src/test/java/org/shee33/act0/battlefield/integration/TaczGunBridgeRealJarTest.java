@@ -21,7 +21,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TaczGunBridgeRealJarTest {
 
-    /** 与 {@link TaczGunBridge} 内部反射目标字段一一对应。 */
+    /**
+     * 与 {@link TaczGunBridge} 内部<b>静态解析</b>的反射目标字段一一对应。
+     *
+     * <p>刻意不含 {@code commonIndexGetGunData}：对 {@code CommonGunIndex} 做方法解析要链接
+     * TaCZ 自带的 luaj，而本仓库只挂了 TaCZ 主 jar，没有它的第三方依赖。该目标因此改为调用时
+     * 惰性解析，无法在这里验证。
+     */
     private static final String[] REFLECTION_FIELDS = {
             "getIGunOrNull",
             "gunGetCurrentAmmoCount",
@@ -40,10 +46,19 @@ class TaczGunBridgeRealJarTest {
             "reloadStateGetCountDown",
             "stateTypeIsReloading",
             "gunGetGunId",
-            "gunSetGunId",
             "gunSetDummyAmmoAmount",
             "timelessGetCommonGunIndex",
             "timelessGetClientGunIndex",
+            "builderCreate",
+            "builderSetId",
+            "builderSetFireMode",
+            "builderSetAmmoCount",
+            "builderSetAmmoInBarrel",
+            "builderSetHeatData",
+            "builderBuild",
+            "gunDataGetFireModeSet",
+            "gunDataGetAmmoAmount",
+            "gunDataHasHeatData",
             "clientIndexGetGunData",
             "gunDataGetBolt",
             "openBoltConstant",

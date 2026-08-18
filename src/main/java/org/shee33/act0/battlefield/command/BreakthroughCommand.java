@@ -298,7 +298,7 @@ public final class BreakthroughCommand {
     }
 
     /**
-     * {@code /aew1 breakthrough quickjoin <roomKey>}：给 ACT0-Arcade 房间浏览器用，把玩家加入一个
+     * {@code /aew1 breakthrough quickjoin <roomKey>}：给对局浏览器界面用，把玩家加入一个
      * 正在进行中的突破对局（而不是预开局候选名单）。{@code roomKey} 接受
      * {@code browserRows()} 返回的 {@code bt@<dimension>} 格式，也接受裸维度 key。
      */

@@ -222,7 +222,7 @@ public final class BreakthroughManager {
     }
 
     /**
-     * 供 ACT0-Arcade 房间浏览器调用：把玩家加入一个正在进行中的突破对局（非候选名单）。
+     * 供对局浏览器界面调用：把玩家加入一个正在进行中的突破对局（非候选名单）。
      * 与 {@link ConquestManager#quickJoin} 同一套实现模式：按 roomKey 定位对局，校验
      * 存在/未满/玩家未在其中，自动分配到人少的一方，再调用 {@link BreakthroughMatch#addLatecomer}。
      *

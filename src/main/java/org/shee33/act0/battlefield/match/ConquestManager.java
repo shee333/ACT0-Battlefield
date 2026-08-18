@@ -1,5 +1,7 @@
 package org.shee33.act0.battlefield.match;
 
+import com.mojang.brigadier.context.ParsedCommandNode;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import org.shee33.act0.battlefield.deployable.DeployableKind;
@@ -47,6 +49,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -584,6 +587,19 @@ public final class ConquestManager {
 
     // ---- 事件 ----
 
+    /**
+     * 对局中允许非 OP 玩家使用的命令，按<b>解析出的节点路径</b>比对。
+     *
+     * <p>这里刻意不用原始字符串前缀匹配：{@code /battlefield leave} 改名成 {@code /aew1 leave} 时，
+     * 旧的前缀判定既不再匹配新名、也不会报错，结果是玩家在对局中<b>所有</b>命令都被拦下、
+     * 连退出都做不到（暂停菜单的退出按钮走的正是这条命令）。节点路径由 Brigadier 解析得出，
+     * 与参数写法、空格、引号无关，改名时漏改会在这里表现为"退不出去"而不是静默放行。
+     */
+    private static final Set<String> ALLOWED_COMMANDS_IN_MATCH = Set.of(
+            Aew1Command.CMD_LEAVE,
+            Aew1Command.CMD_SUICIDE,
+            Aew1Command.CMD_BREAKTHROUGH_LEAVE);
+
     @SubscribeEvent
     public void onCommand(CommandEvent event) {
         if (!(event.getParseResults().getContext().getSource().getEntity() instanceof ServerPlayer player)) {
@@ -592,13 +608,23 @@ public final class ConquestManager {
         if (player.hasPermissions(2) || activeContaining(player.getUUID()) == null) {
             return;
         }
-        String raw = event.getParseResults().getReader().getString().trim();
-        String cmd = raw.startsWith("/") ? raw.substring(1) : raw;
-        if (cmd.equals("suicide") || cmd.startsWith("battlefield leave")) {
+        if (ALLOWED_COMMANDS_IN_MATCH.contains(commandPath(event))) {
             return;
         }
         event.setCanceled(true);
         player.sendSystemMessage(Component.literal("§c大战场中无法使用该指令，使用退出按钮可离开。"));
+    }
+
+    /** 把一条已解析命令还原成以空格分隔的节点名路径（参数节点用其参数名，不含实参值）。 */
+    private static String commandPath(CommandEvent event) {
+        StringBuilder sb = new StringBuilder();
+        for (ParsedCommandNode<CommandSourceStack> node : event.getParseResults().getContext().getNodes()) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(node.getNode().getName());
+        }
+        return sb.toString();
     }
 
     /**

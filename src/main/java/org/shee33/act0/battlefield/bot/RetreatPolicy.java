@@ -8,8 +8,8 @@ package org.shee33.act0.battlefield.bot;
  * （{@value #DEFAULT_REENGAGE_HEALTH} 远高于脱离线），再叠一条最短脱离时长
  * ——三者共同保证一次脱离是"一段可被玩家读懂的行为"，而不是一次数值颤动。
  *
- * <p><b>与街机呼吸回血的配合。</b>本模组的回血需要先脱离伤害若干秒才开始（见
- * {@code ArcadeGlobalSettings#breathHealDelayTicks}，默认 5 秒）。这意味着脱离后的 bot 事实上会
+ * <p><b>与呼吸回血的配合。</b>本模组的回血需要先脱离伤害若干秒才开始（见
+ * {@code BattlefieldConfig#BREATH_HEAL_DELAY_TICKS}，默认 5 秒）。这意味着脱离后的 bot 事实上会
  * 在 {@link State#BREAK_OFF} 停留远超最短时长——最短时长防的是抖动，真正决定何时回来的是回血速度。
  * 玩家体验到的就是战地系列那种"打退一个人，他躲一阵又从别的角度回来"的节奏。
  */

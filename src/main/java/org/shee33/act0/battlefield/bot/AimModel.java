@@ -4,8 +4,7 @@ package org.shee33.act0.battlefield.bot;
  * AI 士兵的瞄准模型：难度的<b>唯一</b>来源。MC-free 纯数据 + 纯函数，可单测。
  *
  * <p>本类的 {@link Difficulty} 枚举只提供<b>内置默认值</b>；运行时生效值取自
- * {@link BotDifficultyRegistry}，由 {@code config/act0_arcade/bot/difficulty.json} 覆盖，
- * 以便反复调手感时无需重编译。
+ * {@link BotDifficultyRegistry}——该层为将来的外部调参通道预留，目前尚未接入配置文件。
  *
  * <p><b>为什么难度必须落在瞄准而非决策上。</b>玩家对"这个 bot 强不强"的感知约九成来自枪法手感，
  * 一成来自战术走位。若靠"让弱 bot 决策更差"来降难度，得到的是<b>笨</b>（走错路、卡墙）而不是
