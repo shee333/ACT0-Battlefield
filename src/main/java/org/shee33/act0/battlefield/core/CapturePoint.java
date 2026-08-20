@@ -23,6 +23,7 @@ public final class CapturePoint {
 
     private Faction owner;   // null = 中立
     private double level;    // [-1,1]，+ 朝 ALPHA，- 朝 BRAVO
+    private CaptureStatus lastStatus = CaptureStatus.IDLE;
 
     public CapturePoint(int id, String displayName) {
         this.id = id;
@@ -67,6 +68,32 @@ public final class CapturePoint {
      * @param deltaSeconds 距上次推进的秒数
      */
     public CaptureStatus tick(int alphaInZone, int bravoInZone, ConquestRules rules, double deltaSeconds) {
+        lastStatus = advance(alphaInZone, bravoInZone, rules, deltaSeconds);
+        return lastStatus;
+    }
+
+    /** 最近一次 {@link #tick} 得出的状态；从未推进过时为 {@link CaptureStatus#IDLE}。 */
+    public CaptureStatus lastStatus() {
+        return lastStatus;
+    }
+
+    /**
+     * 该据点此刻是否<b>不允许</b>作为重生点。
+     *
+     * <p>正在被夺（{@link CaptureStatus#CAPTURING}）、双方争夺（{@link CaptureStatus#CONTESTED}）、
+     * 刚被中和（{@link CaptureStatus#NEUTRALIZED}）三种状态下禁止重生：往一个正在翻转的据点上
+     * 空投增援，等于让防守方凭重生而不是凭交火守住据点，据点争夺就失去意义了。
+     *
+     * <p>{@link CaptureStatus#DEFENDING} 刻意<b>放行</b>：那是敌人已经离开、控制方正在把进度推回，
+     * 区域内没有敌人，与"正在被翻转"是两回事。
+     */
+    public boolean deployBlocked() {
+        return lastStatus == CaptureStatus.CAPTURING
+                || lastStatus == CaptureStatus.CONTESTED
+                || lastStatus == CaptureStatus.NEUTRALIZED;
+    }
+
+    private CaptureStatus advance(int alphaInZone, int bravoInZone, ConquestRules rules, double deltaSeconds) {
         boolean a = alphaInZone > 0;
         boolean b = bravoInZone > 0;
         if (a && b) {

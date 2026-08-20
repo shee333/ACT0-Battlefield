@@ -3,6 +3,7 @@ package org.shee33.act0.battlefield.match;
 import com.mojang.logging.LogUtils;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.food.FoodData;
 import net.minecraft.server.level.ServerPlayer;
@@ -15,6 +16,7 @@ import org.shee33.act0.battlefield.bot.mc.BotGunBridge;
 import org.shee33.act0.battlefield.bot.mc.BotSpawner;
 import org.shee33.act0.battlefield.core.CapturePoint;
 import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.PointSpawnRing;
 import org.shee33.act0.battlefield.core.OverheadViewMath;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
@@ -53,6 +55,12 @@ public final class RedeployService {
     private final ServerLevel level;
     private final BattlefieldData data;
     private static final int MAX_FOOD_LEVEL = 20;
+
+    /** 据点外围落点垂直搜索范围（格）。 */
+    private static final int STAND_SEARCH_RANGE = 4;
+
+    private static final int[] ZERO_ONLY = {0};
+    private static final int[] UP_DOWN = {1, -1};
 
     private final Map<UUID, Faction> factionOf;
     private final SquadManager squadManager;
@@ -478,7 +486,7 @@ public final class RedeployService {
         for (int i = 0; i < defs.size(); i++) {
             ControlPointDef def = defs.get(i);
             CapturePoint point = points.get(i);
-            boolean deployable = point.owner() == faction;
+            boolean deployable = pointDeployable(i, faction);
             list.add(new DeployPointDto(Integer.toString(def.pointId()), def.name(), factionCode(point.owner()),
                     deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5));
         }
@@ -588,9 +596,21 @@ public final class RedeployService {
     }
 
     @Nullable
+    /**
+     * 该据点此刻能否作为本方重生点：必须已归本方，且没有处于正在被翻转的状态。
+     *
+     * <p>{@code deployPointDtos}（界面可选状态）、{@link #firstDeployablePointId}（默认落点）与
+     * {@link #pointSpawn}（实际落地）三处必须用同一个判据，否则会出现"界面显示可选、点下去
+     * 却部署不了"这类只能靠玩家反复试才能发现的不一致。
+     */
+    private boolean pointDeployable(int index, Faction faction) {
+        CapturePoint point = points.get(index);
+        return point.owner() == faction && !point.deployBlocked();
+    }
+
     private String firstDeployablePointId(Faction faction) {
         for (int i = 0; i < points.size(); i++) {
-            if (points.get(i).owner() == faction) {
+            if (pointDeployable(i, faction)) {
                 return Integer.toString(defs.get(i).pointId());
             }
         }
@@ -606,13 +626,93 @@ public final class RedeployService {
             if (!Integer.toString(def.pointId()).equals(targetId)) {
                 continue;
             }
-            if (points.get(i).owner() != faction) {
+            if (!pointDeployable(i, faction)) {
                 return null;
             }
-            return new BattlefieldData.BaseSpawn(def.pos().getX() + 0.5, def.pos().getY() + 1,
-                    def.pos().getZ() + 0.5, 0f, 0f);
+            return peripheralSpawn(def, faction);
         }
         return null;
+    }
+
+    /**
+     * 在据点占领区外贴边挑一个可站立的落点，优先离最近的敌人最远。
+     *
+     * <p>朝向一律设成"面朝据点中心"：玩家点了这个据点就是想去打它，落地时镜头已经对着目标，
+     * 省掉一次转身找方向。
+     *
+     * <p>所有候选点都站不住时回落到据点中心（改动前的行为）——地形被削平、据点建在悬崖边、
+     * 或者一圈全是墙的时候，宁可落在区里也不能让玩家部署不出去。
+     */
+    private BattlefieldData.BaseSpawn peripheralSpawn(ControlPointDef def, Faction faction) {
+        double centerX = def.pos().getX() + 0.5;
+        double centerZ = def.pos().getZ() + 0.5;
+        List<PointSpawnRing.Offset> ranked = PointSpawnRing.rankByEnemyDistance(
+                PointSpawnRing.candidates(def.radius()), centerX, centerZ, enemyPositions(faction));
+        for (PointSpawnRing.Offset offset : ranked) {
+            double x = centerX + offset.dx();
+            double z = centerZ + offset.dz();
+            Integer y = standableY(x, z, def.pos().getY());
+            if (y != null) {
+                return new BattlefieldData.BaseSpawn(x, y, z, yawTowards(x, z, centerX, centerZ), 0f);
+            }
+        }
+        return new BattlefieldData.BaseSpawn(centerX, def.pos().getY() + 1, centerZ, 0f, 0f);
+    }
+
+    /** 存活且未倒地的敌方玩家水平坐标。倒地的人构不成威胁，不该把落点推开。 */
+    private List<double[]> enemyPositions(Faction faction) {
+        List<double[]> out = new ArrayList<>();
+        for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
+            if (e.getValue() == faction || downedUntil.containsKey(e.getKey())) {
+                continue;
+            }
+            ServerPlayer enemy = player(e.getKey());
+            if (enemy != null && enemy.level() == level && enemy.isAlive() && !enemy.isSpectator()) {
+                out.add(new double[]{enemy.getX(), enemy.getZ()});
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 在给定水平位置附近找一个能站人的 Y：脚下实心、身体两格空。
+     *
+     * <p>从据点高度向上下各搜 {@link #STAND_SEARCH_RANGE} 格，由近及远——据点周边通常是平地或
+     * 缓坡，先试同高度能在绝大多数情况下一次命中，不必真的做垂直射线。
+     *
+     * @return 可站立的脚部 Y；找不到返回 {@code null}
+     */
+    @Nullable
+    private Integer standableY(double x, double z, int baseY) {
+        for (int d = 0; d <= STAND_SEARCH_RANGE; d++) {
+            for (int sign : d == 0 ? ZERO_ONLY : UP_DOWN) {
+                int y = baseY + sign * d;
+                if (isStandable(x, y, z)) {
+                    return y;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isStandable(double x, int y, double z) {
+        BlockPos feet = BlockPos.containing(x, y, z);
+        if (y - 1 < level.getMinBuildHeight() || y + 1 >= level.getMaxBuildHeight()) {
+            return false;
+        }
+        return !level.getBlockState(feet).blocksMotion()
+                && !level.getBlockState(feet.above()).blocksMotion()
+                && level.getBlockState(feet.below()).blocksMotion();
+    }
+
+    /**
+     * 从落点看向据点中心的 yaw（度）。
+     *
+     * <p>{@code -90} 是 Minecraft 的 yaw 约定与 {@code atan2} 之间的固定差：MC 的 yaw=0 朝南(+Z)、
+     * 顺时针增大，而 {@code atan2(dz, dx)} 以东(+X)为 0、逆时针增大。
+     */
+    static float yawTowards(double fromX, double fromZ, double toX, double toZ) {
+        return (float) (Math.toDegrees(Math.atan2(toZ - fromZ, toX - fromX)) - 90.0);
     }
 
     private void teleportToDeployOverview(ServerPlayer player, Faction faction) {
