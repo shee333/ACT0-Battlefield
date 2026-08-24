@@ -277,10 +277,7 @@ public final class ConquestMatch {
         clearEnemyGlowFor(player);
         clearEnemyGlowTarget(player);
         clearRedeployState(player, true);
-        BattlefieldData.BaseSpawn base = data.base(faction);
-        if (base != null) {
-            player.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
-        }
+        MatchReturnLocation.returnToMainWorld(player);
         player.getInventory().clearContent();
         BattlefieldNetwork.clearHud(player);
         BattlefieldNetwork.sendFireLock(player, false);
@@ -913,10 +910,7 @@ public final class ConquestMatch {
                 }
                 sendPersonalResult(p, e.getValue(), w);
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
-                BattlefieldData.BaseSpawn base = data.base(e.getValue());
-                if (base != null) {
-                    p.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
-                }
+                MatchReturnLocation.returnToMainWorld(p);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }
@@ -1093,13 +1087,9 @@ public final class ConquestMatch {
             if (p != null) {
                 if (redeployService.isRedeploying(id)) {
                     clearRedeployState(p, true);
-                } else {
                     p.setInvulnerable(false);
                 }
-                BattlefieldData.BaseSpawn base = data.base(factionOf.get(id));
-                if (base != null) {
-                    p.teleportTo(lobbyLevel, base.x(), base.y(), base.z(), base.yaw(), base.pitch());
-                }
+                MatchReturnLocation.returnToMainWorld(p);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }
@@ -1922,7 +1912,7 @@ public final class ConquestMatch {
         if (rf == null || rf != factionOf.get(targetId)) {
             return false;
         }
-        // 医疗兵是唯一不靠道具就能跨小队救人的兵种；医疗针对所有兵种仍然给速度加成，两者不重叠。
+        // 支援兵是唯一不靠道具就能跨小队救人的兵种；医疗针对所有兵种仍然给速度加成，两者不重叠。
         return squadManager.isSameSquad(reviverId, targetId)
                 || holdsSyringe(reviver)
                 || classOf(reviver) == SoldierClass.MEDIC;

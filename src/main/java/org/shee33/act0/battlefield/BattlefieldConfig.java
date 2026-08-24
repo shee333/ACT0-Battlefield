@@ -32,6 +32,14 @@ public final class BattlefieldConfig {
     public static final ForgeConfigSpec.IntValue MAX_PLAYERS;
     public static final ForgeConfigSpec.BooleanValue MINIMAP_NORTH_UP;
 
+    // ── matchReturn ────────────────────────────────────────
+    public static final ForgeConfigSpec.BooleanValue MATCH_RETURN_USE_CUSTOM_COORDS;
+    public static final ForgeConfigSpec.DoubleValue MATCH_RETURN_X;
+    public static final ForgeConfigSpec.DoubleValue MATCH_RETURN_Y;
+    public static final ForgeConfigSpec.DoubleValue MATCH_RETURN_Z;
+    public static final ForgeConfigSpec.DoubleValue MATCH_RETURN_YAW;
+    public static final ForgeConfigSpec.DoubleValue MATCH_RETURN_PITCH;
+
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
 
@@ -98,6 +106,29 @@ public final class BattlefieldConfig {
         HUD_INTERVAL = builder
                 .comment("Tick interval for HUD scoreboard broadcast")
                 .defineInRange("hudIntervalTicks", 10, 1, 100);
+        builder.pop();
+
+        builder.push("matchReturn");
+        MATCH_RETURN_USE_CUSTOM_COORDS = builder
+                .comment("Return location after a match ends or when leaving mid-match. "
+                        + "true = teleport players to the custom coordinates below in the overworld; "
+                        + "false (default) = teleport to the overworld world spawn.")
+                .define("useCustomCoords", false);
+        MATCH_RETURN_X = builder
+                .comment("Custom return X (overworld). Only used when useCustomCoords = true.")
+                .defineInRange("returnX", 0.0, -30000000.0, 30000000.0);
+        MATCH_RETURN_Y = builder
+                .comment("Custom return Y (overworld). Only used when useCustomCoords = true.")
+                .defineInRange("returnY", 64.0, -64.0, 320.0);
+        MATCH_RETURN_Z = builder
+                .comment("Custom return Z (overworld). Only used when useCustomCoords = true.")
+                .defineInRange("returnZ", 0.0, -30000000.0, 30000000.0);
+        MATCH_RETURN_YAW = builder
+                .comment("Custom return yaw (degrees). Only used when useCustomCoords = true.")
+                .defineInRange("returnYaw", 0.0, -180.0, 180.0);
+        MATCH_RETURN_PITCH = builder
+                .comment("Custom return pitch (degrees). Only used when useCustomCoords = true.")
+                .defineInRange("returnPitch", 0.0, -90.0, 90.0);
         builder.pop();
 
         SPEC = builder.build();
