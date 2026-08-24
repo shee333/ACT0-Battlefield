@@ -1293,32 +1293,12 @@ public final class BreakthroughMatch {
         if (rf == null || rf != factionOf.get(targetId)) {
             return false;
         }
-        // 支援兵是唯一不靠道具就能跨小队救人的兵种；医疗针对所有兵种仍然给速度加成，两者不重叠。
+        // 同小队成员可直接扶起；手持医疗针可跨小队扶起（道具能力，与兵种无关）。
         return squadManager.isSameSquad(reviverId, targetId)
-                || holdsSyringe(reviver)
-                || classOf(reviver) == SoldierClass.MEDIC;
+                || holdsSyringe(reviver);
     }
 
-    private SoldierClass classOf(ServerPlayer player) {
-        return BattlefieldLoadoutService.classOf(player, arenaKey);
-    }
 
-    /**
-     * 突击兵的呼吸回血启动更快。
-     *
-     * <p>按玩家逐个解析而非开局定死：兵种是在部署界面选的，一名玩家整场里可以换。
-     */
-    private int breathHealDelayOf(ServerPlayer player) {
-        return classOf(player) == SoldierClass.ASSAULT
-                ? Math.max(1, breathHealDelayTicks / SoldierClass.ASSAULT_HEAL_DELAY_DIVISOR)
-                : breathHealDelayTicks;
-    }
-
-    private int deployableLifetimeOf(ServerPlayer owner) {
-        return classOf(owner) == SoldierClass.ENGINEER
-                ? SupplyRules.LIFETIME_TICKS * SoldierClass.ENGINEER_DEPLOYABLE_LIFETIME_MULTIPLIER
-                : SupplyRules.LIFETIME_TICKS;
-    }
 
     private static boolean holdsSyringe(ServerPlayer player) {
         return player.getMainHandItem().is(BattlefieldRegistry.MEDIC_SYRINGE.get())
@@ -1373,7 +1353,7 @@ public final class BreakthroughMatch {
         if (ended || !factionOf.containsKey(id) || downedUntil.containsKey(id)) {
             return false;
         }
-        deployables.deploy(level, player, kind, display, server.getTickCount(), deployableLifetimeOf(player));
+        deployables.deploy(level, player, kind, display, server.getTickCount(), SupplyRules.LIFETIME_TICKS);
         return true;
     }
 
@@ -1990,7 +1970,7 @@ public final class BreakthroughMatch {
                 continue;
             }
             long last = lastHurtTick.getOrDefault(id, now);
-            if (now - last >= breathHealDelayOf(p)) {
+            if (now - last >= breathHealDelayTicks) {
                 p.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 60, 1, false, false, true));
             }
         }

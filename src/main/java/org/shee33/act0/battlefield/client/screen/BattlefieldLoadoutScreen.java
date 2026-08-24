@@ -151,8 +151,7 @@ public final class BattlefieldLoadoutScreen extends Screen {
         drawMapTabs(gg, dto, contentX, contentW, mouseX, mouseY, chromeA);
         SoldierClass soldier = SoldierClass.byIdOrDefault(dto.selectedClassId());
         drawClassTabs(gg, soldier, contentX, contentW, mouseX, mouseY, chromeA);
-        gg.drawString(font, PixelTheme.fit(font, soldier.abilityBrief(), contentW), contentX, BRIEF_Y,
-                withAlpha(PixelTheme.TEXT_DIM, chromeA), false);
+
 
         List<DeploySlotOptionsDto> slots = slotsOf(dto, soldier);
         if (slots.isEmpty()) {

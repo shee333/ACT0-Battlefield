@@ -46,11 +46,10 @@ class SoldierClassTest {
     }
 
     @Test
-    void everyClassHasDisplayNameAndAbilityBrief() {
+    void everyClassHasDisplayName() {
         for (SoldierClass c : SoldierClass.values()) {
             assertNotNull(c.displayName());
             assertTrue(!c.displayName().isBlank(), c + " 缺显示名");
-            assertTrue(!c.abilityBrief().isBlank(), c + " 缺能力说明");
         }
     }
 }

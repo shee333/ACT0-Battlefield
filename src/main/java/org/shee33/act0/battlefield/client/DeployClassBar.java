@@ -73,10 +73,6 @@ public final class DeployClassBar {
                     isSelected ? TEXT : TEXT_DIM, false);
             LAST_CHIPS.add(new ChipRect(c.id(), xs[i], topY, widths[i], CHIP_H));
         }
-
-        String brief = selected.abilityBrief();
-        gg.drawString(font, brief, screenW / 2 - font.width(brief) / 2, topY + CHIP_H + 2,
-                TEXT_DIM, false);
     }
 
     /** @return 是否吃掉了这次点击 */
