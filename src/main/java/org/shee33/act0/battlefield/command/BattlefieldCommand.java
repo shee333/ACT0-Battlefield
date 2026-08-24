@@ -29,7 +29,7 @@ import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.MapTemplate;
-import org.shee33.act0.battlefield.data.ArenaCatalogStore;
+import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
@@ -432,21 +432,11 @@ public final class BattlefieldCommand {
         if (names == null) {
             return 0;
         }
-        ArenaCatalogStore arenas = ArenaCatalogStore.get(level.getServer());
-        String oldKey = ArenaKey.of(level);
-        boolean hadCatalog = arenas.has(oldKey);
         BattlefieldData data = BattlefieldData.get(level);
         data.setMapName(name);
         data.setFactionNames(names);
         feedback(c, "§a已将当前世界地图命名为 §e" + name);
         reportFactions(c, names);
-        String newKey = ArenaKey.of(level);
-        if (hadCatalog && !newKey.equals(oldKey) && !arenas.has(newKey)) {
-            feedback(c, "§e注意：原地图键 §f" + oldKey + " §e下的军械库不会跟着改名，"
-                    + "本图现在按 §f" + newKey + " §e查询、目前为空——玩家将不会拿到任何装备。");
-            feedback(c, "§7请用 §f/aew1 arena " + newKey + " weapon <类别> add §7重新配置，"
-                    + "或把地图名改回 §f" + oldKey + "§7。");
-        }
         return 1;
     }
 

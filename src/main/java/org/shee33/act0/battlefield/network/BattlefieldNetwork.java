@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "21";
+    private static final String PROTOCOL = "22";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -108,9 +108,6 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncMatchStartFxPacket.class,
             SyncMatchStartFxPacket::encode, SyncMatchStartFxPacket::decode, SyncMatchStartFxPacket::handle,
             Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, DeploySlotOverridePacket.class,
-            DeploySlotOverridePacket::encode, DeploySlotOverridePacket::decode, DeploySlotOverridePacket::handle,
-            Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, RequestBattlefieldRoomListPacket.class,
             RequestBattlefieldRoomListPacket::encode, RequestBattlefieldRoomListPacket::decode,
             RequestBattlefieldRoomListPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
@@ -144,18 +141,12 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncLoadoutConfigPacket.class,
             SyncLoadoutConfigPacket::encode, SyncLoadoutConfigPacket::decode,
             SyncLoadoutConfigPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, LoadoutEditPacket.class,
-            LoadoutEditPacket::encode, LoadoutEditPacket::decode,
-            LoadoutEditPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, LoadoutSelectClassPacket.class,
             LoadoutSelectClassPacket::encode, LoadoutSelectClassPacket::decode,
             LoadoutSelectClassPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, LoadoutSelectPresetPacket.class,
             LoadoutSelectPresetPacket::encode, LoadoutSelectPresetPacket::decode,
             LoadoutSelectPresetPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
-        CHANNEL.registerMessage(id++, LoadoutRenamePacket.class,
-            LoadoutRenamePacket::encode, LoadoutRenamePacket::decode,
-            LoadoutRenamePacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 
     /**

@@ -51,14 +51,22 @@ public final class DeployClassBar {
         if (loadout == null) {
             return;
         }
-        SoldierClass selected = SoldierClass.byIdOrDefault(loadout.selectedClassId());
+        SoldierClass selected = SoldierClass.byIdOrDefault(loadout.classId());
         SoldierClass[] all = SoldierClass.values();
 
         int[] widths = new int[all.length];
+        int total = 0;
         for (int i = 0; i < all.length; i++) {
             widths[i] = font.width(all[i].displayName()) + CHIP_PAD * 2;
+            total += widths[i];
         }
-        int[] xs = DeployWeaponMath.layoutSlotX(widths, CHIP_GAP, screenW / 2);
+        total += CHIP_GAP * (all.length - 1);
+        int[] xs = new int[all.length];
+        int cursor = screenW / 2 - total / 2;
+        for (int i = 0; i < all.length; i++) {
+            xs[i] = cursor;
+            cursor += widths[i] + CHIP_GAP;
+        }
 
         for (int i = 0; i < all.length; i++) {
             SoldierClass c = all[i];

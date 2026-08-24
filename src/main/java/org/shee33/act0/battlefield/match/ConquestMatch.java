@@ -851,10 +851,6 @@ public final class ConquestMatch {
         return redeployService.canDeployTo(player, kind, targetId);
     }
 
-    public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
-        redeployService.handleSlotOverride(player, slotIndex, itemName);
-    }
-
     public void handleDeployClassChange(ServerPlayer player, String classId) {
         redeployService.handleClassChange(player, classId);
     }

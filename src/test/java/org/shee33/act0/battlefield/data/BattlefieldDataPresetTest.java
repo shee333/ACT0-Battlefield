@@ -1,0 +1,57 @@
+package org.shee33.act0.battlefield.data;
+
+import net.minecraft.nbt.CompoundTag;
+import org.junit.jupiter.api.Test;
+import org.shee33.act0.battlefield.core.Faction;
+import org.shee33.act0.battlefield.core.SoldierClass;
+import org.shee33.act0.battlefield.core.arena.LoadoutPresetDef;
+import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** 锁住"管理员预设配装"的数据模型与存档编解码。 */
+class BattlefieldDataPresetTest {
+
+    @Test
+    void createPresetGeneratesStableIdAndStores() {
+        BattlefieldData data = new BattlefieldData();
+        LoadoutPresetDef def = data.createPreset(Faction.ALPHA, SoldierClass.ASSAULT, "正面突破");
+        assertTrue(def.id().startsWith("lp_"), "配装 id 应为生成式稳定标识");
+        assertEquals(1, data.presetsFor(Faction.ALPHA, SoldierClass.ASSAULT).size());
+        assertTrue(data.presetsFor(Faction.BRAVO, SoldierClass.ASSAULT).isEmpty(), "阵营隔离");
+    }
+
+    @Test
+    void slotAmmoAndArmorRoundTripThroughNbt() {
+        BattlefieldData data = new BattlefieldData();
+        LoadoutPresetDef def = data.createPreset(Faction.BRAVO, SoldierClass.RECON, "狙击套")
+                .withSlot(LoadoutSlot.PRIMARY, "tacz:m24")
+                .withAmmo(LoadoutSlot.PRIMARY, 40)
+                .withSlot(LoadoutSlot.GADGET_1, "act0_battlefield:medic_syringe")
+                .withArmor(new LoadoutPresetDef.ArmorSet(
+                        "minecraft:iron_helmet", "minecraft:iron_chestplate", null, "minecraft:iron_boots"));
+        data.savePresetDef(Faction.BRAVO, SoldierClass.RECON, def);
+
+        BattlefieldData loaded = BattlefieldData.load(data.save(new CompoundTag()));
+        LoadoutPresetDef after = loaded.preset(Faction.BRAVO, SoldierClass.RECON, def.id());
+        assertEquals("狙击套", after.displayName());
+        assertEquals("tacz:m24", after.slot(LoadoutSlot.PRIMARY));
+        assertEquals(40, after.ammoOf(LoadoutSlot.PRIMARY));
+        assertEquals("minecraft:iron_helmet", after.armor().helmet());
+        assertNull(after.armor().legs(), "未穿的护腿应为 null");
+    }
+
+    @Test
+    void deletePresetRemovesEmptyGroup() {
+        BattlefieldData data = new BattlefieldData();
+        LoadoutPresetDef def = data.createPreset(Faction.ALPHA, SoldierClass.MEDIC, "医疗");
+        assertTrue(data.deletePresetDef(Faction.ALPHA, SoldierClass.MEDIC, def.id()));
+        assertTrue(data.presetsFor(Faction.ALPHA, SoldierClass.MEDIC).isEmpty());
+        assertFalse(data.deletePresetDef(Faction.ALPHA, SoldierClass.MEDIC, "nope"), "删不存在应返回 false");
+    }
+}

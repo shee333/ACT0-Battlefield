@@ -1,6 +1,10 @@
 package org.shee33.act0.battlefield.client;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+
+import javax.annotation.Nullable;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * 客户端物品显示名的二次解析。
@@ -25,5 +29,19 @@ public final class ClientNames {
             return name;
         }
         return Component.translatable(name).getString();
+    }
+
+    /** 物品注册 ID → 客户端本地化显示名（客户端持有语言包，取 ItemStack 的 hover 名）。 */
+    public static String itemName(@Nullable String itemId) {
+        if (itemId == null || itemId.isEmpty()) {
+            return "空槽位";
+        }
+        ResourceLocation id = ResourceLocation.tryParse(itemId);
+        net.minecraft.world.item.Item item = id == null ? null
+                : net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(id);
+        if (item == null) {
+            return itemId;
+        }
+        return new net.minecraft.world.item.ItemStack(item).getHoverName().getString();
     }
 }

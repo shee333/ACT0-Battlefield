@@ -37,7 +37,7 @@ public final class Aew1Command {
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal(ROOT);
         BattlefieldCommand.attachTo(root);
         root.then(BreakthroughCommand.tree());
-        root.then(ArenaCommand.tree());
+        LoadoutCommand.attachTo(root);
         dispatcher.register(root);
     }
 }

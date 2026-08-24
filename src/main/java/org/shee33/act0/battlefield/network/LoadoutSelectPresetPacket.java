@@ -10,32 +10,35 @@ import org.slf4j.Logger;
 import java.util.function.Supplier;
 
 /**
- * C2S：配装界面点击 4×4 网格的某一格——选定该兵种并把该格设为激活配装。
+ * C2S：玩家在配装界面为某阵营某兵种选中一套配装（只选不编）。
  *
- * <p>一次点击同时完成「切兵种 + 切激活套」，服务端回发整屏快照。
+ * <p>服务端校验该配装 id 确实存在于该图该阵营该兵种下，通过则记录选择并回发整屏快照。
  */
 public final class LoadoutSelectPresetPacket {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final String mapName;
+    private final String factionId;
     private final String classId;
-    private final int presetIndex;
+    private final String presetId;
 
-    public LoadoutSelectPresetPacket(String mapName, String classId, int presetIndex) {
+    public LoadoutSelectPresetPacket(String mapName, String factionId, String classId, String presetId) {
         this.mapName = mapName != null ? mapName : "";
+        this.factionId = factionId != null ? factionId : "";
         this.classId = classId != null ? classId : "";
-        this.presetIndex = presetIndex;
+        this.presetId = presetId != null ? presetId : "";
     }
 
     public static void encode(LoadoutSelectPresetPacket msg, FriendlyByteBuf buf) {
         buf.writeUtf(msg.mapName);
+        buf.writeUtf(msg.factionId);
         buf.writeUtf(msg.classId);
-        buf.writeVarInt(msg.presetIndex);
+        buf.writeUtf(msg.presetId);
     }
 
     public static LoadoutSelectPresetPacket decode(FriendlyByteBuf buf) {
-        return new LoadoutSelectPresetPacket(buf.readUtf(), buf.readUtf(), buf.readVarInt());
+        return new LoadoutSelectPresetPacket(buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf());
     }
 
     public static void handle(LoadoutSelectPresetPacket msg, Supplier<NetworkEvent.Context> ctx) {
@@ -44,7 +47,8 @@ public final class LoadoutSelectPresetPacket {
             ServerPlayer player = context.getSender();
             if (player != null) {
                 try {
-                    LoadoutConfigService.selectPreset(player, msg.mapName, msg.classId, msg.presetIndex);
+                    LoadoutConfigService.selectPreset(player, msg.mapName, msg.factionId,
+                            msg.classId, msg.presetId);
                 } catch (Throwable t) {
                     LOGGER.warn("LoadoutSelectPresetPacket handler failed for {}",
                             player.getGameProfile().getName(), t);

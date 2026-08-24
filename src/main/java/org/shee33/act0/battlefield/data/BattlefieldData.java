@@ -11,15 +11,19 @@ import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchCapacity;
 import org.shee33.act0.battlefield.core.Sector;
+import org.shee33.act0.battlefield.core.SoldierClass;
+import org.shee33.act0.battlefield.core.arena.LoadoutPresetDef;
+import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
+import java.util.UUID;
 /**
  * 大战场布场数据（每维度 {@link SavedData} 落盘）：登记的据点、两阵营的基地出生点。
  *
@@ -48,6 +52,9 @@ public final class BattlefieldData extends SavedData {
 
     /** 管理员为当前世界命名的地图名，供对局浏览器展示；空字符串表示未命名。 */
     private String mapName = "";
+
+    /** 配装预设：{@code 阵营id#兵种id} → 该组合下的有序配装列表（管理员预设，玩家只选）。 */
+    private final Map<String, List<LoadoutPresetDef>> loadoutPresets = new LinkedHashMap<>();
 
     /** 该地图的两个阵营名称；建图时必填，0.2.7 及更早的存档读档时回落 {@link FactionNames#LEGACY}。 */
     private FactionNames factionNames = FactionNames.LEGACY;
@@ -331,7 +338,138 @@ public final class BattlefieldData extends SavedData {
         setDirty();
     }
 
-    // ---- 持久化 ----
+    // ---- 配装预设（管理员配置，玩家只选） ----
+
+    private static String presetKey(Faction faction, SoldierClass soldierClass) {
+        return faction.name() + "#" + soldierClass.id();
+    }
+
+    /** 该阵营该兵种下的全部配装预设，按创建顺序。 */
+    public List<LoadoutPresetDef> presetsFor(Faction faction, SoldierClass soldierClass) {
+        List<LoadoutPresetDef> list = loadoutPresets.get(presetKey(faction, soldierClass));
+        return list == null ? List.of() : List.copyOf(list);
+    }
+
+    /** 按 id 查某配装预设；不存在返回 {@code null}。 */
+    @Nullable
+    public LoadoutPresetDef preset(Faction faction, SoldierClass soldierClass, String id) {
+        for (LoadoutPresetDef p : presetsFor(faction, soldierClass)) {
+            if (p.id().equals(id)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /** 创建一套配装预设（空内容），生成稳定 id 并返回。显示名默认取创建时传入的名字。 */
+    public LoadoutPresetDef createPreset(Faction faction, SoldierClass soldierClass, String displayName) {
+        String id = "lp_" + UUID.randomUUID().toString().substring(0, 8);
+        LoadoutPresetDef def = new LoadoutPresetDef(id, displayName, Map.of(), Map.of(),
+                LoadoutPresetDef.ArmorSet.EMPTY);
+        String key = presetKey(faction, soldierClass);
+        loadoutPresets.computeIfAbsent(key, k -> new ArrayList<>()).add(def);
+        setDirty();
+        return def;
+    }
+
+    /** 覆盖保存某套配装预设（同 id 替换）。用于管理员编辑槽位/弹药/服装后落盘。 */
+    public void savePresetDef(Faction faction, SoldierClass soldierClass, LoadoutPresetDef def) {
+        String key = presetKey(faction, soldierClass);
+        List<LoadoutPresetDef> list = loadoutPresets.computeIfAbsent(key, k -> new ArrayList<>());
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).id().equals(def.id())) {
+                list.set(i, def);
+                setDirty();
+                return;
+            }
+        }
+        list.add(def);
+        setDirty();
+    }
+
+    /** 删除一套配装预设。 */
+    public boolean deletePresetDef(Faction faction, SoldierClass soldierClass, String id) {
+        String key = presetKey(faction, soldierClass);
+        List<LoadoutPresetDef> list = loadoutPresets.get(key);
+        if (list == null) {
+            return false;
+        }
+        boolean removed = list.removeIf(p -> p.id().equals(id));
+        if (removed) {
+            if (list.isEmpty()) {
+                loadoutPresets.remove(key);
+            }
+            setDirty();
+        }
+        return removed;
+    }
+
+    // ---- 配装预设编解码 ----
+
+    private static final String KEY_LOADOUT_PRESETS = "loadoutPresets";
+    private static final String KEY_PRESET_ID = "id";
+    private static final String KEY_PRESET_NAME = "name";
+    private static final String KEY_PRESET_SLOTS = "slots";
+    private static final String KEY_PRESET_AMMO = "ammo";
+    private static final String KEY_PRESET_ARMOR = "armor";
+
+    private static CompoundTag savePresetDef(LoadoutPresetDef def) {
+        CompoundTag t = new CompoundTag();
+        t.putString(KEY_PRESET_ID, def.id());
+        t.putString(KEY_PRESET_NAME, def.displayName());
+        CompoundTag slots = new CompoundTag();
+        for (Map.Entry<LoadoutSlot, String> e : def.slots().entrySet()) {
+            slots.putString(e.getKey().id(), e.getValue());
+        }
+        t.put(KEY_PRESET_SLOTS, slots);
+        CompoundTag ammo = new CompoundTag();
+        for (Map.Entry<LoadoutSlot, Integer> e : def.ammo().entrySet()) {
+            ammo.putInt(e.getKey().id(), e.getValue());
+        }
+        t.put(KEY_PRESET_AMMO, ammo);
+        CompoundTag armor = new CompoundTag();
+        LoadoutPresetDef.ArmorSet a = def.armor();
+        if (a.helmet() != null) {
+            armor.putString("helmet", a.helmet());
+        }
+        if (a.chest() != null) {
+            armor.putString("chest", a.chest());
+        }
+        if (a.legs() != null) {
+            armor.putString("legs", a.legs());
+        }
+        if (a.boots() != null) {
+            armor.putString("boots", a.boots());
+        }
+        t.put(KEY_PRESET_ARMOR, armor);
+        return t;
+    }
+
+    private static LoadoutPresetDef loadPresetDef(CompoundTag t) {
+        Map<LoadoutSlot, String> slots = new EnumMap<>(LoadoutSlot.class);
+        CompoundTag slotsTag = t.getCompound(KEY_PRESET_SLOTS);
+        for (String key : slotsTag.getAllKeys()) {
+            LoadoutSlot slot = LoadoutSlot.byId(key);
+            if (slot != null && !slotsTag.getString(key).isBlank()) {
+                slots.put(slot, slotsTag.getString(key));
+            }
+        }
+        Map<LoadoutSlot, Integer> ammo = new EnumMap<>(LoadoutSlot.class);
+        CompoundTag ammoTag = t.getCompound(KEY_PRESET_AMMO);
+        for (String key : ammoTag.getAllKeys()) {
+            LoadoutSlot slot = LoadoutSlot.byId(key);
+            if (slot != null && ammoTag.getInt(key) > 0) {
+                ammo.put(slot, ammoTag.getInt(key));
+            }
+        }
+        CompoundTag armorTag = t.getCompound(KEY_PRESET_ARMOR);
+        LoadoutPresetDef.ArmorSet armor = LoadoutPresetDef.ArmorSet.of(
+                armorTag.getString("helmet"), armorTag.getString("chest"),
+                armorTag.getString("legs"), armorTag.getString("boots"));
+        return new LoadoutPresetDef(
+                t.getString(KEY_PRESET_ID), t.getString(KEY_PRESET_NAME),
+                slots, ammo, armor);
+    }
 
     @Override
     public CompoundTag save(CompoundTag tag) {
@@ -371,6 +509,17 @@ public final class BattlefieldData extends SavedData {
                 pt.put(e.getKey(), e.getValue().copy());
             }
             tag.put("presets", pt);
+        }
+        if (!loadoutPresets.isEmpty()) {
+            CompoundTag lp = new CompoundTag();
+            for (Map.Entry<String, List<LoadoutPresetDef>> e : loadoutPresets.entrySet()) {
+                ListTag presetList = new ListTag();
+                for (LoadoutPresetDef def : e.getValue()) {
+                    presetList.add(savePresetDef(def));
+                }
+                lp.put(e.getKey(), presetList);
+            }
+            tag.put(KEY_LOADOUT_PRESETS, lp);
         }
         if (minPlayersToStart > 0) {
             tag.putInt("minPlayersToStart", minPlayersToStart);
@@ -419,6 +568,17 @@ public final class BattlefieldData extends SavedData {
             CompoundTag pt = tag.getCompound("presets");
             for (String key : pt.getAllKeys()) {
                 data.presets.put(key, pt.getCompound(key).copy());
+            }
+        }
+        if (tag.contains(KEY_LOADOUT_PRESETS)) {
+            CompoundTag lp = tag.getCompound(KEY_LOADOUT_PRESETS);
+            for (String key : lp.getAllKeys()) {
+                ListTag presetList = lp.getList(key, Tag.TAG_COMPOUND);
+                List<LoadoutPresetDef> defs = new ArrayList<>();
+                for (int i = 0; i < presetList.size(); i++) {
+                    defs.add(loadPresetDef(presetList.getCompound(i)));
+                }
+                data.loadoutPresets.put(key, defs);
             }
         }
         data.minPlayersToStart = Math.max(0, tag.getInt("minPlayersToStart"));

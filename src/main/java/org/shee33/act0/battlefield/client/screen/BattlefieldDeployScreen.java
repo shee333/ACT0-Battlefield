@@ -12,7 +12,7 @@ import org.shee33.act0.battlefield.client.DeployConfirmFx;
 import org.shee33.act0.battlefield.client.DeployClassBar;
 import org.shee33.act0.battlefield.client.DeployMapPanel;
 import org.shee33.act0.battlefield.client.DeployModeLabel;
-import org.shee33.act0.battlefield.client.DeployWeaponPanel;
+import org.shee33.act0.battlefield.client.DeployPresetBar;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployPointDto;
@@ -49,7 +49,7 @@ public final class BattlefieldDeployScreen extends Screen {
     public BattlefieldDeployScreen() {
         super(Component.literal("部署"));
         DeployMapPanel.onOpened();
-        DeployWeaponPanel.onOpened();
+        DeployPresetBar.onOpened();
         DeployModeLabel.onOpened();
     }
 
@@ -73,7 +73,7 @@ public final class BattlefieldDeployScreen extends Screen {
 
         updateSquadSpectate(st);
 
-        int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployWeaponPanel.barHeight();
+        int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployPresetBar.barHeight();
         int classBarTopY = barTopY - DeployClassBar.barHeight();
 
         int mapX = MAP_MARGIN;
@@ -95,7 +95,7 @@ public final class BattlefieldDeployScreen extends Screen {
         renderSpectateFade(gg);
 
         DeployClassBar.render(gg, font, width, classBarTopY, mouseX, mouseY);
-        DeployWeaponPanel.render(gg, font, width, height, barTopY, mouseX, mouseY);
+        DeployPresetBar.render(gg, font, width, barTopY, mouseX, mouseY);
     }
 
     /**
@@ -161,9 +161,7 @@ public final class BattlefieldDeployScreen extends Screen {
             if (DeployClassBar.handleClick(mouseX, mouseY)) {
                 return true;
             }
-            if (DeployWeaponPanel.handleClick(mouseX, mouseY)) {
-                return true;
-            }
+            DeployPresetBar.handleClick(mouseX, mouseY);
             DeployMapPanel.ClickOutcome outcome = DeployMapPanel.handleClick(mouseX, mouseY);
             if (outcome.selection() != null) {
                 DeployStatusDto stBeforeClick = ClientDeployStatus.status();
@@ -245,7 +243,7 @@ public final class BattlefieldDeployScreen extends Screen {
     public void removed() {
         ClientSquadSpectate.clear();
         DeployMapPanel.onClosed();
-        DeployWeaponPanel.onClosed();
+        DeployPresetBar.onClosed();
         DeployModeLabel.onClosed();
         super.removed();
     }

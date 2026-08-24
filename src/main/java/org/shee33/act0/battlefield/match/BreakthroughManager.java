@@ -652,13 +652,6 @@ public final class BreakthroughManager {
         }
     }
 
-    public void handleDeploySlotOverride(ServerPlayer player, int slotIndex, String itemName) {
-        BreakthroughMatch match = activeContaining(player.getUUID());
-        if (match != null) {
-            match.handleDeploySlotOverride(player, slotIndex, itemName);
-        }
-    }
-
     public void handleDeployClassChange(ServerPlayer player, String classId) {
         BreakthroughMatch match = activeContaining(player.getUUID());
         if (match != null) {

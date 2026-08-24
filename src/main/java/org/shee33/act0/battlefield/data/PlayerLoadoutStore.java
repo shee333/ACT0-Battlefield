@@ -5,28 +5,24 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.SoldierClass;
-import org.shee33.act0.battlefield.core.arena.ClassLoadouts;
-import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
-import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
-import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 玩家在每张地图上的配装选择，按 {@code 玩家 UUID × 地图名} 持久化在<b>主世界</b>的 {@link SavedData} 里。
+ * 玩家的配装<b>选择</b>，按 {@code 玩家 UUID × 地图名} 持久化在<b>主世界</b>的 {@link SavedData} 里。
  *
- * <p>每张图下再按兵种分四套（见 {@link PlayerMapLoadout}）：四个兵种共用地图的武器池，但各记一套
- * 选择，切兵种不该逼玩家重选主武器。
+ * <p><b>只存选择，不存内容</b>：配装内容（槽位/弹药/服装）是管理员在 {@link BattlefieldData} 里
+ * 预设的，玩家在这份存档里只记"我在这张图上，阵营 X 的兵种 Y 选的是哪套配装"。管理员改预设内容，
+ * 玩家这边无需任何迁移——下次部署读到的就是新内容。
  *
- * <p><b>为什么按玩家×地图而不是按玩家全局</b>：每张图的武器池是独立配置的，全局记一套的话换图之后
- * 大概率整套失效、玩家每局都要重新选。按图记住则"我在这张图惯用的枪"能一直保留。
- *
- * <p><b>为什么不存快照只存选择</b>：见 {@link PlayerArenaLoadout} 的说明——目录是唯一真相源，
- * 管理员下架一把枪后玩家读取时自动回落，不需要遍历改写任何玩家存档。
+ * <p>每玩家每图：当前兵种 + （阵营,兵种）→ 选中配装 id（可为空 = 未选，部署时用该兵种第一套）。
  */
 public final class PlayerLoadoutStore extends SavedData {
 
@@ -35,128 +31,74 @@ public final class PlayerLoadoutStore extends SavedData {
     private static final String KEY_PLAYERS = "players";
     private static final String KEY_UUID = "uuid";
     private static final String KEY_MAPS = "maps";
+    private static final String KEY_CLASS = "class";
+    private static final String KEY_PICKS = "picks";
 
-    /** 玩家 UUID → (地图名 → 该图的整套兵种配装)。 */
-    private final Map<UUID, Map<String, PlayerMapLoadout>> byPlayer = new LinkedHashMap<>();
+    /** 玩家 UUID → (地图名 → 该图选择)。 */
+    private final Map<UUID, Map<String, PlayerMapSelection>> byPlayer = new LinkedHashMap<>();
 
     public static PlayerLoadoutStore get(MinecraftServer server) {
         return server.overworld().getDataStorage().computeIfAbsent(
                 PlayerLoadoutStore::load, PlayerLoadoutStore::new, NAME);
     }
 
-    /** 该玩家在该图上的整套兵种配装；没记录返回 {@link PlayerMapLoadout#EMPTY}。 */
-    public PlayerMapLoadout mapLoadout(UUID playerId, @Nullable String mapName) {
+    /** 该玩家在该图上的选择；没记录返回 {@link PlayerMapSelection#EMPTY}。 */
+    public PlayerMapSelection selection(UUID playerId, @Nullable String mapName) {
         String key = normalize(mapName);
         if (playerId == null || key == null) {
-            return PlayerMapLoadout.EMPTY;
+            return PlayerMapSelection.EMPTY;
         }
-        Map<String, PlayerMapLoadout> maps = byPlayer.get(playerId);
+        Map<String, PlayerMapSelection> maps = byPlayer.get(playerId);
         if (maps == null) {
-            return PlayerMapLoadout.EMPTY;
+            return PlayerMapSelection.EMPTY;
         }
-        PlayerMapLoadout l = maps.get(key);
-        return l != null ? l : PlayerMapLoadout.EMPTY;
+        PlayerMapSelection s = maps.get(key);
+        return s != null ? s : PlayerMapSelection.EMPTY;
     }
 
     public SoldierClass selectedClass(UUID playerId, @Nullable String mapName) {
-        return mapLoadout(playerId, mapName).selected();
+        return selection(playerId, mapName).selected();
     }
 
-    /** 该玩家在该图、该兵种下的槽位选择；没选过返回 {@link PlayerArenaLoadout#EMPTY}。 */
-    public PlayerArenaLoadout loadout(UUID playerId, @Nullable String mapName, SoldierClass soldierClass) {
-        return soldierClass == null
-                ? PlayerArenaLoadout.EMPTY
-                : mapLoadout(playerId, mapName).loadout(soldierClass);
+    /** 该玩家在该图、该阵营该兵种选中的配装 id；未选返回 {@code null}。 */
+    @Nullable
+    public String selectedPresetId(UUID playerId, @Nullable String mapName, Faction faction,
+                                   SoldierClass soldierClass) {
+        return faction == null || soldierClass == null ? null
+                : selection(playerId, mapName).presetId(faction, soldierClass);
     }
 
-    /** 切换该玩家在该图上的兵种，各兵种已存的槽位选择保持不动。 */
-    public PlayerMapLoadout setSelectedClass(UUID playerId, String mapName, SoldierClass soldierClass) {
+    /** 切换该玩家在该图上的兵种。 */
+    public PlayerMapSelection setSelectedClass(UUID playerId, String mapName, SoldierClass soldierClass) {
         String key = normalize(mapName);
         if (playerId == null || key == null || soldierClass == null) {
-            return PlayerMapLoadout.EMPTY;
+            return PlayerMapSelection.EMPTY;
         }
-        PlayerMapLoadout next = mapLoadout(playerId, key).withSelected(soldierClass);
+        PlayerMapSelection next = selection(playerId, key).withSelected(soldierClass);
         put(playerId, key, next);
         return next;
     }
 
-    /**
-     * 记下该玩家在该图上某个槽位的选择。
-     *
-     * <p><b>只动被点的那个槽位</b>，不对整套选择做 {@code sanitize}。曾经这里顺手清理了当前
-     * 目录里已失效的其余槽位，后果是：管理员临时下架一把枪、玩家在此期间改了任意<b>别的</b>槽位，
-     * 那把枪的选择就被永久抹掉，管理员再上架回来也回不来了——这与 {@link PlayerArenaLoadout}
-     * 承诺的"误删再加回，玩家原选择还在"直接矛盾。失效选择在读取时由
-     * {@link PlayerArenaLoadout#resolve} 自动回落，本来就不需要写时清理。
-     *
-     * @param id 必须已由调用方对着目录校验过；这里不再重复校验，也就不会把非法提交
-     *           误当成"清除该槽位"
-     */
-    public PlayerArenaLoadout setPick(UUID playerId, String mapName, SoldierClass soldierClass,
-                                      LoadoutSlot slot, String id) {
+    /** 记下该玩家在该图、该阵营该兵种选中的配装 id；传 {@code null} 表示清除选择。 */
+    public PlayerMapSelection setPresetSelection(UUID playerId, String mapName, Faction faction,
+                                                 SoldierClass soldierClass, @Nullable String presetId) {
         String key = normalize(mapName);
-        if (playerId == null || key == null || soldierClass == null || slot == null) {
-            return PlayerArenaLoadout.EMPTY;
+        if (playerId == null || key == null || faction == null || soldierClass == null) {
+            return PlayerMapSelection.EMPTY;
         }
-        PlayerMapLoadout next = mapLoadout(playerId, key).withPick(soldierClass, slot, id);
-        put(playerId, key, next);
-        return next.loadout(soldierClass);
-    }
-
-    /** 该玩家在该图、该兵种下的配装组；未配置返回 {@link ClassLoadouts#initial()}。 */
-    public ClassLoadouts classLoadouts(UUID playerId, @Nullable String mapName, SoldierClass soldierClass) {
-        return soldierClass == null
-                ? ClassLoadouts.initial()
-                : mapLoadout(playerId, mapName).classLoadouts(soldierClass);
-    }
-
-    /** 改动该玩家在该图、该兵种、第 {@code presetIndex} 套配装的某个槽位选择。 */
-    public PlayerMapLoadout setPresetPick(UUID playerId, String mapName, SoldierClass soldierClass,
-                                          int presetIndex, LoadoutSlot slot, String id) {
-        String key = normalize(mapName);
-        if (playerId == null || key == null || soldierClass == null || slot == null) {
-            return PlayerMapLoadout.EMPTY;
-        }
-        PlayerMapLoadout next = mapLoadout(playerId, key)
-                .withPresetPick(soldierClass, presetIndex, slot, id);
+        PlayerMapSelection next = selection(playerId, key).withPreset(faction, soldierClass, presetId);
         put(playerId, key, next);
         return next;
     }
 
-    /** 给该玩家在该图、该兵种、第 {@code presetIndex} 套配装命名；空串恢复默认名。 */
-    public PlayerMapLoadout setPresetName(UUID playerId, String mapName, SoldierClass soldierClass,
-                                          int presetIndex, String name) {
+    /** 覆盖该玩家在该图上的整套选择；空记录等同于删除，避免存档里堆空壳。 */
+    public void put(UUID playerId, String mapName, PlayerMapSelection selection) {
         String key = normalize(mapName);
-        if (playerId == null || key == null || soldierClass == null) {
-            return PlayerMapLoadout.EMPTY;
-        }
-        PlayerMapLoadout next = mapLoadout(playerId, key)
-                .withPresetName(soldierClass, presetIndex, name);
-        put(playerId, key, next);
-        return next;
-    }
-
-    /** 把该玩家在该图、该兵种下的激活配装切到第 {@code presetIndex} 套。 */
-    public PlayerMapLoadout setActivePreset(UUID playerId, String mapName, SoldierClass soldierClass,
-                                            int presetIndex) {
-        String key = normalize(mapName);
-        if (playerId == null || key == null || soldierClass == null) {
-            return PlayerMapLoadout.EMPTY;
-        }
-        PlayerMapLoadout next = mapLoadout(playerId, key)
-                .withActivePreset(soldierClass, presetIndex);
-        put(playerId, key, next);
-        return next;
-    }
-
-    /** 覆盖该玩家在该图上的整套兵种配装；空记录等同于删除，避免存档里堆空壳。 */
-    public void put(UUID playerId, String mapName, PlayerMapLoadout loadout) {
-        String key = normalize(mapName);
-        if (playerId == null || key == null || loadout == null) {
+        if (playerId == null || key == null || selection == null) {
             return;
         }
-        if (loadout.isEmpty()) {
-            Map<String, PlayerMapLoadout> maps = byPlayer.get(playerId);
+        if (selection.isEmpty()) {
+            Map<String, PlayerMapSelection> maps = byPlayer.get(playerId);
             if (maps != null && maps.remove(key) != null) {
                 if (maps.isEmpty()) {
                     byPlayer.remove(playerId);
@@ -165,7 +107,7 @@ public final class PlayerLoadoutStore extends SavedData {
             }
             return;
         }
-        byPlayer.computeIfAbsent(playerId, k -> new LinkedHashMap<>()).put(key, loadout);
+        byPlayer.computeIfAbsent(playerId, k -> new LinkedHashMap<>()).put(key, selection);
         setDirty();
     }
 
@@ -183,13 +125,13 @@ public final class PlayerLoadoutStore extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag) {
         ListTag players = new ListTag();
-        for (Map.Entry<UUID, Map<String, PlayerMapLoadout>> e : byPlayer.entrySet()) {
+        for (Map.Entry<UUID, Map<String, PlayerMapSelection>> e : byPlayer.entrySet()) {
             CompoundTag entry = new CompoundTag();
             entry.putUUID(KEY_UUID, e.getKey());
             CompoundTag maps = new CompoundTag();
-            for (Map.Entry<String, PlayerMapLoadout> m : e.getValue().entrySet()) {
+            for (Map.Entry<String, PlayerMapSelection> m : e.getValue().entrySet()) {
                 if (!m.getValue().isEmpty()) {
-                    maps.put(m.getKey(), ArenaCatalogCodec.saveMapLoadout(m.getValue()));
+                    maps.put(m.getKey(), saveSelection(m.getValue()));
                 }
             }
             if (!maps.isEmpty()) {
@@ -211,11 +153,11 @@ public final class PlayerLoadoutStore extends SavedData {
             }
             UUID id = entry.getUUID(KEY_UUID);
             CompoundTag maps = entry.getCompound(KEY_MAPS);
-            Map<String, PlayerMapLoadout> byName = new LinkedHashMap<>();
+            Map<String, PlayerMapSelection> byName = new LinkedHashMap<>();
             for (String name : maps.getAllKeys()) {
-                PlayerMapLoadout l = ArenaCatalogCodec.loadMapLoadout(maps.getCompound(name));
-                if (!l.isEmpty()) {
-                    byName.put(name, l);
+                PlayerMapSelection s = loadSelection(maps.getCompound(name));
+                if (!s.isEmpty()) {
+                    byName.put(name, s);
                 }
             }
             if (!byName.isEmpty()) {
@@ -223,5 +165,91 @@ public final class PlayerLoadoutStore extends SavedData {
             }
         }
         return store;
+    }
+
+    private static CompoundTag saveSelection(PlayerMapSelection s) {
+        CompoundTag t = new CompoundTag();
+        t.putString(KEY_CLASS, s.selected().id());
+        CompoundTag picks = new CompoundTag();
+        for (Map.Entry<String, String> e : s.presets().entrySet()) {
+            if (e.getValue() != null) {
+                picks.putString(e.getKey(), e.getValue());
+            }
+        }
+        t.put(KEY_PICKS, picks);
+        return t;
+    }
+
+    private static PlayerMapSelection loadSelection(CompoundTag t) {
+        SoldierClass selected = SoldierClass.byIdOrDefault(t.getString(KEY_CLASS));
+        Map<String, String> picks = new LinkedHashMap<>();
+        CompoundTag picksTag = t.getCompound(KEY_PICKS);
+        for (String key : picksTag.getAllKeys()) {
+            String presetId = picksTag.getString(key);
+            if (validPickKey(key) && !presetId.isBlank()) {
+                picks.put(key, presetId);
+            }
+        }
+        return new PlayerMapSelection(selected, picks);
+    }
+
+    /** 选择键格式 {@code 阵营#兵种id}；脏数据跳过。 */
+    private static boolean validPickKey(String key) {
+        int i = key.indexOf('#');
+        if (i <= 0 || i == key.length() - 1) {
+            return false;
+        }
+        try {
+            Faction.valueOf(key.substring(0, i).toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        return SoldierClass.byId(key.substring(i + 1)) != null;
+    }
+
+    /** 一名玩家在某张图上的选择：当前兵种 + （阵营,兵种）→ 选中配装 id。 */
+    public record PlayerMapSelection(SoldierClass selected, Map<String, String> presets) {
+
+        public static final PlayerMapSelection EMPTY = new PlayerMapSelection(SoldierClass.DEFAULT, Map.of());
+
+        public PlayerMapSelection {
+            Map<String, String> copy = new LinkedHashMap<>();
+            if (presets != null) {
+                for (Map.Entry<String, String> e : presets.entrySet()) {
+                    if (e.getKey() != null && e.getValue() != null && !e.getValue().isBlank()) {
+                        copy.put(e.getKey(), e.getValue());
+                    }
+                }
+            }
+            presets = Collections.unmodifiableMap(copy);
+        }
+
+        private static String pickKey(Faction faction, SoldierClass soldierClass) {
+            return faction.name() + "#" + soldierClass.id();
+        }
+
+        @Nullable
+        public String presetId(Faction faction, SoldierClass soldierClass) {
+            return faction == null || soldierClass == null ? null : presets.get(pickKey(faction, soldierClass));
+        }
+
+        public PlayerMapSelection withSelected(SoldierClass soldierClass) {
+            return soldierClass == selected ? this : new PlayerMapSelection(soldierClass, presets);
+        }
+
+        public PlayerMapSelection withPreset(Faction faction, SoldierClass soldierClass, @Nullable String presetId) {
+            Map<String, String> next = new LinkedHashMap<>(presets);
+            String key = pickKey(faction, soldierClass);
+            if (presetId == null || presetId.isBlank()) {
+                next.remove(key);
+            } else {
+                next.put(key, presetId);
+            }
+            return new PlayerMapSelection(selected, next);
+        }
+
+        public boolean isEmpty() {
+            return selected == SoldierClass.DEFAULT && presets.isEmpty();
+        }
     }
 }

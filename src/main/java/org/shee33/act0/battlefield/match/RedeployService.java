@@ -279,34 +279,7 @@ public final class RedeployService {
     }
 
     /**
-     * 部署界面底部武器更换面板提交的槽位选择（{@code DeploySlotOverridePacket}）。
-     * 只在部署界面确实开着时受理，物品名必须在该槽位当前的地图目录可选列表内才会被接受——
-     * 校验与落库都在 {@link BattlefieldLoadoutService#setPick} 里完成。
-     *
-     * <p>选择<b>按玩家×地图持久化</b>，不是本次对局的临时覆盖：玩家在这张图惯用的枪下次进来
-     * 还在。不合法的提交被静默丢弃后仍回一个最新快照，让客户端的乐观更新回滚到真实状态。
-     */
-    public void handleSlotOverride(ServerPlayer player, int slotIndex, String itemName) {
-        UUID id = player.getUUID();
-        if (!redeployReadyTick.containsKey(id)) {
-            return;
-        }
-        long now = server.getTickCount();
-        if (isSlotOverrideThrottled(lastSlotOverrideTick.get(id), now)) {
-            // 请求间隔太短(<100ms):就地丢弃,不回包——正常客户端点击换装面板的频率不会撞上这个
-            // 门槛,只有异常/恶意客户端狂发这个C2S小包才会被限制住(P1-2修复)。补发推迟到下一次
-            // 部署刷新,见 pendingLoadoutResync。
-            pendingLoadoutResync.add(id);
-            return;
-        }
-        lastSlotOverrideTick.put(id, now);
-        BattlefieldLoadoutService.setPick(player, arenaKey, slotIndex, itemName);
-        BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
-    }
-
-    /**
-     * 部署界面切换兵种。与换枪共用同一条节流：两者都是同一个面板上的点击，分开计限额等于
-     * 给刷包留一条并行通道。
+     * 部署界面切换兵种。与旧换枪共用同一条节流通道（上限依旧生效，防止刷包）。
      */
     public void handleClassChange(ServerPlayer player, String classId) {
         UUID id = player.getUUID();
@@ -332,9 +305,10 @@ public final class RedeployService {
         return lastTick != null && nowTick - lastTick < MIN_SLOT_OVERRIDE_INTERVAL_TICKS;
     }
 
-    /** 本图目录 + 玩家存档解析出的配装快照，供部署界面展示。 */
+    /** 本图预设 + 玩家存档解析出的配装预览，供部署界面展示。 */
     private DeployLoadoutDto deployLoadoutFor(ServerPlayer player) {
-        return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey);
+        Faction faction = factionOf.get(player.getUUID());
+        return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey, faction);
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {
@@ -877,7 +851,7 @@ public final class RedeployService {
         downedUntil.remove(id);
         cancelRevive.accept(id);
         p.setPose(Pose.STANDING);
-        BattlefieldLoadoutService.apply(p, arenaKey);
+        BattlefieldLoadoutService.apply(p, arenaKey, factionOf.get(id));
         drawIssuedGunForBot(p);
         p.setHealth(p.getMaxHealth());
         p.getFoodData().setFoodLevel(20);

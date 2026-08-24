@@ -1,68 +1,45 @@
 package org.shee33.act0.battlefield.network;
 
 import net.minecraft.network.FriendlyByteBuf;
-import org.shee33.act0.battlefield.core.SoldierClass;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 部署界面显示的配装数据快照。服务端按地图目录 + 玩家存档解析后发送给客户端。
+ * 部署界面展示的配装预览：玩家当前兵种所选的那套预设。
  *
- * <p>每个槽位不只是"当前选中项"的快照，还携带该槽位在本图目录里的全部可选项（见
- * {@link DeploySlotOptionsDto}），供底部武器更换面板（《部署界面动效规格文档》3.6 节）展示，
- * 并供换装提交（{@code RedeployService#handleSlotOverride}）校验。
+ * @param classId     兵种 id
+ * @param presetId    选中配装的稳定 id；空串 = 未选（该兵种无预设）
+ * @param presetName  配装显示名
+ * @param slots       配装的槽位（含虚拟弹药）；客户端自行解析显示名
  */
-public record DeployLoadoutDto(String selectedClassId, List<DeploySlotOptionsDto> slots) {
+public record DeployLoadoutDto(String classId, String presetId, String presetName, List<DeploySlotDto> slots) {
 
-    private static final int MAX_LIST_ENTRIES = 64;
+    private static final int MAX_SLOTS = 16;
 
     public void encode(FriendlyByteBuf buf) {
-        buf.writeUtf(selectedClassId);
+        buf.writeUtf(classId);
+        buf.writeUtf(presetId);
+        buf.writeUtf(presetName);
         buf.writeVarInt(slots.size());
-        for (DeploySlotOptionsDto slot : slots) {
+        for (DeploySlotDto slot : slots) {
             slot.encode(buf);
         }
     }
 
     public static DeployLoadoutDto decode(FriendlyByteBuf buf) {
-        String selectedClassId = buf.readUtf();
-        int n = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
-        List<DeploySlotOptionsDto> slots = new ArrayList<>(n);
+        String classId = buf.readUtf();
+        String presetId = buf.readUtf();
+        String presetName = buf.readUtf();
+        int n = Math.max(0, Math.min(buf.readVarInt(), MAX_SLOTS));
+        List<DeploySlotDto> slots = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
-            slots.add(DeploySlotOptionsDto.decode(buf));
+            slots.add(DeploySlotDto.decode(buf));
         }
-        return new DeployLoadoutDto(selectedClassId, slots);
+        return new DeployLoadoutDto(classId, presetId, presetName, slots);
     }
 
     public static DeployLoadoutDto empty() {
-        return new DeployLoadoutDto(SoldierClass.DEFAULT.id(), List.of());
-    }
-
-    /**
-     * 把一组选择（槽位序号 → 物品名）叠加到各槽位的 {@code currentItemName} 上，
-     * 让客户端在服务端回包到达前就先乐观反映这次点击。
-     *
-     * <p>纯函数：只读取已知合法的覆盖并生成新快照，非法/未知槽位的覆盖会被忽略。
-     */
-    public DeployLoadoutDto withOverrides(Map<Integer, String> overrides) {
-        if (overrides == null || overrides.isEmpty()) {
-            return this;
-        }
-        List<DeploySlotOptionsDto> merged = new ArrayList<>(slots.size());
-        boolean changed = false;
-        for (DeploySlotOptionsDto slot : slots) {
-            String override = overrides.get(slot.slotIndex());
-            if (override != null && !override.equals(slot.currentItemName())
-                    && slot.availableItemNames().contains(override)) {
-                merged.add(new DeploySlotOptionsDto(slot.slotIndex(), slot.slotName(), override,
-                        slot.options()));
-                changed = true;
-            } else {
-                merged.add(slot);
-            }
-        }
-        return changed ? new DeployLoadoutDto(selectedClassId, merged) : this;
+        return new DeployLoadoutDto("", "", "", List.of());
     }
 }

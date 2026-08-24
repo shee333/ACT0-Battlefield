@@ -5,12 +5,10 @@ import net.minecraft.server.level.ServerLevel;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
- * 地图主键的唯一推导处：把一个世界解析成 {@link ArenaCatalogStore} / {@link PlayerLoadoutStore} 使用的地图名。
+ * 地图主键的唯一推导处：把一个世界解析成 {@link PlayerLoadoutStore} 使用的地图名。
  *
  * <p><b>为什么需要兜底</b>：{@code BattlefieldData.mapName} 是管理员可选设置的展示名，可能压根没设。
  * 但武器目录必须有个稳定的键，否则未命名的图一件武器都存不下。因此未命名时回落到维度 ID
@@ -39,14 +37,36 @@ public final class ArenaKey {
      * 全服已知的地图名：所有已加载世界的主键，加上目录里已配置过但世界当前未加载的名字。
      *
      * <p>顺序上世界优先——管理员大概率是在给眼前这些图配武器，补全列表里它们该排在前面。
+    /**
+     * 全服已知的地图名：所有已加载世界的主键（管理员命名过的用地图名，否则用维度 ID）。
+     *
+     * <p>顺序上世界优先——管理员大概率是在给眼前这些图配装备。
      */
     public static List<String> knownNames(MinecraftServer server) {
-        Set<String> out = new LinkedHashSet<>();
+        List<String> out = new ArrayList<>();
         for (ServerLevel level : server.getAllLevels()) {
             out.add(of(level));
         }
-        out.addAll(ArenaCatalogStore.get(server).mapNames());
-        return new ArrayList<>(out);
+        return out;
+    }
+
+    /**
+     * 把地图主键反查回它所属的世界；未加载返回 {@code null}。
+     *
+     * <p>配装预设存在每维度 {@link BattlefieldData} 里，而主键可能来自对局启动时的大厅世界——
+     * 对局期间需要拿主键找回配置了该地图的世界才能读到预设。
+     */
+    @Nullable
+    public static ServerLevel levelFor(MinecraftServer server, @Nullable String arenaKey) {
+        if (arenaKey == null || arenaKey.isBlank()) {
+            return null;
+        }
+        for (ServerLevel level : server.getAllLevels()) {
+            if (of(level).equals(arenaKey)) {
+                return level;
+            }
+        }
+        return null;
     }
 
     /**
