@@ -20,7 +20,7 @@ class PlayerMapLoadoutTest {
         assertSame(PlayerArenaLoadout.EMPTY, PlayerMapLoadout.EMPTY.current());
     }
 
-    /** 这是整个兵种配装的立命之本：改医疗兵不能碰到突击兵。 */
+    /** 这是整个兵种配装的立命之本：改支援兵不能碰到突击兵。 */
     @Test
     void picksAreIsolatedPerClass() {
         PlayerMapLoadout l = PlayerMapLoadout.EMPTY
