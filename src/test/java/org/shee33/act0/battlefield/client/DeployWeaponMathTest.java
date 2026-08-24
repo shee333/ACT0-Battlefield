@@ -11,17 +11,17 @@ class DeployWeaponMathTest {
     // ---------------- openRowDelayMs / closeRowDelayMs ----------------
 
     @Test
-    void openRowDelayIsFortyFiveMsPerIndex() {
+    void openRowDelayIsTwentyMsPerIndex() {
         assertEquals(0L, DeployWeaponMath.openRowDelayMs(0));
-        assertEquals(45L, DeployWeaponMath.openRowDelayMs(1));
-        assertEquals(225L, DeployWeaponMath.openRowDelayMs(5));
+        assertEquals(20L, DeployWeaponMath.openRowDelayMs(1));
+        assertEquals(100L, DeployWeaponMath.openRowDelayMs(5));
     }
 
     @Test
-    void closeRowDelayIsTwentyMsPerIndex() {
+    void closeRowDelayIsTenMsPerIndex() {
         assertEquals(0L, DeployWeaponMath.closeRowDelayMs(0));
-        assertEquals(20L, DeployWeaponMath.closeRowDelayMs(1));
-        assertEquals(100L, DeployWeaponMath.closeRowDelayMs(5));
+        assertEquals(10L, DeployWeaponMath.closeRowDelayMs(1));
+        assertEquals(50L, DeployWeaponMath.closeRowDelayMs(5));
     }
 
     @Test

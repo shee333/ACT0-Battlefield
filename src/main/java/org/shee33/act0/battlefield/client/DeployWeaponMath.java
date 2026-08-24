@@ -11,14 +11,14 @@ final class DeployWeaponMath {
     private DeployWeaponMath() {
     }
 
-    /** §3.6"点击槽位打开":选项自下而上错峰升起,每项间隔 45ms。 */
+    /** §3.6"点击槽位打开":选项自下而上错峰升起,每项间隔 20ms。 */
     static long openRowDelayMs(int index) {
-        return Math.max(0, index) * 45L;
+        return Math.max(0, index) * 20L;
     }
 
-    /** §3.6"关闭":选项逐项下沉淡出,错峰 20ms。 */
+    /** §3.6"关闭":选项逐项下沉淡出,错峰 10ms。 */
     static long closeRowDelayMs(int index) {
-        return Math.max(0, index) * 20L;
+        return Math.max(0, index) * 10L;
     }
 
     /**

@@ -89,7 +89,7 @@ public final class DeployWeaponPanel {
         return arr;
     }
 
-    // ---- 选定反馈(§3.6"选定新武器"):行金闪 + 槽位名称上拉换字 + 占位块金色脉冲 ----
+    // ---- 选定反馈(§3.6"选定新武器"):行金闪 + 槽位名称上拉换字 ----
     private static int pickedSlotIndex = -1;
     private static int pickedRowIndex = -1;
     private static final Tween.Anim PICK_FLASH = new Tween.Anim();
@@ -99,9 +99,6 @@ public final class DeployWeaponPanel {
     private static String nameSwapNewName = "";
     private static final Tween.Anim NAME_OUT = new Tween.Anim();
     private static final Tween.Anim NAME_IN = new Tween.Anim();
-
-    private static int pulseSlotIndex = -1;
-    private static final Tween.Anim PULSE = new Tween.Anim();
 
     // ---- 乐观更新:槽位序号 → (待确认物品名, 发起请求时的原始快照) ----
     private record PendingOverride(String itemName, DeployLoadoutDto requestedOnRaw) {
@@ -128,10 +125,8 @@ public final class DeployWeaponPanel {
         resetPanelState();
         pendingOverrides.clear();
         pickedSlotIndex = -1;
-        pulseSlotIndex = -1;
         nameSwapSlotIndex = -1;
         PICK_FLASH.reset();
-        PULSE.reset();
         NAME_OUT.reset();
         NAME_IN.reset();
         lastSlotRects.clear();
@@ -267,12 +262,6 @@ public final class DeployWeaponPanel {
         int swW = Math.round(sw * 0.64f);
         int swH = Math.round(SLOT_H * 0.36f);
         gg.fill(swX, swY, swX + swW, swY + swH, withAlpha(0xFFFFFFFF, 0.14f));
-        if (pulseSlotIndex == slot.slotIndex() && !PULSE.isDone(now)) {
-            float decay = 1f - PULSE.easedT(now);
-            gg.fill(swX, swY, swX + swW, swY + swH, withAlpha(GOLD, 0.2f * decay));
-        } else if (pulseSlotIndex == slot.slotIndex()) {
-            pulseSlotIndex = -1;
-        }
 
         renderNameRow(gg, font, sx, sy + SLOT_H + ROW_GAP, sw, slot, now);
     }
@@ -301,6 +290,7 @@ public final class DeployWeaponPanel {
     }
 
     private static void drawCenteredName(GuiGraphics gg, Font font, int sx, int y, int sw, String text) {
+        text = ClientNames.resolve(text);
         String shown = font.width(text) > sw - 4 ? font.plainSubstrByWidth(text, sw - 4) : text;
         int tx = sx + Math.max(0, (sw - font.width(shown)) / 2);
         gg.drawString(font, shown, tx, y + 2, NAME_COLOR, false);
@@ -317,7 +307,7 @@ public final class DeployWeaponPanel {
 
         int panelW = PANEL_MIN_W;
         for (DeployOptionDto opt : openOptions) {
-            panelW = Math.max(panelW, font.width(opt.displayName()) + 54);
+            panelW = Math.max(panelW, font.width(ClientNames.resolve(opt.displayName())) + 54);
         }
         panelW = Math.min(panelW, PANEL_MAX_W);
 
@@ -368,7 +358,7 @@ public final class DeployWeaponPanel {
         gg.fill(swX, swY, swX + 28, swY + 16, withAlpha(0xFFFFFFFF, (isCurrent ? 0.25f : 0.1f) * rowOpacity));
 
         int textColor = isCurrent ? GOLD : DIM_TEXT;
-        gg.drawString(font, option.displayName(), swX + 34, rowY + 5,
+        gg.drawString(font, ClientNames.resolve(option.displayName()), swX + 34, rowY + 5,
                 withAlpha(textColor, rowOpacity), false);
 
         if (pickedSlotIndex == openSlotIndex && pickedRowIndex == i && !PICK_FLASH.isDone(now)) {
@@ -443,11 +433,11 @@ public final class DeployWeaponPanel {
         panelClosing = false;
         scheduledCloseAtMs = -1L;
 
-        PANEL_FADE.start(now, 150L, Tween.Ease.OUT_CUBIC);
+        PANEL_FADE.start(now, 90L, Tween.Ease.OUT_CUBIC);
         int rows = Math.min(openOptions.size(), MAX_PANEL_ROWS);
         for (int i = 0; i < rows; i++) {
             ROW_OUT[i].reset();
-            ROW_IN[i].start(now, 240L, Tween.Ease.OUT_CUBIC, DeployWeaponMath.openRowDelayMs(i));
+            ROW_IN[i].start(now, 120L, Tween.Ease.OUT_CUBIC, DeployWeaponMath.openRowDelayMs(i));
         }
     }
 
@@ -458,15 +448,15 @@ public final class DeployWeaponPanel {
         panelClosing = true;
         int rows = Math.min(openOptions.size(), MAX_PANEL_ROWS);
         for (int i = 0; i < rows; i++) {
-            ROW_OUT[i].start(now, 150L, Tween.Ease.IN_CUBIC, DeployWeaponMath.closeRowDelayMs(i));
+            ROW_OUT[i].start(now, 90L, Tween.Ease.IN_CUBIC, DeployWeaponMath.closeRowDelayMs(i));
         }
-        PANEL_FADE.start(now, 180L, Tween.Ease.IN_CUBIC, DeployWeaponMath.closeRowDelayMs(rows));
+        PANEL_FADE.start(now, 100L, Tween.Ease.IN_CUBIC, DeployWeaponMath.closeRowDelayMs(rows));
     }
 
     /**
      * §3.6"选定新武器":先发包真正触发换装,再播视觉反馈;选中当前项则只闪不换
-     * (对应"相当于什么都没变"),否则播放槍位名称上拉换字 + 占位块金色脉冲,并把关闭面板
-     * 延迟到"旧名称上滑出"播完(140ms)才执行,与规格文档的时序一致。
+     * (对应"相当于什么都没变"),否则播放槍位名称上拉换字,并把关闭面板
+     * 延迟到"旧名称上滑出"播完才执行。
      */
     private static void pick(int slotIndex, int rowIndex, String itemName, long now) {
         DeployLoadoutDto raw = ClientDeployLoadout.get();
@@ -483,20 +473,17 @@ public final class DeployWeaponPanel {
 
         pickedSlotIndex = slotIndex;
         pickedRowIndex = rowIndex;
-        PICK_FLASH.start(now, 200L, Tween.Ease.OUT_CUBIC);
+        PICK_FLASH.start(now, 120L, Tween.Ease.OUT_CUBIC);
 
         if (!same) {
             nameSwapSlotIndex = slotIndex;
             nameSwapOldName = displayNameOf(openCurrentItemName);
             nameSwapNewName = displayNameOf(itemName);
-            NAME_OUT.start(now, 140L, Tween.Ease.IN_CUBIC);
-            NAME_IN.start(now, 200L, Tween.Ease.OUT_CUBIC, 140L);
-
-            pulseSlotIndex = slotIndex;
-            PULSE.start(now, 300L, Tween.Ease.OUT_CUBIC);
+            NAME_OUT.start(now, 90L, Tween.Ease.IN_CUBIC);
+            NAME_IN.start(now, 120L, Tween.Ease.OUT_CUBIC, 90L);
 
             openCurrentItemName = itemName;
-            scheduledCloseAtMs = now + 140L;
+            scheduledCloseAtMs = now + 90L;
         } else {
             closePanel(now);
         }

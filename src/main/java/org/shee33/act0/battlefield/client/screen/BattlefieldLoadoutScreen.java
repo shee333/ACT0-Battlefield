@@ -6,6 +6,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 import org.shee33.act0.battlefield.client.ClientLoadoutConfig;
+import org.shee33.act0.battlefield.client.ClientNames;
 import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
@@ -337,7 +338,7 @@ public final class BattlefieldLoadoutScreen extends Screen {
         int tx = x + ACCENT_BAR_W + ROW_PAD_X;
         gg.drawString(font, PixelTheme.fit(font, slot.slotName(), nameW), tx, y + 4,
                 withAlpha(PixelTheme.TEXT_DIM, alpha), false);
-        String item = PixelTheme.fit(font, slot.currentDisplayName(), itemW);
+        String item = PixelTheme.fit(font, ClientNames.resolve(slot.currentDisplayName()), itemW);
         gg.drawString(font, item, x + w - ROW_PAD_X - font.width(item), y + 4,
                 withAlpha(selected ? PixelTheme.TEXT : PixelTheme.TEXT_DIM, alpha), false);
     }
@@ -400,7 +401,7 @@ public final class BattlefieldLoadoutScreen extends Screen {
                 current ? PixelTheme.ALPHA_COLOR : PixelTheme.BEVEL_LIGHT, alpha);
         gg.fill(x + ROW_PAD_X, y + 7, x + ROW_PAD_X + 3, y + 10, marker);
         int textX = x + ROW_PAD_X + 8;
-        gg.drawString(font, PixelTheme.fit(font, option.displayName(), x + w - ROW_PAD_X - textX), textX, y + 4,
+        gg.drawString(font, PixelTheme.fit(font, ClientNames.resolve(option.displayName()), x + w - ROW_PAD_X - textX), textX, y + 4,
                 withAlpha(current ? PixelTheme.TEXT : PixelTheme.TEXT_DIM, alpha), false);
     }
 
