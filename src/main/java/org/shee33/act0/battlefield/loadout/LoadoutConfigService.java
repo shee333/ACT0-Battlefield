@@ -3,8 +3,11 @@ package org.shee33.act0.battlefield.loadout;
 import net.minecraft.server.level.ServerPlayer;
 import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.ArenaCatalog;
+import org.shee33.act0.battlefield.core.arena.ClassLoadouts;
+import org.shee33.act0.battlefield.core.arena.LoadoutPreset;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
+import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
 import org.shee33.act0.battlefield.data.ArenaCatalogStore;
 import org.shee33.act0.battlefield.data.ArenaKey;
 import org.shee33.act0.battlefield.data.PlayerLoadoutStore;
@@ -12,6 +15,8 @@ import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.ClassLoadoutDto;
 import org.shee33.act0.battlefield.network.DeploySlotOptionsDto;
 import org.shee33.act0.battlefield.network.LoadoutConfigDto;
+import org.shee33.act0.battlefield.network.LoadoutPresetDto;
+import org.shee33.act0.battlefield.network.LoadoutSlotPickDto;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -50,17 +55,39 @@ public final class LoadoutConfigService {
         }
         ArenaCatalog catalog = ArenaCatalogStore.get(player.server).view(mapName);
         PlayerLoadoutStore store = PlayerLoadoutStore.get(player.server);
+        PlayerMapLoadout mapLoadout = store.mapLoadout(player.getUUID(), mapName);
         List<ClassLoadoutDto> classes = new ArrayList<>(SoldierClass.values().length);
         for (SoldierClass soldierClass : SoldierClass.values()) {
-            classes.add(new ClassLoadoutDto(soldierClass.id(),
-                    slotsFor(catalog, store.loadout(player.getUUID(), mapName, soldierClass))));
+            classes.add(classDto(catalog, mapLoadout, soldierClass));
         }
-        return new LoadoutConfigDto(mapNames, mapName,
-                store.selectedClass(player.getUUID(), mapName).id(), classes);
+        return new LoadoutConfigDto(mapNames, mapName, mapLoadout.selected().id(), classes);
     }
 
-    private static List<DeploySlotOptionsDto> slotsFor(ArenaCatalog catalog, PlayerArenaLoadout picks) {
-        Map<LoadoutSlot, String> resolved = picks.resolve(catalog);
+    /** 一个兵种 → 网格 DTO：激活序号 + 4 套（名字+各槽位选择）+ 全套槽位可选项。 */
+    private static ClassLoadoutDto classDto(ArenaCatalog catalog, PlayerMapLoadout mapLoadout,
+                                            SoldierClass soldierClass) {
+        ClassLoadouts group = mapLoadout.classLoadouts(soldierClass);
+        List<LoadoutPresetDto> presets = new ArrayList<>(ClassLoadouts.PRESET_COUNT);
+        for (int i = 0; i < ClassLoadouts.PRESET_COUNT; i++) {
+            LoadoutPreset p = group.preset(i);
+            presets.add(new LoadoutPresetDto(p.name(), pickDtos(p.loadout(), catalog)));
+        }
+        return new ClassLoadoutDto(soldierClass.id(), group.activeIndex(), presets,
+                slotOptionsFor(catalog, group.active()));
+    }
+
+    /** 一套配装的槽位选择 → 生效值的扁平 DTO。 */
+    private static List<LoadoutSlotPickDto> pickDtos(PlayerArenaLoadout loadout, ArenaCatalog catalog) {
+        List<LoadoutSlotPickDto> out = new ArrayList<>();
+        for (Map.Entry<LoadoutSlot, String> e : loadout.resolve(catalog).entrySet()) {
+            out.add(new LoadoutSlotPickDto(e.getKey().hotbarIndex(), e.getValue()));
+        }
+        return out;
+    }
+
+    /** 一套配装的槽位可选项（当前选中 = 该套对应槽位的生效值）。 */
+    private static List<DeploySlotOptionsDto> slotOptionsFor(ArenaCatalog catalog, PlayerArenaLoadout loadout) {
+        Map<LoadoutSlot, String> resolved = loadout.resolve(catalog);
         List<DeploySlotOptionsDto> slots = new ArrayList<>();
         for (Map.Entry<LoadoutSlot, String> e : resolved.entrySet()) {
             LoadoutSlot slot = e.getKey();
@@ -70,9 +97,9 @@ public final class LoadoutConfigService {
         return slots;
     }
 
-    /** 改一个槽位，随后回发整屏快照让客户端确认或回滚。 */
+    /** 改某兵种某套配装的一个槽位，随后回发整屏快照让客户端确认或回滚。 */
     public static void edit(ServerPlayer player, @Nullable String mapName, @Nullable String classId,
-                            int slotIndex, @Nullable String itemId) {
+                            int presetIndex, int slotIndex, @Nullable String itemId) {
         if (player == null) {
             return;
         }
@@ -82,12 +109,43 @@ public final class LoadoutConfigService {
         if (resolvedMap != null && soldierClass != null && slot != null
                 && ArenaCatalogStore.get(player.server).view(resolvedMap).hasOption(slot, itemId)) {
             PlayerLoadoutStore.get(player.server)
-                    .setPick(player.getUUID(), resolvedMap, soldierClass, slot, itemId);
+                    .setPresetPick(player.getUUID(), resolvedMap, soldierClass, presetIndex, slot, itemId);
         }
         BattlefieldNetwork.sendLoadoutConfig(player, snapshot(player, resolvedMap != null ? resolvedMap : mapName));
     }
 
-    /** 切换某张图上的兵种，随后回发整屏快照。 */
+    /** 给某兵种某套配装命名（空串恢复默认名），随后回发整屏快照。 */
+    public static void rename(ServerPlayer player, @Nullable String mapName, @Nullable String classId,
+                              int presetIndex, @Nullable String name) {
+        if (player == null) {
+            return;
+        }
+        String resolvedMap = ArenaKey.resolve(player.server, mapName);
+        SoldierClass soldierClass = SoldierClass.byId(classId);
+        if (resolvedMap != null && soldierClass != null) {
+            PlayerLoadoutStore.get(player.server)
+                    .setPresetName(player.getUUID(), resolvedMap, soldierClass, presetIndex, name);
+        }
+        BattlefieldNetwork.sendLoadoutConfig(player, snapshot(player, resolvedMap != null ? resolvedMap : mapName));
+    }
+
+    /** 点击网格：选定兵种并把该格设为激活套，随后回发整屏快照。 */
+    public static void selectPreset(ServerPlayer player, @Nullable String mapName, @Nullable String classId,
+                                    int presetIndex) {
+        if (player == null) {
+            return;
+        }
+        String resolvedMap = ArenaKey.resolve(player.server, mapName);
+        SoldierClass soldierClass = SoldierClass.byId(classId);
+        if (resolvedMap != null && soldierClass != null) {
+            PlayerLoadoutStore store = PlayerLoadoutStore.get(player.server);
+            store.setSelectedClass(player.getUUID(), resolvedMap, soldierClass);
+            store.setActivePreset(player.getUUID(), resolvedMap, soldierClass, presetIndex);
+        }
+        BattlefieldNetwork.sendLoadoutConfig(player, snapshot(player, resolvedMap != null ? resolvedMap : mapName));
+    }
+
+    /** 切换某张图上的兵种（保留各套配装与激活序号），随后回发整屏快照。 */
     public static void selectClass(ServerPlayer player, @Nullable String mapName, @Nullable String classId) {
         if (player == null) {
             return;

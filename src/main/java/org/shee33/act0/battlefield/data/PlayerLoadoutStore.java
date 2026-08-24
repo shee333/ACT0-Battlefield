@@ -6,6 +6,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.shee33.act0.battlefield.core.SoldierClass;
+import org.shee33.act0.battlefield.core.arena.ClassLoadouts;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
 import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
@@ -100,6 +101,52 @@ public final class PlayerLoadoutStore extends SavedData {
         PlayerMapLoadout next = mapLoadout(playerId, key).withPick(soldierClass, slot, id);
         put(playerId, key, next);
         return next.loadout(soldierClass);
+    }
+
+    /** 该玩家在该图、该兵种下的配装组；未配置返回 {@link ClassLoadouts#initial()}。 */
+    public ClassLoadouts classLoadouts(UUID playerId, @Nullable String mapName, SoldierClass soldierClass) {
+        return soldierClass == null
+                ? ClassLoadouts.initial()
+                : mapLoadout(playerId, mapName).classLoadouts(soldierClass);
+    }
+
+    /** 改动该玩家在该图、该兵种、第 {@code presetIndex} 套配装的某个槽位选择。 */
+    public PlayerMapLoadout setPresetPick(UUID playerId, String mapName, SoldierClass soldierClass,
+                                          int presetIndex, LoadoutSlot slot, String id) {
+        String key = normalize(mapName);
+        if (playerId == null || key == null || soldierClass == null || slot == null) {
+            return PlayerMapLoadout.EMPTY;
+        }
+        PlayerMapLoadout next = mapLoadout(playerId, key)
+                .withPresetPick(soldierClass, presetIndex, slot, id);
+        put(playerId, key, next);
+        return next;
+    }
+
+    /** 给该玩家在该图、该兵种、第 {@code presetIndex} 套配装命名；空串恢复默认名。 */
+    public PlayerMapLoadout setPresetName(UUID playerId, String mapName, SoldierClass soldierClass,
+                                          int presetIndex, String name) {
+        String key = normalize(mapName);
+        if (playerId == null || key == null || soldierClass == null) {
+            return PlayerMapLoadout.EMPTY;
+        }
+        PlayerMapLoadout next = mapLoadout(playerId, key)
+                .withPresetName(soldierClass, presetIndex, name);
+        put(playerId, key, next);
+        return next;
+    }
+
+    /** 把该玩家在该图、该兵种下的激活配装切到第 {@code presetIndex} 套。 */
+    public PlayerMapLoadout setActivePreset(UUID playerId, String mapName, SoldierClass soldierClass,
+                                            int presetIndex) {
+        String key = normalize(mapName);
+        if (playerId == null || key == null || soldierClass == null) {
+            return PlayerMapLoadout.EMPTY;
+        }
+        PlayerMapLoadout next = mapLoadout(playerId, key)
+                .withActivePreset(soldierClass, presetIndex);
+        put(playerId, key, next);
+        return next;
     }
 
     /** 覆盖该玩家在该图上的整套兵种配装；空记录等同于删除，避免存档里堆空壳。 */

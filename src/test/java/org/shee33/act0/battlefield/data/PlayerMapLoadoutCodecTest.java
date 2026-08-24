@@ -118,4 +118,58 @@ class PlayerMapLoadoutCodecTest {
         assertTrue(after.isEmpty());
         assertNull(after.loadout(SoldierClass.DEFAULT).pick(LoadoutSlot.PRIMARY));
     }
+
+    // ---- 0.2.18 配装组格式 ----
+
+    /** 新格式：同一兵种 4 套各自独立，激活索引与名字都要完整往返。 */
+    @Test
+    void roundTripsPresetGroupsWithNamesAndActiveIndex() {
+        PlayerMapLoadout before = PlayerMapLoadout.EMPTY
+                .withSelected(SoldierClass.ASSAULT)
+                .withPresetPick(SoldierClass.ASSAULT, 0, LoadoutSlot.PRIMARY, "tacz:ak47")
+                .withPresetName(SoldierClass.ASSAULT, 0, "正面突破")
+                .withPresetPick(SoldierClass.ASSAULT, 2, LoadoutSlot.GADGET_1, "act0_battlefield:medic_syringe")
+                .withActivePreset(SoldierClass.ASSAULT, 2)
+                .withPresetPick(SoldierClass.MEDIC, 1, LoadoutSlot.PRIMARY, "tacz:mp5");
+
+        PlayerMapLoadout after =
+                ArenaCatalogCodec.loadMapLoadout(ArenaCatalogCodec.saveMapLoadout(before));
+
+        assertEquals(SoldierClass.ASSAULT, after.selected());
+        assertEquals(2, after.activePresetIndex(SoldierClass.ASSAULT));
+        assertEquals("正面突破", after.preset(SoldierClass.ASSAULT, 0).name());
+        assertEquals("tacz:ak47", after.preset(SoldierClass.ASSAULT, 0).loadout().pick(LoadoutSlot.PRIMARY));
+        assertEquals("tacz:mp5", after.preset(SoldierClass.MEDIC, 1).loadout().pick(LoadoutSlot.PRIMARY));
+        // 激活套 = 第 2 套，loadout() 语义随之变化。
+        assertEquals("act0_battlefield:medic_syringe",
+                after.loadout(SoldierClass.ASSAULT).pick(LoadoutSlot.GADGET_1));
+    }
+
+    /** 0.2.17 的"兵种下一套平铺"格式迁移到该兵种第 0 套，其余 3 套保持空。 */
+    @Test
+    void legacyPerClassFlatMigratesIntoPresetZero() {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("class", "medic");
+        CompoundTag bucket = new CompoundTag();
+        bucket.putString(LoadoutSlot.PRIMARY.id(), "tacz:mp5");
+        CompoundTag byClass = new CompoundTag();
+        byClass.put("medic", bucket);
+        tag.put("byClass", byClass);
+
+        PlayerMapLoadout after = ArenaCatalogCodec.loadMapLoadout(tag);
+        assertEquals("tacz:mp5", after.preset(SoldierClass.MEDIC, 0).loadout().pick(LoadoutSlot.PRIMARY));
+        assertTrue(after.preset(SoldierClass.MEDIC, 1).isEmpty(), "迁移后第 1 套应为空");
+        assertTrue(after.preset(SoldierClass.MEDIC, 2).isEmpty());
+        assertTrue(after.preset(SoldierClass.MEDIC, 3).isEmpty());
+    }
+
+    /** 默认名不落盘：只改过枪、没改过名的套往返后名字仍为空串。 */
+    @Test
+    void unnamedPresetStaysBlankAfterRoundTrip() {
+        PlayerMapLoadout before = PlayerMapLoadout.EMPTY
+                .withPresetPick(SoldierClass.ASSAULT, 0, LoadoutSlot.PRIMARY, "tacz:ak47");
+        PlayerMapLoadout after =
+                ArenaCatalogCodec.loadMapLoadout(ArenaCatalogCodec.saveMapLoadout(before));
+        assertEquals("", after.preset(SoldierClass.ASSAULT, 0).name(), "未命名不应被持久化出名字");
+    }
 }

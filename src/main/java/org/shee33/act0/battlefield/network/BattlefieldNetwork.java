@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "20";
+    private static final String PROTOCOL = "21";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -150,6 +150,12 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, LoadoutSelectClassPacket.class,
             LoadoutSelectClassPacket::encode, LoadoutSelectClassPacket::decode,
             LoadoutSelectClassPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, LoadoutSelectPresetPacket.class,
+            LoadoutSelectPresetPacket::encode, LoadoutSelectPresetPacket::decode,
+            LoadoutSelectPresetPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, LoadoutRenamePacket.class,
+            LoadoutRenamePacket::encode, LoadoutRenamePacket::decode,
+            LoadoutRenamePacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
     }
 
     /**

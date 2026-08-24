@@ -8,13 +8,16 @@ import org.shee33.act0.battlefield.core.arena.ArenaCatalog;
 import org.shee33.act0.battlefield.core.arena.ArenaItemEntry;
 import org.shee33.act0.battlefield.core.arena.ArenaWeaponEntry;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
+import org.shee33.act0.battlefield.core.arena.ClassLoadouts;
+import org.shee33.act0.battlefield.core.arena.LoadoutPreset;
 import org.shee33.act0.battlefield.core.arena.PlayerArenaLoadout;
 import org.shee33.act0.battlefield.core.arena.PlayerMapLoadout;
 import org.shee33.act0.battlefield.core.arena.WeaponCategory;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
-
 /**
  * 地图目录与玩家配装选择的 NBT 编解码。
  *
@@ -35,6 +38,8 @@ public final class ArenaCatalogCodec {
     private static final String KEY_COUNT = "count";
     private static final String KEY_CLASS = "class";
     private static final String KEY_BY_CLASS = "byClass";
+    private static final String KEY_ACTIVE = "active";
+    private static final String KEY_PRESETS = "presets";
 
     private ArenaCatalogCodec() {
     }
@@ -144,24 +149,43 @@ public final class ArenaCatalogCodec {
         return picks.isEmpty() ? PlayerArenaLoadout.EMPTY : new PlayerArenaLoadout(picks);
     }
 
-    /** 把一张图上的整套兵种配装写成 NBT。空兵种桶不落键。 */
+    /** 把一张图上的整套兵种配装写成 NBT。空兵种组不落键。 */
     public static CompoundTag saveMapLoadout(PlayerMapLoadout loadout) {
         CompoundTag out = new CompoundTag();
         out.putString(KEY_CLASS, loadout.selected().id());
         CompoundTag buckets = new CompoundTag();
-        for (Map.Entry<SoldierClass, PlayerArenaLoadout> e : loadout.byClass().entrySet()) {
-            buckets.put(e.getKey().id(), saveLoadout(e.getValue()));
+        for (Map.Entry<SoldierClass, ClassLoadouts> e : loadout.byClass().entrySet()) {
+            buckets.put(e.getKey().id(), saveClassLoadouts(e.getValue()));
         }
         out.put(KEY_BY_CLASS, buckets);
         return out;
     }
 
+    /** 一个兵种的配装组 → NBT：{@code {active?, presets:[{name?, …槽位选择} × 4]}}。默认值不落键。 */
+    private static CompoundTag saveClassLoadouts(ClassLoadouts group) {
+        CompoundTag out = new CompoundTag();
+        if (group.activeIndex() != 0) {
+            out.putInt(KEY_ACTIVE, group.activeIndex());
+        }
+        ListTag presets = new ListTag();
+        for (LoadoutPreset p : group.presets()) {
+            CompoundTag t = saveLoadout(p.loadout());
+            if (!p.name().isEmpty()) {
+                t.putString(KEY_NAME, p.name());
+            }
+            presets.add(t);
+        }
+        out.put(KEY_PRESETS, presets);
+        return out;
+    }
+
     /**
-     * 读出一张图上的整套兵种配装，兼容 0.2.9 及更早的单套格式。
-     *
-     * <p>旧格式直接把「槽位 → ID」平铺在这一层，没有 {@code byClass} 子节点。靠这个键的有无区分：
-     * 旧记录整套迁移进 {@link SoldierClass#DEFAULT} 桶，玩家原来惯用的枪落在突击兵上，
-     * 不会凭空消失。
+     * 读出一张图上的整套兵种配装，兼容三代格式：
+     * <ol>
+     *   <li>0.2.9 及更早：整张图平铺一套选择（无 byClass）→ DEFAULT 兵种第 0 套；</li>
+     *   <li>0.2.17 起：按兵种各平铺一套选择（byClass 下无 presets）→ 各兵种第 0 套；</li>
+     *   <li>0.2.18 起：按兵种各存配装组（{@code active + presets}）。</li>
+     * </ol>
      */
     public static PlayerMapLoadout loadMapLoadout(CompoundTag tag) {
         if (!tag.contains(KEY_BY_CLASS, Tag.TAG_COMPOUND)) {
@@ -169,16 +193,44 @@ public final class ArenaCatalogCodec {
             return legacy.isEmpty()
                     ? PlayerMapLoadout.EMPTY
                     : new PlayerMapLoadout(SoldierClass.DEFAULT,
-                            Map.of(SoldierClass.DEFAULT, legacy));
+                            Map.of(SoldierClass.DEFAULT, legacyGroup(legacy)));
         }
         CompoundTag buckets = tag.getCompound(KEY_BY_CLASS);
-        Map<SoldierClass, PlayerArenaLoadout> byClass = new EnumMap<>(SoldierClass.class);
+        Map<SoldierClass, ClassLoadouts> byClass = new EnumMap<>(SoldierClass.class);
         for (String key : buckets.getAllKeys()) {
             SoldierClass soldierClass = SoldierClass.byId(key);
-            if (soldierClass != null) {
-                byClass.put(soldierClass, loadLoadout(buckets.getCompound(key)));
+            if (soldierClass == null) {
+                continue;
+            }
+            CompoundTag bucket = buckets.getCompound(key);
+            ClassLoadouts group = bucket.contains(KEY_PRESETS, Tag.TAG_LIST)
+                    ? loadClassLoadouts(bucket)
+                    : legacyGroup(loadLoadout(bucket));
+            if (!group.isEmpty()) {
+                byClass.put(soldierClass, group);
             }
         }
         return new PlayerMapLoadout(SoldierClass.byIdOrDefault(tag.getString(KEY_CLASS)), byClass);
+    }
+
+    private static ClassLoadouts loadClassLoadouts(CompoundTag tag) {
+        int active = tag.getInt(KEY_ACTIVE);
+        ListTag presets = tag.getList(KEY_PRESETS, Tag.TAG_COMPOUND);
+        List<LoadoutPreset> list = new ArrayList<>();
+        for (int i = 0; i < presets.size(); i++) {
+            CompoundTag t = presets.getCompound(i);
+            String name = t.getString(KEY_NAME);
+            CompoundTag picksTag = t.copy();
+            picksTag.remove(KEY_NAME);
+            list.add(new LoadoutPreset(name, loadLoadout(picksTag)));
+        }
+        return new ClassLoadouts(active, list);
+    }
+
+    /** 旧版"一个兵种一套选择"→ 迁移为第 0 套（名字留空 = 默认名）。 */
+    private static ClassLoadouts legacyGroup(PlayerArenaLoadout legacy) {
+        return legacy.isEmpty()
+                ? ClassLoadouts.initial()
+                : ClassLoadouts.initial().withPreset(0, new LoadoutPreset("", legacy));
     }
 }
