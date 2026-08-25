@@ -4,9 +4,12 @@ import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
@@ -51,6 +54,8 @@ public final class BattlefieldMinimapOverlay {
     private static final int RIM_INSET = 13;
     private static final int COMPASS_INSET = 9;
 
+    /** 本帧是否已把原版聊天面板取消（见 {@link #onRenderOverlayPre}），Post 阶段需自己抬高重绘。 */
+    private static boolean chatRaised;
     /** 归一化后的据点标记，屏蔽征服/突破两套 DTO 的差异。 */
     private record Marker(int pointId, String name, double x, double z, int color,
                           boolean contested, int progress) {}
@@ -62,6 +67,8 @@ public final class BattlefieldMinimapOverlay {
     public static void onRenderGui(RenderGuiEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
+        boolean chatWasRaised = chatRaised;
+        chatRaised = false;
         if (player == null || mc.options.hideGui) {
             return;
         }
@@ -88,6 +95,43 @@ public final class BattlefieldMinimapOverlay {
         int mapX = MARGIN;
         int mapY = gg.guiHeight() - SIZE - MARGIN;
         renderMinimap(gg, mc.font, mapX, mapY, player, markers, squad, downed, now);
+        if (chatWasRaised) {
+            // 原版聊天面板被 onRenderOverlayPre 取消后，在这里抬高重绘，保证
+            // 聊天历史显示在小地图（左下角）上方而不是被它盖住。
+            renderRaisedChat(gg, mc);
+        }
+    }
+
+    /**
+     * 对局进行中（小地图可见）时取消原版聊天面板的默认绘制，改由 Post 阶段抬高重绘。
+     *
+     * <p>必须在事件期比较 {@code .type()}（与 {@code VanillaHudSuppressor} 同理）：
+     * {@code VanillaGuiOverlay} 的实例要等覆盖层注册完成才有值，静态初始化时是 null。
+     */
+    @SubscribeEvent
+    public static void onRenderOverlayPre(RenderGuiOverlayEvent.Pre event) {
+        if (event.getOverlay() == VanillaGuiOverlay.CHAT_PANEL.type() && shouldRaiseChat()) {
+            chatRaised = true;
+            event.setCanceled(true);
+        }
+    }
+
+    private static boolean shouldRaiseChat() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null && !mc.options.hideGui
+                && (ClientBattleHud.isShown() || ClientBreakthroughHud.isShown());
+    }
+
+    /** 抬高一个"小地图高度 + 边距"重绘原版聊天面板（含鼠标悬停的链接高亮坐标换算）。 */
+    private static void renderRaisedChat(GuiGraphics gg, Minecraft mc) {
+        int offset = SIZE + MARGIN;
+        gg.pose().pushPose();
+        gg.pose().translate(0, -offset, 0);
+        double scale = (double) mc.getWindow().getGuiScaledWidth() / (double) mc.getWindow().getScreenWidth();
+        int mouseX = (int) (mc.mouseHandler.xpos() * scale);
+        int mouseY = (int) (mc.mouseHandler.ypos() * scale);
+        mc.gui.getChat().render(gg, Mth.floor(mc.getFrameTime()), mouseX, mouseY);
+        gg.pose().popPose();
     }
 
     private static List<Marker> conquestMarkers(BattleHudDto hud) {
