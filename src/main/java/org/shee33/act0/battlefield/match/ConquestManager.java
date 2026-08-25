@@ -376,7 +376,9 @@ public final class ConquestManager {
         if (lobby.size() < minPlayersFor(level)) {
             return;
         }
-        start(level, ConquestRules.standard());
+        // 自动开局使用地图设置的票数（isConquestReady 已要求票数>0）。
+        start(level, ConquestRules.builder()
+                .startingTickets(BattlefieldData.get(level).ticketsRaw()).build());
     }
 
     /** 该世界生效的自动开始人数（地图自定义优先，未设则用全局配置）。 */
@@ -556,7 +558,8 @@ public final class ConquestManager {
                 if (!player.hasPermissions(2)) {
                     player.sendSystemMessage(Component.literal("§c只有管理员可以开局。"));
                 } else {
-                    String err = start(player.serverLevel(), ConquestRules.standard());
+                    String err = start(player.serverLevel(), ConquestRules.builder()
+                            .startingTickets(BattlefieldData.get(player.serverLevel()).ticketsRaw()).build());
                     if (err != null) {
                         player.sendSystemMessage(Component.literal(err));
                     } else {

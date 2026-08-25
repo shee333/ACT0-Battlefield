@@ -1,6 +1,7 @@
 package org.shee33.act0.battlefield.data;
 
 import net.minecraft.nbt.CompoundTag;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.SoldierClass;
@@ -8,14 +9,14 @@ import org.shee33.act0.battlefield.core.arena.LoadoutPresetDef;
 import org.shee33.act0.battlefield.core.arena.LoadoutSlot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 锁住"管理员预设配装"的数据模型与存档编解码。 */
 class BattlefieldDataPresetTest {
+
+
 
     @Test
     void createPresetGeneratesStableIdAndStores() {
@@ -53,5 +54,29 @@ class BattlefieldDataPresetTest {
         assertTrue(data.deletePresetDef(Faction.ALPHA, SoldierClass.MEDIC, def.id()));
         assertTrue(data.presetsFor(Faction.ALPHA, SoldierClass.MEDIC).isEmpty());
         assertFalse(data.deletePresetDef(Faction.ALPHA, SoldierClass.MEDIC, "nope"), "删不存在应返回 false");
+    }
+    @Test
+    void ticketsRequiredForReadinessAndRoundTrip() {
+        BattlefieldData data = new BattlefieldData();
+        assertFalse(data.hasTickets());
+        assertFalse(data.isConquestReady(), "未设置票数不应就绪");
+        data.setTickets(500);
+        assertTrue(data.hasTickets());
+
+        BattlefieldData loaded = BattlefieldData.load(data.save(new CompoundTag()));
+        assertEquals(500, loaded.ticketsRaw());
+    }
+
+    @Test
+    void returnPointRoundTrips() {
+        BattlefieldData data = new BattlefieldData();
+        data.setReturnPoint(new BattlefieldData.ReturnPoint(
+                "minecraft:overworld",
+                100.5, 64.0, -200.25, 90.0f, 0.0f));
+        BattlefieldData loaded = BattlefieldData.load(data.save(new CompoundTag()));
+        assertEquals(100.5, loaded.returnPoint().x(), 0.001);
+        assertEquals("minecraft:overworld", loaded.returnPoint().dimension());
+        data.setReturnPoint(null);
+        assertNull(BattlefieldData.load(data.save(new CompoundTag())).returnPoint());
     }
 }

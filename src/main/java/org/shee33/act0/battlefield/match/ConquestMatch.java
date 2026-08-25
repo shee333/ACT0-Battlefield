@@ -277,7 +277,7 @@ public final class ConquestMatch {
         clearEnemyGlowFor(player);
         clearEnemyGlowTarget(player);
         clearRedeployState(player, true);
-        MatchReturnLocation.returnToMainWorld(player);
+        MatchReturnLocation.returnToMainWorld(player, data);
         player.getInventory().clearContent();
         BattlefieldNetwork.clearHud(player);
         BattlefieldNetwork.sendFireLock(player, false);
@@ -906,7 +906,7 @@ public final class ConquestMatch {
                 }
                 sendPersonalResult(p, e.getValue(), w);
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
-                MatchReturnLocation.returnToMainWorld(p);
+                MatchReturnLocation.returnToMainWorld(p, data);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }
@@ -1085,7 +1085,7 @@ public final class ConquestMatch {
                     clearRedeployState(p, true);
                     p.setInvulnerable(false);
                 }
-                MatchReturnLocation.returnToMainWorld(p);
+                MatchReturnLocation.returnToMainWorld(p, data);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
             }

@@ -288,7 +288,7 @@ public final class BreakthroughMatch {
         clearEnemyGlowTarget(player);
         clearRelativeTeamsFor(player);
         clearRedeployState(player, true);
-        MatchReturnLocation.returnToMainWorld(player);
+        MatchReturnLocation.returnToMainWorld(player, data);
         player.getInventory().clearContent();
         BattlefieldNetwork.clearHud(player);
         BattlefieldNetwork.sendFireLock(player, false);
@@ -1637,7 +1637,7 @@ public final class BreakthroughMatch {
                 }
                 sendPersonalResult(p, e.getValue(), w);
                 BattlefieldNetwork.sendBattleResult(p, buildResultFor(p, w));
-                MatchReturnLocation.returnToMainWorld(p);
+                MatchReturnLocation.returnToMainWorld(p, data);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
                 BattlefieldNetwork.clearBreakthroughHud(p);
@@ -1681,7 +1681,7 @@ public final class BreakthroughMatch {
                     clearRedeployState(p, true);
                     p.setInvulnerable(false);
                 }
-                MatchReturnLocation.returnToMainWorld(p);
+                MatchReturnLocation.returnToMainWorld(p, data);
                 p.getInventory().clearContent();
                 BattlefieldNetwork.clearHud(p);
                 BattlefieldNetwork.clearBreakthroughHud(p);

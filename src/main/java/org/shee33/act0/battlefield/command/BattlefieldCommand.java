@@ -93,7 +93,14 @@ public final class BattlefieldCommand {
                                                 .suggests(FACTION_NAMES)
                                                 .then(Commands.argument("faction2", StringArgumentType.string())
                                                         .suggests(FACTION_NAMES)
-                                                        .executes(BattlefieldCommand::setMapName)))))
+                                                        .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100000))
+                                                                .executes(BattlefieldCommand::setMapName))))))
+                        .then(Commands.literal("tickets")
+                                .then(Commands.argument("value", IntegerArgumentType.integer(1, 100000))
+                                        .executes(BattlefieldCommand::setTicketsCmd)))
+                        .then(Commands.literal("returnpoint")
+                                .executes(BattlefieldCommand::setReturnPoint)
+                                .then(Commands.literal("clear").executes(BattlefieldCommand::clearReturnPoint)))
                         .then(Commands.literal("factions")
                                 .then(Commands.argument("faction1", StringArgumentType.string())
                                         .suggests(FACTION_NAMES)
@@ -140,12 +147,11 @@ public final class BattlefieldCommand {
                                             .then(Commands.argument("z", DoubleArgumentType.doubleArg(-64.0, 64.0))
                                                 .executes(BattlefieldCommand::setMarkerOffset))))))))
                 .then(Commands.literal("start").requires(s -> s.hasPermission(2))
-                        .executes(c -> start(c, (int) ConquestRules.standard().startingTickets()))
                         .then(Commands.argument("tickets", IntegerArgumentType.integer(1, 100000))
-                        .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets")))
-                        .then(Commands.argument("name", StringArgumentType.greedyString())
-                            .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets"),
-                                StringArgumentType.getString(c, "name"))))))
+                                .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets")))
+                                .then(Commands.argument("name", StringArgumentType.greedyString())
+                                        .executes(c -> start(c, IntegerArgumentType.getInteger(c, "tickets"),
+                                                StringArgumentType.getString(c, "name"))))))
                 .then(buildAreaBranch())
                 .then(buildTemplateBranch())
                 .then(buildPresetBranch())
@@ -429,14 +435,46 @@ public final class BattlefieldCommand {
     static int setMapName(CommandContext<CommandSourceStack> c, ServerLevel level) {
         String name = StringArgumentType.getString(c, "name");
         FactionNames names = parseFactions(c);
+        int tickets = IntegerArgumentType.getInteger(c, "tickets");
         if (names == null) {
             return 0;
         }
         BattlefieldData data = BattlefieldData.get(level);
         data.setMapName(name);
         data.setFactionNames(names);
-        feedback(c, "§a已将当前世界地图命名为 §e" + name);
+        data.setTickets(tickets);
+        feedback(c, "§a已将当前世界地图命名为 §e" + name + "§a，每方 §f" + tickets + "§a 票");
         reportFactions(c, names);
+        return 1;
+    }
+
+    /** 设置本地图每方起始票数（建图强制要求）。 */
+    private static int setTicketsCmd(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        int tickets = IntegerArgumentType.getInteger(c, "value");
+        BattlefieldData.get(level).setTickets(tickets);
+        feedback(c, "§a已设置本地图每方起始票数为 §f" + tickets);
+        return 1;
+    }
+
+    /** 把管理员脚下设为对局结束/中途退出的返回点。 */
+    private static int setReturnPoint(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerPlayer player = c.getSource().getPlayerOrException();
+        ServerLevel level = player.serverLevel();
+        BattlefieldData.get(level).setReturnPoint(new BattlefieldData.ReturnPoint(
+                level.dimension().location().toString(), player.getX(), player.getY(), player.getZ(),
+                player.getYRot(), player.getXRot()));
+        feedback(c, "§a已将当前位置设为对局结束返回点（" + level.dimension().location() + " "
+
+                + Math.round(player.getX()) + "/" + Math.round(player.getY()) + "/" + Math.round(player.getZ()) + "）。");
+        return 1;
+    }
+
+    /** 清除返回点，恢复主世界出生点。 */
+    private static int clearReturnPoint(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData.get(level).setReturnPoint(null);
+        feedback(c, "§a已清除返回点，对局结束回主世界出生点。");
         return 1;
     }
 
@@ -497,6 +535,12 @@ public final class BattlefieldCommand {
         reportFactions(c, data.factionNames());
         feedback(c, "§7自动开始人数：§e" + min + (data.minPlayersToStartRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
         feedback(c, "§7人数上限：§e" + max + (data.maxPlayersRaw() > 0 ? " §7(本地图自定义)" : " §7(跟随全局)"));
+        feedback(c, "§7每方起始票数：§e" + (data.hasTickets() ? String.valueOf(data.ticketsRaw()) : "§c未设置（建图必须设置）"));
+        BattlefieldData.ReturnPoint rp = data.returnPoint();
+        feedback(c, rp == null
+                ? "§7对局结束返回点：§e主世界出生点（默认）"
+                : "§7对局结束返回点：§e" + rp.dimension() + " §f"
+                        + Math.round(rp.x()) + "/" + Math.round(rp.y()) + "/" + Math.round(rp.z()));
         return 1;
     }
 

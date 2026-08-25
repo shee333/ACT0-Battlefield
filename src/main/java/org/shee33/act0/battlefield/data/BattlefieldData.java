@@ -1,10 +1,14 @@
 package org.shee33.act0.battlefield.data;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
@@ -56,6 +60,12 @@ public final class BattlefieldData extends SavedData {
     /** 配装预设：{@code 阵营id#兵种id} → 该组合下的有序配装列表（管理员预设，玩家只选）。 */
     private final Map<String, List<LoadoutPresetDef>> loadoutPresets = new LinkedHashMap<>();
 
+    /** 该地图每方起始票数；{@code 0} = 未设置（建图时强制要求，未设置无法开局）。 */
+    private int tickets;
+
+    /** 对局结束/中途退出的返回点（管理员站定后设置）；{@code null} = 回主世界出生点。 */
+    @Nullable
+    private ReturnPoint returnPoint;
     /** 该地图的两个阵营名称；建图时必填，0.2.7 及更早的存档读档时回落 {@link FactionNames#LEGACY}。 */
     private FactionNames factionNames = FactionNames.LEGACY;
 
@@ -227,11 +237,66 @@ public final class BattlefieldData extends SavedData {
         return MatchCapacity.resolve(maxPlayers, globalDefault);
     }
 
+    // ---- 每图票数（建图与开局强制要求） ----
+
+    /** 设置该地图每方起始票数；{@code <= 0} 表示未设置。 */
+    public void setTickets(int value) {
+        this.tickets = Math.max(0, value);
+        setDirty();
+    }
+
+    /** 原始设置值；{@code 0} 表示未设置。 */
+    public int ticketsRaw() {
+        return tickets;
+    }
+
+    /** 是否已设置票数（建图强制要求，未设置无法开局）。 */
+    public boolean hasTickets() {
+        return tickets > 0;
+    }
+
+    // ---- 对局结束返回点 ----
+
+    /** 设置对局结束/中途退出的返回点；传 {@code null} 清除（恢复主世界出生点）。 */
+    public void setReturnPoint(@Nullable ReturnPoint point) {
+        this.returnPoint = point;
+        setDirty();
+    }
+
+    /** 当前返回点；{@code null} = 回主世界出生点。 */
+    @Nullable
+    public ReturnPoint returnPoint() {
+        return returnPoint;
+    }
+
+    /** 一个返回点：维度（location 字符串）+ 坐标 + 朝向。维度在传送时才解析成 {@code ResourceKey}，
+     * 数据层保持纯 NBT、可单测。 */
+    public record ReturnPoint(String dimension, double x, double y, double z,
+                              float yaw, float pitch) {
+
+        public CompoundTag save() {
+            CompoundTag t = new CompoundTag();
+            t.putString("dimension", dimension);
+            t.putDouble("x", x);
+            t.putDouble("y", y);
+            t.putDouble("z", z);
+            t.putFloat("yaw", yaw);
+            t.putFloat("pitch", pitch);
+            return t;
+        }
+
+        public static ReturnPoint load(CompoundTag t) {
+            return new ReturnPoint(t.getString("dimension"),
+                    t.getDouble("x"), t.getDouble("y"), t.getDouble("z"),
+                    t.getFloat("yaw"), t.getFloat("pitch"));
+        }
+    }
+
     // ---- 就绪判定（对局浏览器"等待中"房间与 start() 前置校验共用） ----
 
-    /** 征服模式所需的最小布场：至少 1 个据点 + 两阵营基地都已设置。 */
+    /** 征服模式所需的最小布场：至少 1 个据点 + 两阵营基地 + 票数已设置（建图强制）。 */
     public boolean isConquestReady() {
-        return !points.isEmpty() && alphaBase != null && bravoBase != null;
+        return !points.isEmpty() && alphaBase != null && bravoBase != null && tickets > 0;
     }
 
     /** 突破模式在征服模式的基础上还要求至少登记 1 个 sector。 */
@@ -527,6 +592,12 @@ public final class BattlefieldData extends SavedData {
         if (maxPlayers > 0) {
             tag.putInt("maxPlayers", maxPlayers);
         }
+        if (tickets > 0) {
+            tag.putInt("tickets", tickets);
+        }
+        if (returnPoint != null) {
+            tag.put("returnPoint", returnPoint.save());
+        }
         if (!mapName.isEmpty()) {
             tag.putString("mapName", mapName);
         }
@@ -583,6 +654,10 @@ public final class BattlefieldData extends SavedData {
         }
         data.minPlayersToStart = Math.max(0, tag.getInt("minPlayersToStart"));
         data.maxPlayers = Math.max(0, tag.getInt("maxPlayers"));
+        data.tickets = Math.max(0, tag.getInt("tickets"));
+        if (tag.contains("returnPoint")) {
+            data.returnPoint = ReturnPoint.load(tag.getCompound("returnPoint"));
+        }
         if (tag.contains("mapName")) {
             data.mapName = tag.getString("mapName");
         }
