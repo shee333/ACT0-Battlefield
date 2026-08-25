@@ -60,6 +60,7 @@ class TaczGunBridgeRealJarTest {
             "gunDataGetAmmoAmount",
             "gunDataHasHeatData",
             "clientIndexGetGunData",
+            "clientIndexGetName",
             "gunDataGetBolt",
             "openBoltConstant",
     };

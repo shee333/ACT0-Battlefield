@@ -71,6 +71,8 @@ class TaczGunBridgeTest {
         assertEquals("getFireModeSet", TaczGunBridge.M_GET_FIRE_MODE_SET);
         assertEquals("getAmmoAmount", TaczGunBridge.M_GET_AMMO_AMOUNT);
         assertEquals("hasHeatData", TaczGunBridge.M_HAS_HEAT_DATA);
+        assertEquals("getName", TaczGunBridge.M_GET_NAME,
+                "枪名来自 ClientGunIndex.getName()；物品 hover 名是共用的 item.tacz.modern_kinetic_gun");
     }
 
     @Test

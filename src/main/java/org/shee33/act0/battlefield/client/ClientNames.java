@@ -2,7 +2,7 @@ package org.shee33.act0.battlefield.client;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-
+import org.shee33.act0.battlefield.integration.TaczGunBridge;
 import javax.annotation.Nullable;
 import net.minecraft.resources.ResourceLocation;
 
@@ -35,6 +35,12 @@ public final class ClientNames {
     public static String itemName(@Nullable String itemId) {
         if (itemId == null || itemId.isEmpty()) {
             return "空槽位";
+        }
+        // TaCZ 枪械 ID（tacz:xxx）优先走客户端枪械索引：所有枪共用同一个物品，
+        // 靠物品 hover 名只能得到 item.tacz.modern_kinetic_gun，不是枪的真实型号。
+        String gunName = TaczGunBridge.clientGunDisplayName(itemId);
+        if (gunName != null) {
+            return gunName;
         }
         ResourceLocation id = ResourceLocation.tryParse(itemId);
         net.minecraft.world.item.Item item = id == null ? null

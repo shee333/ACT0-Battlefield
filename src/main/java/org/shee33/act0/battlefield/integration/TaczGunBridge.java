@@ -48,6 +48,7 @@ public final class TaczGunBridge {
     private static Method timelessGetClientGunIndex;
     private static Method timelessGetCommonGunIndex;
     private static Method clientIndexGetGunData;
+    private static Method clientIndexGetName;
     private static Method gunDataGetBolt;
     private static Object openBoltConstant;
 
@@ -108,6 +109,7 @@ public final class TaczGunBridge {
     static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
     static final String M_GET_COMMON_GUN_INDEX = "getCommonGunIndex";
     static final String M_GET_GUN_DATA = "getGunData";
+    static final String M_GET_NAME = "getName";
     static final String M_GET_BOLT = "getBolt";
     static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
 
@@ -169,6 +171,7 @@ public final class TaczGunBridge {
             timelessGetCommonGunIndex = optional(timelessApi, M_GET_COMMON_GUN_INDEX, ResourceLocation.class);
             timelessGetClientGunIndex = timelessApi.getMethod(M_GET_CLIENT_GUN_INDEX, ResourceLocation.class);
             clientIndexGetGunData = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_GUN_DATA);
+            clientIndexGetName = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_NAME);
             gunDataGetBolt = Class.forName(CLASS_GUN_DATA).getMethod(M_GET_BOLT);
             for (Object constant : Class.forName(CLASS_BOLT).getEnumConstants()) {
                 if (ENUM_OPEN_BOLT.equals(((Enum<?>) constant).name())) {
@@ -436,6 +439,40 @@ public final class TaczGunBridge {
             return gunData != null && openBoltConstant.equals(gunDataGetBolt.invoke(gunData));
         } catch (Throwable e) {
             return false;
+        }
+    }
+
+    /**
+     * 按枪械 ID 解析<b>客户端本地化显示名</b>（如 {@code tacz:m24} → "M24"）；
+     * 枪械包未加载 / 专用服务端 / 任何一环解析不到返回 {@code null}（调用方回退到物品名）。
+     *
+     * <p>为什么不能靠物品 hover 名：TaCZ 所有枪共用一个物品（{@code tacz:modern_kinetic_gun}），
+     * 它的 hover 名是同一个 translatable key（{@code item.tacz.modern_kinetic_gun}），换成哪把枪
+     * 都一样，拿不到枪的真实型号。真实名字在<b>客户端资源索引</b>里：
+     * {@code TimelessAPI.getClientGunIndex(gunId) → ClientGunIndex.getName}。
+     */
+    @Nullable
+    public static String clientGunDisplayName(@Nullable String gunId) {
+        if (gunId == null || gunId.isBlank() || timelessGetClientGunIndex == null || clientIndexGetName == null) {
+            return null;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(gunId);
+        if (id == null) {
+            return null;
+        }
+        try {
+            Object optional = timelessGetClientGunIndex.invoke(null, id);
+            if (!(optional instanceof java.util.Optional<?> opt) || opt.isEmpty()) {
+                return null;
+            }
+            Object name = clientIndexGetName.invoke(opt.get());
+            if (name == null) {
+                return null;
+            }
+            // getName() 可能是纯名字也可能是翻译 key，translatable 两条路都不会出错
+            return net.minecraft.network.chat.Component.translatable(name.toString()).getString();
+        } catch (Throwable e) {
+            return null;
         }
     }
 

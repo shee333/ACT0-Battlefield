@@ -141,12 +141,21 @@ public final class LoadoutCommand {
                 BattlefieldCommand.feedback(c, "§c武器槽只能上架 TaCZ 枪械（当前手持不是枪）。");
                 return 0;
             }
-        }
-        net.minecraft.resources.ResourceLocation key = ForgeRegistries.ITEMS.getKey(held.getItem());
-        itemId = key == null ? null : key.toString();
-        if (itemId == null) {
-            BattlefieldCommand.feedback(c, "§c手持物品无注册 ID，无法上架。");
-            return 0;
+            // 枪械槽存"枪械 ID"而不是物品注册 ID：TaCZ 所有枪共用一个 base item
+            // （tacz:modern_kinetic_gun），存物品 ID 会把枪的真实型号丢掉——玩家出生拿不到枪，
+            // 部署/配装界面也只会显示 item.tacz.modern_kinetic_gun。
+            itemId = TaczGunBridge.gunId(held);
+            if (itemId == null) {
+                BattlefieldCommand.feedback(c, "§c无法读取当前枪械的 ID，无法上架。");
+                return 0;
+            }
+        } else {
+            net.minecraft.resources.ResourceLocation key = ForgeRegistries.ITEMS.getKey(held.getItem());
+            itemId = key == null ? null : key.toString();
+            if (itemId == null) {
+                BattlefieldCommand.feedback(c, "§c手持物品无注册 ID，无法上架。");
+                return 0;
+            }
         }
         LoadoutPresetDef next = def.withSlot(slot, itemId);
         if (LoadoutPresetDef.isWeaponSlot(slot) && ammo > 0) {
