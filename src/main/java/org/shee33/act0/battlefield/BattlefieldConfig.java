@@ -21,8 +21,6 @@ public final class BattlefieldConfig {
     public static final ForgeConfigSpec.IntValue SPAWN_PROTECTION_TICKS;
     public static final ForgeConfigSpec.DoubleValue SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS;
     public static final ForgeConfigSpec.IntValue IFF_SYNC_INTERVAL;
-    public static final ForgeConfigSpec.DoubleValue ENEMY_MARK_DISTANCE;
-    public static final ForgeConfigSpec.DoubleValue ENEMY_MARK_VIEW_DOT;
     public static final ForgeConfigSpec.IntValue BREATH_HEAL_DELAY_TICKS;
     public static final ForgeConfigSpec.IntValue ESCAPE_BOUNDARY_TICKS;
     public static final ForgeConfigSpec.IntValue DOWNED_DURATION_TICKS;
@@ -62,12 +60,6 @@ public final class BattlefieldConfig {
         SQUAD_DEPLOY_ENEMY_BLOCK_RADIUS = builder
                 .comment("Block radius to scan for nearby enemies when squad-deploying")
                 .defineInRange("squadDeployEnemyBlockRadius", 12.0, 0.0, 256.0);
-        ENEMY_MARK_DISTANCE = builder
-                .comment("Maximum distance (blocks) at which enemies are visible via IFF glow")
-                .defineInRange("enemyMarkDistance", 96.0, 1.0, 512.0);
-        ENEMY_MARK_VIEW_DOT = builder
-                .comment("Minimum view-direction dot product for enemy mark (1.0 = direct look, 0.0 = any angle)")
-                .defineInRange("enemyMarkViewDot", 0.30, 0.0, 1.0);
         BREATH_HEAL_DELAY_TICKS = builder
                 .comment("Ticks after last hurt before breath-healing resumes (100 = 5 seconds)")
                 .defineInRange("breathHealDelayTicks", 100, 0, 600);

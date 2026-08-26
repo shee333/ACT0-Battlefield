@@ -16,10 +16,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
@@ -79,8 +76,6 @@ public final class BreakthroughMatch {
     private static final int ATTACK_ORDER_TICKET_REWARD = 5;
 
     // IFF (敌我识别) 空间分区常量：与 ConquestMatch 完全一致，保持相同的判定平衡性。
-    private static final int IFF_CHUNK_SIZE = 16;
-    private static final int IFF_CHUNK_RADIUS = 6;
 
     private final int captureInterval;
     private final double captureDelta;
@@ -94,9 +89,6 @@ public final class BreakthroughMatch {
     private final int downedDurationTicks;
     private final int reviveDurationTicks;
     private final int iffSyncInterval;
-    private final double enemyMarkDistance;
-    private final double enemyMarkDistanceSqr;
-    private final double enemyMarkViewDot;
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -148,8 +140,7 @@ public final class BreakthroughMatch {
     private final DeployableService deployables = new DeployableService();
     private boolean deployablesWereSent = false;
     private final Map<UUID, Integer> lastRosterHash = new LinkedHashMap<>();
-    /** 救援朝向判定阈值：比 IFF 远距离标敌（{@link #enemyMarkViewDot}）更宽松，救援本就要求近距离
-     * （≤4 格），只需大致朝向目标即可，不必是精确瞄准。 */
+    /** 救援朝向判定阈值：救援本就要求近距离（≤4 格），只需大致朝向目标即可，不必是精确瞄准。 */
     private static final double REVIVE_VIEW_DOT = 0.5D;
     /** 救援心跳容忍窗口（tick）：超过这个时长没收到新心跳视为按键松开/掉线，避免网络抖动误取消。 */
     private static final int REVIVE_HEARTBEAT_TIMEOUT_TICKS = 10;
@@ -200,9 +191,6 @@ public final class BreakthroughMatch {
         this.downedDurationTicks = BattlefieldConfig.DOWNED_DURATION_TICKS.get();
         this.reviveDurationTicks = BattlefieldConfig.REVIVE_DURATION_TICKS.get();
         this.iffSyncInterval = BattlefieldConfig.IFF_SYNC_INTERVAL.get();
-        this.enemyMarkDistance = BattlefieldConfig.ENEMY_MARK_DISTANCE.get();
-        this.enemyMarkDistanceSqr = this.enemyMarkDistance * this.enemyMarkDistance;
-        this.enemyMarkViewDot = BattlefieldConfig.ENEMY_MARK_VIEW_DOT.get();
         this.attackerTickets = rules.startingTickets();
         this.currentSectorIndex = 0;
         this.defs = new ArrayList<>(defs);
@@ -703,14 +691,15 @@ public final class BreakthroughMatch {
     }
 
     /**
-     * IFF (敌我识别) 同步：管理每名玩家视角下的敌方发光可见性。
+     * IFF (敌我识别) 同步：管理每名玩家视角下的发光可见性与名字牌队伍。
      *
-     * <p>与 ConquestMatch 完全等价的实现：使用 16 格区块空间索引降低 O(n²) 射线检测开销，
-     * 判定阈值（距离、视锥点积）与射线遮挡算法均保持一致，不调整任何平衡数值。
+     * <p>只保留<b>友军高亮</b>（同阵营成员无距离限制发光）；被动敌方高亮（视野内自动发光）
+     * 已按需求移除——敌人只能靠眼睛、名字牌与主动标记识别。与 ConquestMatch 判定保持一致。
      */
     private void syncEnemyIdentification() {
-        Map<IffChunkKey, List<UUID>> spatialIndex = buildIffSpatialIndex();
-
+        if (factionOf.isEmpty()) {
+            return;
+        }
         for (UUID viewerId : new ArrayList<>(factionOf.keySet())) {
             ServerPlayer viewer = player(viewerId);
             if (!canViewerIdentify(viewer)) {
@@ -720,37 +709,6 @@ public final class BreakthroughMatch {
             syncRelativeTeams(viewer, viewerId);
             Set<UUID> active = visibleEnemyGlows.computeIfAbsent(viewerId, ignored -> new HashSet<>());
             Set<UUID> shouldKeep = new HashSet<>();
-
-            IffChunkKey viewerChunk = iffChunkKey(viewer);
-
-            int minCx = viewerChunk.cx() - IFF_CHUNK_RADIUS;
-            int maxCx = viewerChunk.cx() + IFF_CHUNK_RADIUS;
-            int minCz = viewerChunk.cz() - IFF_CHUNK_RADIUS;
-            int maxCz = viewerChunk.cz() + IFF_CHUNK_RADIUS;
-            for (int cx = minCx; cx <= maxCx; cx++) {
-                for (int cz = minCz; cz <= maxCz; cz++) {
-                    List<UUID> chunk = spatialIndex.get(new IffChunkKey(cx, cz));
-                    if (chunk == null) {
-                        continue;
-                    }
-                    for (UUID targetId : chunk) {
-                        if (targetId.equals(viewerId)) {
-                            continue;
-                        }
-                        ServerPlayer target = player(targetId);
-                        boolean show = shouldShowFriendlyGlow(viewer, target)
-                                || shouldShowEnemyGlow(viewer, target);
-                        if (show) {
-                            shouldKeep.add(targetId);
-                            if (active.add(targetId)) {
-                                GlowSync.showGlowTo(viewer, target);
-                            }
-                        } else if (active.remove(targetId) && target != null) {
-                            GlowSync.hideGlowFrom(viewer, target);
-                        }
-                    }
-                }
-            }
 
             for (UUID targetId : factionOf.keySet()) {
                 if (targetId.equals(viewerId) || shouldKeep.contains(targetId)) {
@@ -779,27 +737,6 @@ public final class BreakthroughMatch {
         }
     }
 
-    private Map<IffChunkKey, List<UUID>> buildIffSpatialIndex() {
-        Map<IffChunkKey, List<UUID>> index = new LinkedHashMap<>();
-        for (UUID id : factionOf.keySet()) {
-            ServerPlayer p = player(id);
-            if (p == null || p.level() != level || !p.isAlive() || p.isSpectator()) {
-                continue;
-            }
-            IffChunkKey key = iffChunkKey(p);
-            index.computeIfAbsent(key, k -> new ArrayList<>()).add(id);
-        }
-        return index;
-    }
-
-    private static IffChunkKey iffChunkKey(ServerPlayer p) {
-        return new IffChunkKey(
-                (int) Math.floor(p.getX() / IFF_CHUNK_SIZE),
-                (int) Math.floor(p.getZ() / IFF_CHUNK_SIZE));
-    }
-
-    private record IffChunkKey(int cx, int cz) {}
-
     private void syncRelativeTeams(ServerPlayer viewer, UUID viewerId) {
         Faction mine = factionOf.get(viewerId);
         RelativeTeamSync.sync(viewer, factionOf.keySet(), this::player, id -> {
@@ -820,29 +757,6 @@ public final class BreakthroughMatch {
         return !redeployService.isRedeploying(viewer.getUUID());
     }
 
-    private boolean shouldShowEnemyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
-        if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
-            return false;
-        }
-        UUID viewerId = viewer.getUUID();
-        UUID targetId = target.getUUID();
-        Faction viewerFaction = factionOf.get(viewerId);
-        Faction targetFaction = factionOf.get(targetId);
-        if (viewerFaction == null || targetFaction == null || viewerFaction == targetFaction) {
-            return false;
-        }
-        if (redeployService.isRedeploying(targetId)) {
-            return false;
-        }
-        if (viewer.distanceToSqr(target) > enemyMarkDistanceSqr) {
-            return false;
-        }
-        if (!isInFrontOf(viewer, target)) {
-            return false;
-        }
-        return hasClearSight(viewer, target);
-    }
-
     private boolean shouldShowFriendlyGlow(ServerPlayer viewer, @Nullable ServerPlayer target) {
         if (target == null || target.level() != level || !target.isAlive() || target.isSpectator()) {
             return false;
@@ -854,10 +768,6 @@ public final class BreakthroughMatch {
         return viewerFaction != null && viewerFaction == targetFaction && !redeployService.isRedeploying(targetId);
     }
 
-    private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target) {
-        return isInFrontOf(viewer, target, enemyMarkViewDot);
-    }
-
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target, double minDot) {
         Vec3 eyes = viewer.getEyePosition();
         Vec3 toTarget = target.getEyePosition().subtract(eyes);
@@ -865,19 +775,6 @@ public final class BreakthroughMatch {
             return true;
         }
         return viewer.getViewVector(1.0F).normalize().dot(toTarget.normalize()) >= minDot;
-    }
-
-    private boolean hasClearSight(ServerPlayer viewer, ServerPlayer target) {
-        Vec3 from = viewer.getEyePosition();
-        Vec3 toEyes = target.getEyePosition();
-        Vec3 toBody = target.position().add(0.0D, target.getBbHeight() * 0.55D, 0.0D);
-        return clearBlockRay(viewer, from, toEyes) || clearBlockRay(viewer, from, toBody);
-    }
-
-    private boolean clearBlockRay(ServerPlayer viewer, Vec3 from, Vec3 to) {
-        HitResult hit = level.clip(new ClipContext(from, to,
-                ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, viewer));
-        return hit.getType() == HitResult.Type.MISS;
     }
 
     private void clearEnemyGlowFor(ServerPlayer viewer) {
