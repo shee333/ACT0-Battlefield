@@ -21,6 +21,7 @@ import org.shee33.act0.battlefield.core.OverheadViewMath;
 import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.ControlPointDef;
 import org.shee33.act0.battlefield.loadout.BattlefieldLoadoutService;
+import org.shee33.act0.battlefield.loadout.LoadoutConfigService;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployAllyDto;
 import org.shee33.act0.battlefield.network.DeployLoadoutDto;
@@ -213,6 +214,7 @@ public final class RedeployService {
         teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
         BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
+        pushLoadoutConfig(player);
         player.sendSystemMessage(Component.literal("§6选择部署点，准备重返战场。"));
     }
 
@@ -254,6 +256,7 @@ public final class RedeployService {
                 BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
                 if (pendingLoadoutResync.remove(id)) {
                     BattlefieldNetwork.sendDeployLoadout(p, deployLoadoutFor(p));
+                    pushLoadoutConfig(p);
                 }
             }
         }
@@ -294,6 +297,7 @@ public final class RedeployService {
         lastSlotOverrideTick.put(id, now);
         BattlefieldLoadoutService.setSelectedClass(player, arenaKey, classId);
         BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
+        pushLoadoutConfig(player);
     }
 
     /**
@@ -305,10 +309,16 @@ public final class RedeployService {
         return lastTick != null && nowTick - lastTick < MIN_SLOT_OVERRIDE_INTERVAL_TICKS;
     }
 
-    /** 本图预设 + 玩家存档解析出的配装预览，供部署界面展示。 */
-    private DeployLoadoutDto deployLoadoutFor(ServerPlayer player) {
-        Faction faction = factionOf.get(player.getUUID());
-        return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey, faction);
+/** 本图预设 + 玩家存档解析出的配装预览，供部署界面展示。 */
+private DeployLoadoutDto deployLoadoutFor(ServerPlayer player) {
+Faction faction = factionOf.get(player.getUUID());
+return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey, faction);
+    }
+
+    /** 同步该玩家全屏配装数据：部署界面下拉依赖它才能列出当前兵种的预设。 */
+    private void pushLoadoutConfig(ServerPlayer player) {
+        BattlefieldNetwork.sendLoadoutConfig(player,
+                LoadoutConfigService.snapshot(player, arenaKey));
     }
 
     public void handleDeployAction(ServerPlayer player, String kind, String targetId) {

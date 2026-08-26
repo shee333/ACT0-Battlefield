@@ -12,7 +12,7 @@ import org.shee33.act0.battlefield.client.DeployConfirmFx;
 import org.shee33.act0.battlefield.client.DeployClassBar;
 import org.shee33.act0.battlefield.client.DeployMapPanel;
 import org.shee33.act0.battlefield.client.DeployModeLabel;
-import org.shee33.act0.battlefield.client.DeployPresetBar;
+import org.shee33.act0.battlefield.client.DeployPresetDropdown;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployPointDto;
@@ -33,6 +33,9 @@ import java.util.List;
  * ({@code renderLoadoutPanel}，已删除，避免同一份配装信息在两处重复展示)，是本次"部署界面大改"
  * 里唯一涉及真实换装功能的一块——{@link DeployWeaponPanel#handleClick} 在 {@link #mouseClicked}
  * 里被赋予比地图选点更高的点击优先级(先命中武器栏/面板，未命中才落到 {@link DeployMapPanel})。
+ *
+ * <p>Wave4 新增:底部配装下拉({@link DeployPresetDropdown})取代旧的纯展示条，提供同兵种预设间的
+ * 真实切换（点击 → 上弹该阵营该兵种的全预设列表 → 点选 → 服务端回推新的 DeployLoadoutDto）。
  */
 public final class BattlefieldDeployScreen extends Screen {
 
@@ -49,7 +52,7 @@ public final class BattlefieldDeployScreen extends Screen {
     public BattlefieldDeployScreen() {
         super(Component.literal("部署"));
         DeployMapPanel.onOpened();
-        DeployPresetBar.onOpened();
+        DeployPresetDropdown.onOpened();
         DeployModeLabel.onOpened();
     }
 
@@ -73,7 +76,7 @@ public final class BattlefieldDeployScreen extends Screen {
 
         updateSquadSpectate(st);
 
-        int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployPresetBar.barHeight();
+        int barTopY = height - HINT_H - WEAPON_BAR_MARGIN - DeployPresetDropdown.barHeight();
         int classBarTopY = barTopY - DeployClassBar.barHeight();
 
         int mapX = MAP_MARGIN;
@@ -95,7 +98,8 @@ public final class BattlefieldDeployScreen extends Screen {
         renderSpectateFade(gg);
 
         DeployClassBar.render(gg, font, width, classBarTopY, mouseX, mouseY);
-        DeployPresetBar.render(gg, font, width, barTopY, mouseX, mouseY);
+        // barTopY 是按钮顶部；render 用的是按钮底部（bottomY），所以传 barTopY + barHeight
+        DeployPresetDropdown.render(gg, font, width, barTopY + DeployPresetDropdown.barHeight(), mouseX, mouseY);
     }
 
     /**
@@ -161,7 +165,9 @@ public final class BattlefieldDeployScreen extends Screen {
             if (DeployClassBar.handleClick(mouseX, mouseY)) {
                 return true;
             }
-            DeployPresetBar.handleClick(mouseX, mouseY);
+            if (DeployPresetDropdown.handleClick(mouseX, mouseY, button)) {
+                return true;
+            }
             DeployMapPanel.ClickOutcome outcome = DeployMapPanel.handleClick(mouseX, mouseY);
             if (outcome.selection() != null) {
                 DeployStatusDto stBeforeClick = ClientDeployStatus.status();
@@ -178,11 +184,25 @@ public final class BattlefieldDeployScreen extends Screen {
                 return true;
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollDelta) {
+        if (DeployPresetDropdown.handleScroll(scrollDelta)) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollDelta);
+    }
+
+@Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Escape 优先让配装下拉关闭弹层；弹层关闭后才走 ESC 默认行为（关闭整个 Screen）
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (DeployPresetDropdown.handleEscape()) {
+                return true;
+            }
+        }
         if (BattlefieldKeyMappings.SPECTATE_NEXT.matches(keyCode, scanCode)) {
             DeployStatusDto current = ClientDeployStatus.status();
             if (current != null) {
@@ -243,7 +263,7 @@ public final class BattlefieldDeployScreen extends Screen {
     public void removed() {
         ClientSquadSpectate.clear();
         DeployMapPanel.onClosed();
-        DeployPresetBar.onClosed();
+        DeployPresetDropdown.onClosed();
         DeployModeLabel.onClosed();
         super.removed();
     }

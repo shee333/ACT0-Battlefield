@@ -11,6 +11,7 @@ import org.shee33.act0.battlefield.data.BattlefieldData;
 import org.shee33.act0.battlefield.data.PlayerLoadoutStore;
 import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.network.ClassPresetsDto;
+import org.shee33.act0.battlefield.network.DeployLoadoutDto;
 import org.shee33.act0.battlefield.network.DeploySlotDto;
 import org.shee33.act0.battlefield.network.FactionPresetsDto;
 import org.shee33.act0.battlefield.network.LoadoutConfigDto;
@@ -111,7 +112,16 @@ public final class LoadoutConfigService {
             }
         }
         BattlefieldNetwork.sendLoadoutConfig(player, snapshot(player, resolvedMap != null ? resolvedMap : mapName));
+        // 如果玩家正在对局内部署，追加推一份最新的 DeployLoadoutDto 供下拉即时反馈。
+        DeployLoadoutDto deployLoadout =
+                BattlefieldLoadoutService.readDeployLoadout(player, resolvedMap, faction);
+                BattlefieldLoadoutService.readDeployLoadout(player, resolvedMap, faction);
+        if (deployLoadout != null) {
+            BattlefieldNetwork.sendDeployLoadout(player, deployLoadout);
     }
+    }
+
+    /** 切换某张图上的兵种（各阵营各兵种的选择保留），随后回发整屏快照。 */
 
     /** 切换某张图上的兵种（各阵营各兵种的选择保留），随后回发整屏快照。 */
     public static void selectClass(ServerPlayer player, @Nullable String mapName, @Nullable String classId) {
