@@ -219,16 +219,17 @@ public final class ConquestMatch {
         startCountdownTicks = BattlefieldConfig.START_COUNTDOWN_TICKS.get();
         startCountdownLastSecond = -1;
         setupNameTagTeams();
+        // 对局开始时让玩家从部署界面手动选配装 + 选点：进入部署流程（观战、俯瞰地图、可点选）。
+        // 倒计时与 deployReadyTick 同时归零，玩家点确认即进入对局；旧逻辑是一上来就降生在基地。
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
-                deploy(p, e.getValue());
-                BattlefieldNetwork.sendFireLock(p, true);
+                beginRedeploy(p, e.getValue());
                 p.sendSystemMessage(Component.literal("§6大战场即将开始！你属于 " + coloredFaction(e.getValue())
-                        + "§6，占领据点压制敌方票数。"));
+                        + "§6，在部署界面选好配装和部署点后点确认进入对局。"));
             }
         }
-        showTitle("§e准备", "§7大战场将在 5 秒后开始", 5, 30, 8);
+        showTitle("§e准备", "§7部署界面选好配装与部署点，5 秒后对局开始", 5, 30, 8);
         broadcastHud();
     }
 
@@ -243,11 +244,9 @@ public final class ConquestMatch {
         squadManager.assignLatecomer(id, faction);
         setupNameTagTeams();
         if (startCountdownTicks > 0) {
-            // 开局倒计时期间加入：直接部署到基地等待倒计时结束(与begin()对初始名单的处理一致)，
-            // 不走beginRedeploy()的"重生选点"观战流程——那是为死亡玩家设计的语义，此前误用在
-            // "第一次加入"上会导致中途加入的玩家卡在观战模式，需要自己手动选点才能真正进场。
-            deploy(player, faction);
-            BattlefieldNetwork.sendFireLock(player, true);
+            // 开局倒计时期间加入：与 begin() 一致，走 beginRedeploy 让玩家从部署界面手动选配装 +
+            // 选点进入对局；旧版误用 deploy（直接降生基地）与新的开局语义不一致。
+            beginRedeploy(player, faction);
         } else {
             beginRedeploy(player, faction);
         }

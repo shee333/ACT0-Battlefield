@@ -231,16 +231,18 @@ public final class BreakthroughMatch {
         startCountdownTicks = BattlefieldConfig.START_COUNTDOWN_TICKS.get();
         startCountdownLastSecond = -1;
         setupNameTagTeams();
+        // 对局开始时从部署界面手动选配装 + 选点：进入部署流程（观战、俯瞰地图、可点选）。
+        // 倒计时与 deployReadyTick 同时归零，玩家点确认即进场；旧逻辑是一上来就降生在基地。
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = player(e.getKey());
             if (p != null) {
-                deploy(p, e.getValue());
-                BattlefieldNetwork.sendFireLock(p, true);
+                beginRedeploy(p, e.getValue());
                 p.sendSystemMessage(Component.literal("§6突破模式即将开始！你属于 " + coloredFaction(e.getValue())
-                        + "§6。" + (e.getValue() == Faction.ALPHA ? "§c进攻方，票数有限！" : "§a防守方，守住防线！")));
+                        + "§6。" + (e.getValue() == Faction.ALPHA ? "§c进攻方，票数有限！" : "§a防守方，守住防线！")
+                        + "§6在部署界面选好配装与部署点后点确认。"));
             }
         }
-        showTitle("§e准备", "§7突破模式将在 5 秒后开始", 5, 30, 8);
+        showTitle("§e准备", "§7部署界面选好配装与部署点，5 秒后突破开始", 5, 30, 8);
     }
 
     public boolean addLatecomer(ServerPlayer player, Faction faction) {
@@ -254,11 +256,9 @@ public final class BreakthroughMatch {
         squadManager.assignLatecomer(id, faction);
         setupNameTagTeams();
         if (startCountdownTicks > 0) {
-            // 开局倒计时期间加入：直接部署到基地等待倒计时结束，不走beginRedeploy()的"重生
-            // 选点"观战流程——那是为死亡玩家设计的语义，此前误用在"第一次加入"上会导致中途
-            // 加入的玩家卡在观战模式，需要自己手动选点才能真正进场(与ConquestMatch同款修复)。
-            deploy(player, faction);
-            BattlefieldNetwork.sendFireLock(player, true);
+            // 开局倒计时期间加入：与 begin() 一致，走 beginRedeploy 让玩家从部署界面手动选配装 +
+            // 选点进入对局；旧版误用 deploy（直接降生基地）与新的开局语义不一致。
+            beginRedeploy(player, faction);
         } else {
             beginRedeploy(player, faction);
         }
