@@ -134,12 +134,20 @@ final class WeaponBarRenderer {
         gg.enableScissor(rightX - INFO_W - 4 + sx, ammoY + sy, rightX + sx, ammoY + ammoH + sy);
         float roll = WeaponBarAnimator.ammoRoll(now);
         int dir = WeaponBarAnimator.ammoDir();
-        String cur = WeaponBarAnimator.ammoText();
+        String mag = WeaponBarAnimator.ammoText();
         String old = WeaponBarAnimator.oldAmmoText();
+        String reserve = WeaponBarAnimator.reserveText();
+        // 开火只滚弹匣数字：备弹部分静止绘制在右端，弹匣滚轮只占据它左侧的宽度。
+        // 滚动幅度比整串滚动时减半（6px），数字更替更克制。
+        int reserveW = Math.round(font.width(reserve) * 1.6f);
+        float amp = ammoH * 0.5f;
         if (roll < 1f && !old.isEmpty()) {
-            drawScaled(gg, font, old, rightX, ammoY - dir * ammoH * roll, 1.6f, 0xFFFFFFFF, 1f);
+            drawScaled(gg, font, old, rightX - reserveW, ammoY - dir * amp * roll, 1.6f, 0xFFFFFFFF, 1f);
         }
-        drawScaled(gg, font, cur, rightX, ammoY + dir * ammoH * (1f - roll), 1.6f, 0xFFFFFFFF, 1f);
+        drawScaled(gg, font, mag, rightX - reserveW, ammoY + dir * amp * (1f - roll), 1.6f, 0xFFFFFFFF, 1f);
+        if (!reserve.isEmpty()) {
+            drawScaled(gg, font, reserve, rightX, ammoY, 1.6f, 0xFFFFFFFF, 1f);
+        }
         gg.disableScissor();
 
         float cooldown = ClientGunStatus.progress();

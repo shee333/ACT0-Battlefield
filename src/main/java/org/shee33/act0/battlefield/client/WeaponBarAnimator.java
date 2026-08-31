@@ -36,9 +36,10 @@ final class WeaponBarAnimator {
     private static String pendingName = "";
     private static long nameStartMs;
 
-    private static String ammoText = "";
+private static String ammoText = "";
     private static String oldAmmoText = "";
-    private static long ammoRollStartMs;
+    private static String reserveText = "";
+private static long ammoRollStartMs;
 
     private static long introStartMs;
 
@@ -60,8 +61,9 @@ final class WeaponBarAnimator {
         underlineWidth = 0f;
         weaponName = "";
         pendingName = "";
-        ammoText = "";
+ammoText = "";
         oldAmmoText = "";
+        reserveText = "";
     }
 
     static boolean introPlayed() {
@@ -123,10 +125,17 @@ final class WeaponBarAnimator {
         nameStartMs = now;
     }
 
-    /** 同一把武器上的弹药变化（开火/补给），按方向滚轮。 */
+    /** 同一把武器上的弹药变化（开火/补给）。弹匣数字变化时滚动，备弹变化时静默更新。 */
     static void updateAmmo(String ammo, long now) {
         String safe = ammo == null ? "" : ammo;
-        if (safe.equals(ammoText)) {
+        String mag = magazinePart(safe);
+        String reserve = reservePart(safe);
+        if (mag.equals(ammoText) && reserve.equals(reserveText)) {
+            return;
+        }
+        if (mag.equals(ammoText)) {
+            // 弹匣没变（拾取弹药/换弹完成只动备弹）：备弹数字原地刷新，不滚动。
+            reserveText = reserve;
             return;
         }
         switchDir = compareAmmo(safe, ammoText);
@@ -135,12 +144,27 @@ final class WeaponBarAnimator {
 
     private static void rollAmmo(String ammo, long now) {
         String safe = ammo == null ? "" : ammo;
-        if (safe.equals(ammoText)) {
+        String mag = magazinePart(safe);
+        String reserve = reservePart(safe);
+        if (mag.equals(ammoText)) {
             return;
         }
         oldAmmoText = ammoText;
-        ammoText = safe;
+        ammoText = mag;
+        reserveText = reserve;
         ammoRollStartMs = now;
+    }
+
+    /** {@code "30 / 90"} 的弹匣部分 {@code "30"}；无分隔符（非枪械文本）时整串视为弹匣。 */
+    private static String magazinePart(String text) {
+        int sep = text.indexOf(" / ");
+        return sep < 0 ? text : text.substring(0, sep);
+    }
+
+    /** {@code "30 / 90"} 的备弹部分 {@code " / 90"}（含前缀分隔符，便于渲染时与弹匣右对齐拼接）；无分隔符返回空串。 */
+    private static String reservePart(String text) {
+        int sep = text.indexOf(" / ");
+        return sep < 0 ? "" : text.substring(sep);
     }
 
     /** 数值减少向下滚(−1)、增加向上滚(+1)；非数值内容一律向上。 */
@@ -237,8 +261,13 @@ final class WeaponBarAnimator {
         return Tween.Ease.OUT_CUBIC.apply(clamp01((now - ammoRollStartMs) / (float) ROLL_MS));
     }
 
-    static int ammoDir() {
-        return switchDir;
+static int ammoDir() {
+return switchDir;
+    }
+
+    /** 备弹部分（含 " / " 前缀，如 " / 90"），静止不滚动。 */
+    static String reserveText() {
+        return reserveText;
     }
 
     private static float clamp01(float v) {
