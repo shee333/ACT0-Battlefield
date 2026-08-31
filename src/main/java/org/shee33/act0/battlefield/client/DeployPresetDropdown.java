@@ -137,7 +137,16 @@ public final class DeployPresetDropdown {
         return true;
     }
 
-    /** Escape 键关闭弹层（Screen 在 keyPressed 阶段调用）。 */
+    /** 强制收起弹层（兵种切换 / 部署完成时调用）。 */
+    public static void close() {
+        if (open) {
+            open = false;
+            animStartedAt = System.currentTimeMillis();
+            animOpening = false;
+        }
+    }
+
+/** Escape 键关闭弹层（Screen 在 keyPressed 阶段调用）。 */
 public static boolean handleEscape() {
         if (open) {
             open = false;

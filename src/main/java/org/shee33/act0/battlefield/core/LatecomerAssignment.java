@@ -12,9 +12,9 @@ import java.util.concurrent.ThreadLocalRandom;
  * {@code ConquestMatch#capacityHint()} / {@code BreakthroughMatch#capacityHint()} 返回的固定值
  * 64 只是给 ACT0-Arcade 游戏浏览器展示用的估算容量，从未在任何加入/quickJoin 流程里被拿来做
  * 人数上限校验。因此调用方目前总是把 cap 参数传成 {@link Integer#MAX_VALUE}（等价于"没有上限"），
- * 本方法也就退化为纯 50/50 随机。但算法本身完整保留了"一方满一方没满，必须分到没满的一方"
- * 这条正确性约束——一旦以后真的引入了每方人数上限，调用方只需要把真实的 cap 值传进来，
- * 这里不需要再改。
+ * 本方法退化为"人数少的一方优先"的均衡分配（双方人数相等时才 50/50 随机）。算法本身完整保留
+ * "一方满一方没满，必须分到没满的一方"这条正确性约束——一旦以后真的引入了每方人数上限，
+ * 调用方只需要把真实的 cap 值传进来，这里不需要再改。
  */
 public final class LatecomerAssignment {
 
@@ -38,12 +38,20 @@ public final class LatecomerAssignment {
         if (alphaFull && bravoFull) {
             return null;
         }
-        if (alphaFull) {
-            return Faction.BRAVO;
+if (alphaFull) {
+return Faction.BRAVO;
+}
+if (bravoFull) {
+return Faction.ALPHA;
         }
-        if (bravoFull) {
+        // 双方都有名额：人数少的一方优先，保证两边尽量均匀（差距控制在 1 以内）。
+        // 人数相等才 50/50 随机，避免顺序加入时因硬币翻转随机而长期一边倒。
+        if (alphaCount < bravoCount) {
             return Faction.ALPHA;
         }
-        return ThreadLocalRandom.current().nextBoolean() ? Faction.ALPHA : Faction.BRAVO;
+        if (bravoCount < alphaCount) {
+            return Faction.BRAVO;
+        }
+return ThreadLocalRandom.current().nextBoolean() ? Faction.ALPHA : Faction.BRAVO;
     }
 }

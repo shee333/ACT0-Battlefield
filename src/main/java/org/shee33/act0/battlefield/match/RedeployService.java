@@ -208,10 +208,18 @@ public final class RedeployService {
         deploySelection.put(id, "");
         deployTarget.put(id, "");
         redeployOriginalMode.putIfAbsent(id, player.gameMode.getGameModeForPlayer());
-        player.setGameMode(GameType.SPECTATOR);
+player.setGameMode(GameType.SPECTATOR);
+player.setInvulnerable(true);
+player.setDeltaMovement(0.0, 0.0, 0.0);
+        teleportToDeployOverview(player, faction);
+        // 跨维度传送（对局开局从大厅世界进战场）会重建客户端 LocalPlayer，旁观模式可能短暂
+        // 回落到原模式，玩家会从俯瞰高度一路坠落。传送完成后重发一次旁观模式 + 无敌 + 归零速度；
+        // 已是旁观者时 setGameMode 是 no-op，不发冗余包。
+        if (!player.isSpectator()) {
+            player.setGameMode(GameType.SPECTATOR);
+        }
         player.setInvulnerable(true);
         player.setDeltaMovement(0.0, 0.0, 0.0);
-        teleportToDeployOverview(player, faction);
         BattlefieldNetwork.sendDeploy(player, true, deployStatus(player));
         BattlefieldNetwork.sendDeployLoadout(player, deployLoadoutFor(player));
         pushLoadoutConfig(player);
@@ -252,8 +260,15 @@ public final class RedeployService {
             ServerPlayer p = player(id);
             Faction faction = factionOf.get(id);
             if (p != null && faction != null) {
-                teleportToDeployOverview(p, faction);
-                BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
+                // 每秒兜底：部署等待期间强制保持旁观模式（已旁观时 setGameMode 是 no-op），
+                // 防止开局跨维度传送导致的模式回退让玩家从俯瞰高度反复坠落。
+                if (!p.isSpectator()) {
+                    p.setGameMode(GameType.SPECTATOR);
+                    p.setInvulnerable(true);
+                    p.setDeltaMovement(0.0, 0.0, 0.0);
+                }
+teleportToDeployOverview(p, faction);
+BattlefieldNetwork.sendDeploy(p, true, deployStatus(p));
                 if (pendingLoadoutResync.remove(id)) {
                     BattlefieldNetwork.sendDeployLoadout(p, deployLoadoutFor(p));
                     pushLoadoutConfig(p);

@@ -103,6 +103,11 @@ public final class LoadoutConfigService {
             return;
         }
         String resolvedMap = ArenaKey.resolve(player.server, mapName);
+        if (resolvedMap == null) {
+            // 部署界面下拉发的是空 mapName：玩家此刻在对局里（已被传送到对局世界俯瞰），
+            // 用玩家当前所在世界兜底解析出 arenaKey，避免"选择无效 → 回推默认兵种配装"的跳变。
+            resolvedMap = ArenaKey.of(player.serverLevel());
+        }
         Faction faction = parseFaction(factionId);
         SoldierClass soldierClass = SoldierClass.byId(classId);
         if (resolvedMap != null && faction != null && soldierClass != null) {
@@ -115,13 +120,10 @@ public final class LoadoutConfigService {
         // 如果玩家正在对局内部署，追加推一份最新的 DeployLoadoutDto 供下拉即时反馈。
         DeployLoadoutDto deployLoadout =
                 BattlefieldLoadoutService.readDeployLoadout(player, resolvedMap, faction);
-                BattlefieldLoadoutService.readDeployLoadout(player, resolvedMap, faction);
         if (deployLoadout != null) {
             BattlefieldNetwork.sendDeployLoadout(player, deployLoadout);
+        }
     }
-    }
-
-    /** 切换某张图上的兵种（各阵营各兵种的选择保留），随后回发整屏快照。 */
 
     /** 切换某张图上的兵种（各阵营各兵种的选择保留），随后回发整屏快照。 */
     public static void selectClass(ServerPlayer player, @Nullable String mapName, @Nullable String classId) {

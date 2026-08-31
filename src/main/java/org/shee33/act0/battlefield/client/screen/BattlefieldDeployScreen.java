@@ -162,9 +162,12 @@ public final class BattlefieldDeployScreen extends Screen {
         if (button == 0) {
             // 武器栏/上拉面板优先命中：命中槍位或可选项时直接消费，不落到地图选点逻辑；未命中
             // 任何交互区域时它会把已打开的面板顺手关闭（同规格文档"点空白"语义），再放行给地图。
-            if (DeployClassBar.handleClick(mouseX, mouseY)) {
-                return true;
-            }
+if (DeployClassBar.handleClick(mouseX, mouseY)) {
+// 兵种切换后下拉里还是旧兵种的预设列表，直接收起，等新的 DeployLoadoutDto 回来后
+// 再打开就是新兵种的预设，避免"点下去选到旧兵种配装"的跳变。
+DeployPresetDropdown.close();
+return true; // consumed
+}
             if (DeployPresetDropdown.handleClick(mouseX, mouseY, button)) {
                 return true;
             }
