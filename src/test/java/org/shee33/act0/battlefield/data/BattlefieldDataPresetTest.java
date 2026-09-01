@@ -33,6 +33,7 @@ class BattlefieldDataPresetTest {
         LoadoutPresetDef def = data.createPreset(Faction.BRAVO, SoldierClass.RECON, "狙击套")
                 .withSlot(LoadoutSlot.PRIMARY, "tacz:m24")
                 .withAmmo(LoadoutSlot.PRIMARY, 40)
+                .withGunNbt(LoadoutSlot.PRIMARY, "{GunId:\"tacz:m24\",AttachmentSCOPE:{}}")
                 .withSlot(LoadoutSlot.MELEE, "minecraft:iron_sword")
                 .withSlot(LoadoutSlot.GADGET_1, "act0_battlefield:medic_syringe")
                 .withArmor(new LoadoutPresetDef.ArmorSet(
@@ -44,6 +45,8 @@ class BattlefieldDataPresetTest {
         assertEquals("狙击套", after.displayName());
         assertEquals("tacz:m24", after.slot(LoadoutSlot.PRIMARY));
         assertEquals(40, after.ammoOf(LoadoutSlot.PRIMARY));
+        assertEquals("{GunId:\"tacz:m24\",AttachmentSCOPE:{}}", after.gunNbtOf(LoadoutSlot.PRIMARY),
+                "枪械配件快照应随 NBT 往返");
         assertEquals("minecraft:iron_sword", after.slot(LoadoutSlot.MELEE), "近战槽应随 NBT 往返");
         assertEquals("minecraft:iron_helmet", after.armor().helmet());
         assertNull(after.armor().legs(), "未穿的护腿应为 null");

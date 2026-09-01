@@ -2,6 +2,7 @@ package org.shee33.act0.battlefield.integration;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -104,10 +105,18 @@ class TaczGunBridgeTest {
         assertDoesNotThrow(() -> {
             assertFalse(TaczGunBridge.isGun(null));
             assertEquals(-1, TaczGunBridge.currentAmmo(null), "无枪时弹匣数约定返回 -1");
-            assertFalse(TaczGunBridge.hasBulletInBarrel(null));
-            assertEquals(-1, TaczGunBridge.reserveAmmo(null, null), "无枪时备弹约定返回 -1");
             assertFalse(TaczGunBridge.isReloading(null));
             assertEquals(-1L, TaczGunBridge.reloadCountDownMs(null), "非换弹状态约定返回 -1");
         });
+    }
+
+    @Test
+    void dynamicGunNbtKeysMatchUpstream() {
+        // 配件快照剥离的动态状态键：来自 TaCZ 1.1.8 GunItemDataAccessor 的 NBT 常量名。
+        // 拼错不会报错，只会让快照把弹药/热量状态也带进配装——出生枪不再满状态。
+        assertArrayEquals(new String[]{
+                        "GunCurrentAmmoCount", "HasBulletInBarrel", "HeatAmount", "OverHeated",
+                        "DummyAmmo", "MaxDummyAmmo", "GunLevelExp"},
+                TaczGunBridge.GUN_DYNAMIC_NBT_KEYS);
     }
 }

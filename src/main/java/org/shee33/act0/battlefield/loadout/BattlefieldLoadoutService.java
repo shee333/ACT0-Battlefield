@@ -164,10 +164,7 @@ public final class BattlefieldLoadoutService {
                 if (itemId == null || itemId.isBlank()) {
                     continue;
                 }
-                ItemStack stack = stackFor(slot, itemId, preset.ammoOf(slot));
-                if (!stack.isEmpty()) {
-                    player.getInventory().setItem(slot.hotbarIndex(), stack);
-                }
+                ItemStack stack = stackFor(slot, itemId, preset.ammoOf(slot), preset.gunNbtOf(slot));
             }
             applyArmor(player, preset.armor());
         }
@@ -194,7 +191,7 @@ public final class BattlefieldLoadoutService {
         player.getInventory().armor.set(eq.getIndex(), new ItemStack(item));
     }
 
-    private static ItemStack stackFor(LoadoutSlot slot, String itemId, int ammo) {
+    private static ItemStack stackFor(LoadoutSlot slot, String itemId, int ammo, @Nullable String gunNbt) {
         if (LoadoutPresetDef.isWeaponSlot(slot)) {
             ItemStack gun = TaczGunBridge.createGun(itemId);
             if (gun.isEmpty()) {
@@ -203,6 +200,8 @@ public final class BattlefieldLoadoutService {
                         : "服务器未安装 TaCZ，无法发放枪械");
                 return ItemStack.EMPTY;
             }
+            // 合并管理员上架时的静态配置快照（配件/射击模式/激光颜色等）。
+            TaczGunBridge.applyGunSnapshot(gun, gunNbt);
             if (ammo > 0) {
                 TaczGunBridge.setDummyAmmo(gun, ammo);
             }

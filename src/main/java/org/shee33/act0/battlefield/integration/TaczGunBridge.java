@@ -1,5 +1,7 @@
 package org.shee33.act0.battlefield.integration;
 
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Inventory;
@@ -11,17 +13,17 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 /**
- * TaCZ（Timeless and Classics Zero）<b>弹药与换弹状态</b>的反射软依赖桥，供作战 HUD 的武器栏使用。
+ * TaCZ锛圱imeless and Classics Zero锛?b>寮硅嵂涓庢崲寮圭姸鎬?/b>鐨勫弽灏勮蒋渚濊禆妗ワ紝渚涗綔鎴?HUD 鐨勬鍣ㄦ爮浣跨敤銆?
  *
- * <p>本模组不在编译期依赖 TaCZ。与 Arcade 的 {@code TaczBridge}（只管配件）刻意分开：那个桥在
- * 另一个仓库、且战地对 Arcade 也只是可选依赖，走"战地→反射 Arcade→反射 TaCZ"两跳会让弹药显示
- * 平白依赖 Arcade 是否在场。
+ * <p>鏈ā缁勪笉鍦ㄧ紪璇戞湡渚濊禆 TaCZ銆備笌 Arcade 鐨?{@code TaczBridge}锛堝彧绠￠厤浠讹級鍒绘剰鍒嗗紑锛氶偅涓ˉ鍦?
+ * 鍙︿竴涓粨搴撱€佷笖鎴樺湴瀵?Arcade 涔熷彧鏄彲閫変緷璧栵紝璧?鎴樺湴鈫掑弽灏?Arcade鈫掑弽灏?TaCZ"涓よ烦浼氳寮硅嵂鏄剧ず
+ * 骞崇櫧渚濊禆 Arcade 鏄惁鍦ㄥ満銆?
  *
- * <p><b>逐方法降级</b>：每个反射目标单独解析，任何一个缺失只让对应功能回退，不会拖垮整个桥。
- * 这是因为 TaCZ 在 1.20.1 分支上 1.0.x 与 1.1.x 的 API 并不一致（例如 {@code useInventoryAmmo}
- * 只有 1.1.x 才有），而玩家服上跑的具体版本不受我们控制。
+ * <p><b>閫愭柟娉曢檷绾?/b>锛氭瘡涓弽灏勭洰鏍囧崟鐙В鏋愶紝浠讳綍涓€涓己澶卞彧璁╁搴斿姛鑳藉洖閫€锛屼笉浼氭嫋鍨暣涓ˉ銆?
+ * 杩欐槸鍥犱负 TaCZ 鍦?1.20.1 鍒嗘敮涓?1.0.x 涓?1.1.x 鐨?API 骞朵笉涓€鑷达紙渚嬪 {@code useInventoryAmmo}
+ * 鍙湁 1.1.x 鎵嶆湁锛夛紝鑰岀帺瀹舵湇涓婅窇鐨勫叿浣撶増鏈笉鍙楁垜浠帶鍒躲€?
  *
- * <p>API 依据 TaCZ 仓库 {@code MCModderAnchor/TACZ} 分支 {@code 1.20.1}（tag 1.1.8-hotfix）核对。
+ * <p>API 渚濇嵁 TaCZ 浠撳簱 {@code MCModderAnchor/TACZ} 鍒嗘敮 {@code 1.20.1}锛坱ag 1.1.8-hotfix锛夋牳瀵广€?
  */
 public final class TaczGunBridge {
 
@@ -34,7 +36,7 @@ public final class TaczGunBridge {
     private static Method gunHasBulletInBarrel;
     private static Method gunUseDummyAmmo;
     private static Method gunGetDummyAmmoAmount;
-    /** 仅 TaCZ 1.1.x 存在；1.0.x 下为 null，视为"不启用背包直读"。 */
+    /** 浠?TaCZ 1.1.x 瀛樺湪锛?.0.x 涓嬩负 null锛岃涓?涓嶅惎鐢ㄨ儗鍖呯洿璇?銆?*/
     private static Method gunUseInventoryAmmo;
 
     private static Method ammoIsAmmoOfGun;
@@ -60,9 +62,9 @@ public final class TaczGunBridge {
     private static Method builderSetHeatData;
     private static Method builderBuild;
     /**
-     * {@code CommonGunIndex#getGunData}。<b>惰性解析</b>：对这个类做方法解析需要链接 TaCZ 自带的
-     * luaj，而那不在本模组的测试 classpath 上——放进静态初始化会让整条造枪链路在测试环境里被判定为
-     * 不可用。真正调用它时（服务器运行期）luaj 必定在场。
+     * {@code CommonGunIndex#getGunData}銆?b>鎯版€цВ鏋?/b>锛氬杩欎釜绫诲仛鏂规硶瑙ｆ瀽闇€瑕侀摼鎺?TaCZ 鑷甫鐨?
+     * luaj锛岃€岄偅涓嶅湪鏈ā缁勭殑娴嬭瘯 classpath 涓娾€斺€旀斁杩涢潤鎬佸垵濮嬪寲浼氳鏁存潯閫犳灙閾捐矾鍦ㄦ祴璇曠幆澧冮噷琚垽瀹氫负
+     * 涓嶅彲鐢ㄣ€傜湡姝ｈ皟鐢ㄥ畠鏃讹紙鏈嶅姟鍣ㄨ繍琛屾湡锛塴uaj 蹇呭畾鍦ㄥ満銆?
      */
     @Nullable
     private static Method commonIndexGetGunData;
@@ -76,8 +78,8 @@ public final class TaczGunBridge {
     private static Method reloadStateGetCountDown;
     private static Method stateTypeIsReloading;
 
-    // ---- TaCZ API 名。集中放置并由 TaczGunBridgeTest 钉死：这些字符串拼错不会报错，
-    // 只会让对应功能静默失灵（开发中就差点把 getSynReloadState 写成 getSyncReloadState）。
+    // ---- TaCZ API 鍚嶃€傞泦涓斁缃苟鐢?TaczGunBridgeTest 閽夋锛氳繖浜涘瓧绗︿覆鎷奸敊涓嶄細鎶ラ敊锛?
+    // 鍙細璁╁搴斿姛鑳介潤榛樺け鐏碉紙寮€鍙戜腑灏卞樊鐐规妸 getSynReloadState 鍐欐垚 getSyncReloadState锛夈€?
     static final String CLASS_I_GUN = "com.tacz.guns.api.item.IGun";
     static final String CLASS_I_AMMO = "com.tacz.guns.api.item.IAmmo";
     static final String CLASS_I_AMMO_BOX = "com.tacz.guns.api.item.IAmmoBox";
@@ -148,8 +150,8 @@ public final class TaczGunBridge {
 
         gunSetDummyAmmoAmount = optional(iGunClass, M_SET_DUMMY_AMMO_AMOUNT, ItemStack.class, int.class);
 
-        // 逐个解析而不是塞进一个 try：把它们绑在一起时，任何一个目标解析失败都会连坐清空其余目标。
-        // CommonGunIndex 的方法解析恰好需要链接 TaCZ 自带的 luaj，缺它就会拖垮整条造枪链路。
+        // 閫愪釜瑙ｆ瀽鑰屼笉鏄杩涗竴涓?try锛氭妸瀹冧滑缁戝湪涓€璧锋椂锛屼换浣曚竴涓洰鏍囪В鏋愬け璐ラ兘浼氳繛鍧愭竻绌哄叾浣欑洰鏍囥€?
+        // CommonGunIndex 鐨勬柟娉曡В鏋愭伆濂介渶瑕侀摼鎺?TaCZ 鑷甫鐨?luaj锛岀己瀹冨氨浼氭嫋鍨暣鏉￠€犳灙閾捐矾銆?
         Class<?> builderClass = classOrNull(CLASS_GUN_ITEM_BUILDER);
         Class<?> fireModeClass = classOrNull(CLASS_FIRE_MODE);
         Class<?> gunDataClass = classOrNull(CLASS_GUN_DATA);
@@ -234,7 +236,7 @@ public final class TaczGunBridge {
     private TaczGunBridge() {
     }
 
-    /** 运行时是否存在 TaCZ 枪械 API。 */
+    /** 杩愯鏃舵槸鍚﹀瓨鍦?TaCZ 鏋 API銆?*/
     public static boolean isAvailable() {
         return AVAILABLE;
     }
@@ -255,11 +257,11 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 读取枪械 ID（形如 {@code tacz:ak47}）；非枪或不可用返回 {@code null}。
+     * 璇诲彇鏋 ID锛堝舰濡?{@code tacz:ak47}锛夛紱闈炴灙鎴栦笉鍙敤杩斿洖 {@code null}銆?
      *
-     * <p>{@code /aew1 arena ... weapon add} 靠它把管理员主手的枪登记进地图武器池——录入的是 ID
-     * 而不是整个 ItemStack，所以玩家出生时拿到的是一把全新的干净枪，不会继承管理员那把枪身上的
-     * 配件、磨损与弹药状态。
+     * <p>{@code /aew1 arena ... weapon add} 闈犲畠鎶婄鐞嗗憳涓绘墜鐨勬灙鐧昏杩涘湴鍥炬鍣ㄦ睜鈥斺€斿綍鍏ョ殑鏄?ID
+     * 鑰屼笉鏄暣涓?ItemStack锛屾墍浠ョ帺瀹跺嚭鐢熸椂鎷垮埌鐨勬槸涓€鎶婂叏鏂扮殑骞插噣鏋紝涓嶄細缁ф壙绠＄悊鍛橀偅鎶婃灙韬笂鐨?
+     * 閰嶄欢銆佺（鎹熶笌寮硅嵂鐘舵€併€?
      */
     @Nullable
     public static String gunId(ItemStack stack) {
@@ -276,17 +278,17 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 按枪械 ID 造一把<b>可以直接作战</b>的新枪；造不出来返回 {@link ItemStack#EMPTY}。
+     * 鎸夋灙姊?ID 閫犱竴鎶?b>鍙互鐩存帴浣滄垬</b>鐨勬柊鏋紱閫犱笉鍑烘潵杩斿洖 {@link ItemStack#EMPTY}銆?
      *
-     * <p><b>必须走 TaCZ 自己的 {@code GunItemBuilder}</b>，不能只是"新建物品 + 写 GunId"。
-     * 只写 GunId 得到的枪，其余 NBT 全部缺省，而 TaCZ 的缺省值意味着：弹匣 0 发、
-     * 射击模式 {@code UNKNOWN}（客户端只对 BURST/AUTO 分支，UNKNOWN 会落到单发路径，
-     * 于是自动步枪表现得像半自动）、膛内无弹、过热数据未初始化。玩家会拿到一把打不响的枪，
-     * 而这一切没有任何报错——本方法返回的是非空物品，调用方的失败告警也不会触发。
+     * <p><b>蹇呴』璧?TaCZ 鑷繁鐨?{@code GunItemBuilder}</b>锛屼笉鑳藉彧鏄?鏂板缓鐗╁搧 + 鍐?GunId"銆?
+     * 鍙啓 GunId 寰楀埌鐨勬灙锛屽叾浣?NBT 鍏ㄩ儴缂虹渷锛岃€?TaCZ 鐨勭己鐪佸€兼剰鍛崇潃锛氬脊鍖?0 鍙戙€?
+     * 灏勫嚮妯″紡 {@code UNKNOWN}锛堝鎴风鍙 BURST/AUTO 鍒嗘敮锛孶NKNOWN 浼氳惤鍒板崟鍙戣矾寰勶紝
+     * 浜庢槸鑷姩姝ユ灙琛ㄧ幇寰楀儚鍗婅嚜鍔級銆佽啗鍐呮棤寮广€佽繃鐑暟鎹湭鍒濆鍖栥€傜帺瀹朵細鎷垮埌涓€鎶婃墦涓嶅搷鐨勬灙锛?
+     * 鑰岃繖涓€鍒囨病鏈変换浣曟姤閿欌€斺€旀湰鏂规硶杩斿洖鐨勬槸闈炵┖鐗╁搧锛岃皟鐢ㄦ柟鐨勫け璐ュ憡璀︿篃涓嶄細瑙﹀彂銆?
      *
-     * <p>用 Builder 还顺带拿到两件事：{@code build()} 在枪械 ID 未被 TaCZ 加载时返回 EMPTY
-     * （替代一次单独的存在性校验），以及按枪械 type 映射到正确的物品——TaCZ 并非所有枪都共用
-     * 同一个物品，附加包可以注册新的枪械类型。
+     * <p>鐢?Builder 杩橀『甯︽嬁鍒颁袱浠朵簨锛歿@code build()} 鍦ㄦ灙姊?ID 鏈 TaCZ 鍔犺浇鏃惰繑鍥?EMPTY
+     * 锛堟浛浠ｄ竴娆″崟鐙殑瀛樺湪鎬ф牎楠岋級锛屼互鍙婃寜鏋 type 鏄犲皠鍒版纭殑鐗╁搧鈥斺€擳aCZ 骞堕潪鎵€鏈夋灙閮藉叡鐢?
+     * 鍚屼竴涓墿鍝侊紝闄勫姞鍖呭彲浠ユ敞鍐屾柊鐨勬灙姊扮被鍨嬨€?
      */
     public static ItemStack createGun(@Nullable String gunId) {
         if (!AVAILABLE || builderCreate == null || gunId == null || gunId.isBlank()) {
@@ -308,10 +310,10 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 按该枪的定义补齐出厂状态：首个射击模式、满弹匣、膛内一发、过热数据。
+     * 鎸夎鏋殑瀹氫箟琛ラ綈鍑哄巶鐘舵€侊細棣栦釜灏勫嚮妯″紡銆佹弧寮瑰專銆佽啗鍐呬竴鍙戙€佽繃鐑暟鎹€?
      *
-     * <p>与 TaCZ 自己给创造模式物品栏发枪时的做法保持一致。取不到枪械定义时静默跳过——
-     * 此时 {@code build()} 也会返回 EMPTY，调用方会走告警分支，不需要在这里重复报错。
+     * <p>涓?TaCZ 鑷繁缁欏垱閫犳ā寮忕墿鍝佹爮鍙戞灙鏃剁殑鍋氭硶淇濇寔涓€鑷淬€傚彇涓嶅埌鏋瀹氫箟鏃堕潤榛樿烦杩団€斺€?
+     * 姝ゆ椂 {@code build()} 涔熶細杩斿洖 EMPTY锛岃皟鐢ㄦ柟浼氳蛋鍛婅鍒嗘敮锛屼笉闇€瑕佸湪杩欓噷閲嶅鎶ラ敊銆?
      */
     private static void applyGunDefaults(Object builder, ResourceLocation id) throws ReflectiveOperationException {
         Object gunData = gunData(id);
@@ -335,10 +337,70 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 该枪一个弹匣的容量；查不到返回 {@code -1}。
+     * 蹇収鏋鐨?b>闈欐€侀厤缃?/b>锛堥厤浠?灏勫嚮妯″紡/婵€鍏夐鑹茬瓑锛変负 SNBT 瀛楃涓诧紱闈炴灙鎴栦笉鍙敤杩斿洖 {@code null}銆?
+    /**
+     * 蹇収鏋鐨?b>闈欐€侀厤缃?/b>锛堥厤浠?灏勫嚮妯″紡/婵€鍏夐鑹茬瓑锛変负 SNBT 瀛楃涓诧紱闈炴灙鎴栦笉鍙敤杩斿洖 {@code null}銆?
      *
-     * <p>登记武器时用它推导默认备弹——备弹给多少只有对着弹匣容量才有意义，
-     * 一个固定常数对狙击枪和机枪必然有一边是错的。
+     * <p>鍙繚瀛橀潤鎬佹暟鎹細寮瑰專浣欏脊銆佽啗鍐呬竴鍙戙€佺儹閲忋€佽櫄鎷熷寮广€佺粡楠岃繖浜?b>鍔ㄦ€佺姸鎬?/b>琚墺鎺夆€斺€?
+     * 鐜╁鍑虹敓搴旀嬁鍒颁竴鎶婃弧寮瑰專銆侀浂鐑噺鐨勬柊鏋紝鑰屼笉鏄户鎵跨鐞嗗憳涓婃灦鏃剁殑鏃х姸鎬併€?
+     *
+     * <p>鐢?SNBT 瀛楃涓茶€屼笉鏄師濮?NBT锛氶厤瑁呮ā鍨?{@code LoadoutPresetDef} 鏄?MC-free 鐨勬牳蹇冮€昏緫锛?
+     * 涓嶈兘寮曠敤 {@link CompoundTag}锛涘瓧绗︿覆缁?{@link TagParser} 鍙棤鎹熻繕鍘燂紝涓斾笌 Arcade 閰嶈
+     * 鐩綍锛坽@code LoadoutApplier.fromSnbt}锛夌殑鏃㈡湁鏍煎紡淇濇寔涓€鑷淬€?
+     */
+    @Nullable
+    public static String snapshotGunNbt(ItemStack stack) {
+        if (!isGun(stack) || stack.getTag() == null) {
+            return null;
+        }
+        try {
+            CompoundTag copy = stack.getTag().copy();
+            for (String key : GUN_DYNAMIC_NBT_KEYS) {
+                copy.remove(key);
+            }
+            return copy.isEmpty() ? null : copy.toString();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /**
+     * 鎶?{@link #snapshotGunNbt} 鐨勫揩鐓у悎骞跺洖涓€鎶婃柊鏋紱绌哄揩鐓?瑙ｆ瀽澶辫触闈欓粯璺宠繃锛堜繚鎸佸共鍑€鏋級銆?
+     */
+    public static void applyGunSnapshot(ItemStack gun, @Nullable String snbt) {
+        if (gun == null || gun.isEmpty() || snbt == null || snbt.isBlank()) {
+            return;
+        }
+        try {
+            CompoundTag parsed = TagParser.parseTag(snbt);
+            if (!parsed.isEmpty()) {
+                gun.getOrCreateTag().merge(parsed);
+            }
+        } catch (Throwable ignored) {
+            // 蹇収鎹熷潖鏃朵繚鐣欏共鍑€鏋紝涓嶉樆濉炲彂瑁呫€?
+        }
+    }
+
+    /**
+     * 蹇収鏃堕渶瑕佸墧闄ょ殑 TaCZ 鍔ㄦ€佺姸鎬侀敭锛堟灙姊?NBT 椤跺眰閿級銆?
+     * 渚濇嵁 TaCZ 1.1.8 鐨?GunItemDataAccessor 甯搁噺锛欸unCurrentAmmoCount/HasBulletInBarrel/
+     * HeatAmount/OverHeated/DummyAmmo/MaxDummyAmmo/GunLevelExp銆?
+     */
+    static final String[] GUN_DYNAMIC_NBT_KEYS = {
+            "GunCurrentAmmoCount", "HasBulletInBarrel", "HeatAmount", "OverHeated",
+            "DummyAmmo", "MaxDummyAmmo", "GunLevelExp"};
+
+    /**
+     * 璇ユ灙涓€涓脊鍖ｇ殑瀹归噺锛涙煡涓嶅埌杩斿洖 {@code -1}銆?
+     *
+     * <p>鐧昏姝﹀櫒鏃剁敤瀹冩帹瀵奸粯璁ゅ寮光€斺€斿寮圭粰澶氬皯鍙湁瀵圭潃寮瑰專瀹归噺鎵嶆湁鎰忎箟锛?
+     * 涓€涓浐瀹氬父鏁板鐙欏嚮鏋拰鏈烘灙蹇呯劧鏈変竴杈规槸閿欑殑銆?
+     */
+    /**
+     * 璇ユ灙涓€涓脊鍖ｇ殑瀹归噺锛涙煡涓嶅埌杩斿洖 {@code -1}銆?
+     *
+     * <p>鐧昏姝﹀櫒鏃剁敤瀹冩帹瀵奸粯璁ゅ寮光€斺€斿寮圭粰澶氬皯鍙湁瀵圭潃寮瑰專瀹归噺鎵嶆湁鎰忎箟锛?
+     * 涓€涓浐瀹氬父鏁板鐙欏嚮鏋拰鏈烘灙蹇呯劧鏈変竴杈规槸閿欑殑銆?
      */
     public static int magazineSize(@Nullable String gunId) {
         if (!AVAILABLE || gunDataGetAmmoAmount == null || gunId == null) {
@@ -356,7 +418,7 @@ public final class TaczGunBridge {
         }
     }
 
-    /** TaCZ 服务端侧的枪械定义；未加载该枪或解析不到返回 {@code null}。 */
+    /** TaCZ 鏈嶅姟绔晶鐨勬灙姊板畾涔夛紱鏈姞杞借鏋垨瑙ｆ瀽涓嶅埌杩斿洖 {@code null}銆?*/
     @Nullable
     private static Object gunData(ResourceLocation id) throws ReflectiveOperationException {
         if (timelessGetCommonGunIndex == null) {
@@ -377,13 +439,13 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 写入虚拟备弹数，同时也就把这把枪切到了虚拟备弹模式（TaCZ 用 {@code DummyAmmo} 标签是否存在
-     * 判断模式，见 {@code GunItemDataAccessor#useDummyAmmo}）。
+     * 鍐欏叆铏氭嫙澶囧脊鏁帮紝鍚屾椂涔熷氨鎶婅繖鎶婃灙鍒囧埌浜嗚櫄鎷熷寮规ā寮忥紙TaCZ 鐢?{@code DummyAmmo} 鏍囩鏄惁瀛樺湪
+     * 鍒ゆ柇妯″紡锛岃 {@code GunItemDataAccessor#useDummyAmmo}锛夈€?
      *
-     * <p><b>刻意不设 MaxDummyAmmo</b>：设了上限之后弹药箱就补不过初始值，而大战场的补给道具
-     * 正是靠"补到超过出生携带量"来提供战术价值。不设上限则补给不受限。
+     * <p><b>鍒绘剰涓嶈 MaxDummyAmmo</b>锛氳浜嗕笂闄愪箣鍚庡脊鑽灏辫ˉ涓嶈繃鍒濆鍊硷紝鑰屽ぇ鎴樺満鐨勮ˉ缁欓亾鍏?
+     * 姝ｆ槸闈?琛ュ埌瓒呰繃鍑虹敓鎼哄甫閲?鏉ユ彁渚涙垬鏈环鍊笺€備笉璁句笂闄愬垯琛ョ粰涓嶅彈闄愩€?
      *
-     * @return 是否写入成功
+     * @return 鏄惁鍐欏叆鎴愬姛
      */
     public static boolean setDummyAmmo(ItemStack stack, int amount) {
         Object gun = iGun(stack);
@@ -398,7 +460,7 @@ public final class TaczGunBridge {
         }
     }
 
-    /** 弹匣内余弹；非枪或不可用返回 -1。 */
+    /** 寮瑰專鍐呬綑寮癸紱闈炴灙鎴栦笉鍙敤杩斿洖 -1銆?*/
     public static int currentAmmo(ItemStack stack) {
         Object gun = iGun(stack);
         if (gun == null) {
@@ -413,12 +475,12 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 该枪是否为开膛待击（OPEN_BOLT）。开膛枪械没有"独立的膛内一发"，TaCZ 官方 HUD 因此
-     * 不把 {@link #hasBulletInBarrel} 计入弹匣显示数。
+     * 璇ユ灙鏄惁涓哄紑鑶涘緟鍑伙紙OPEN_BOLT锛夈€傚紑鑶涙灙姊版病鏈?鐙珛鐨勮啗鍐呬竴鍙?锛孴aCZ 瀹樻柟 HUD 鍥犳
+     * 涓嶆妸 {@link #hasBulletInBarrel} 璁″叆寮瑰專鏄剧ず鏁般€?
      *
-     * <p>取值链是 {@code IGun.getGunId → TimelessAPI.getClientGunIndex → ClientGunIndex
-     * .getGunData → GunData.getBolt}，纯客户端资源索引。任何一环解析不到都返回 false，
-     * 退回"按闭膛处理"——绝大多数枪械是闭膛，这是更接近正确的默认。
+     * <p>鍙栧€奸摼鏄?{@code IGun.getGunId 鈫?TimelessAPI.getClientGunIndex 鈫?ClientGunIndex
+     * .getGunData 鈫?GunData.getBolt}锛岀函瀹㈡埛绔祫婧愮储寮曘€備换浣曚竴鐜В鏋愪笉鍒伴兘杩斿洖 false锛?
+     * 閫€鍥?鎸夐棴鑶涘鐞?鈥斺€旂粷澶у鏁版灙姊版槸闂啗锛岃繖鏄洿鎺ヨ繎姝ｇ‘鐨勯粯璁ゃ€?
      */
     public static boolean isOpenBolt(ItemStack stack) {
         Object gun = iGun(stack);
@@ -443,13 +505,13 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 按枪械 ID 解析<b>客户端本地化显示名</b>（如 {@code tacz:m24} → "M24"）；
-     * 枪械包未加载 / 专用服务端 / 任何一环解析不到返回 {@code null}（调用方回退到物品名）。
+     * 鎸夋灙姊?ID 瑙ｆ瀽<b>瀹㈡埛绔湰鍦板寲鏄剧ず鍚?/b>锛堝 {@code tacz:m24} 鈫?"M24"锛夛紱
+     * 鏋鍖呮湭鍔犺浇 / 涓撶敤鏈嶅姟绔?/ 浠讳綍涓€鐜В鏋愪笉鍒拌繑鍥?{@code null}锛堣皟鐢ㄦ柟鍥為€€鍒扮墿鍝佸悕锛夈€?
      *
-     * <p>为什么不能靠物品 hover 名：TaCZ 所有枪共用一个物品（{@code tacz:modern_kinetic_gun}），
-     * 它的 hover 名是同一个 translatable key（{@code item.tacz.modern_kinetic_gun}），换成哪把枪
-     * 都一样，拿不到枪的真实型号。真实名字在<b>客户端资源索引</b>里：
-     * {@code TimelessAPI.getClientGunIndex(gunId) → ClientGunIndex.getName}。
+     * <p>涓轰粈涔堜笉鑳介潬鐗╁搧 hover 鍚嶏細TaCZ 鎵€鏈夋灙鍏辩敤涓€涓墿鍝侊紙{@code tacz:modern_kinetic_gun}锛夛紝
+     * 瀹冪殑 hover 鍚嶆槸鍚屼竴涓?translatable key锛坽@code item.tacz.modern_kinetic_gun}锛夛紝鎹㈡垚鍝妸鏋?
+     * 閮戒竴鏍凤紝鎷夸笉鍒版灙鐨勭湡瀹炲瀷鍙枫€傜湡瀹炲悕瀛楀湪<b>瀹㈡埛绔祫婧愮储寮?/b>閲岋細
+     * {@code TimelessAPI.getClientGunIndex(gunId) 鈫?ClientGunIndex.getName}銆?
      */
     @Nullable
     public static String clientGunDisplayName(@Nullable String gunId) {
@@ -469,14 +531,14 @@ public final class TaczGunBridge {
             if (name == null) {
                 return null;
             }
-            // getName() 可能是纯名字也可能是翻译 key，translatable 两条路都不会出错
+            // getName() 鍙兘鏄函鍚嶅瓧涔熷彲鑳芥槸缈昏瘧 key锛宼ranslatable 涓ゆ潯璺兘涓嶄細鍑洪敊
             return net.minecraft.network.chat.Component.translatable(name.toString()).getString();
         } catch (Throwable e) {
             return null;
         }
     }
 
-    /** 是否有已上膛的一发（闭膛枪械 TaCZ 自己的 HUD 会把它计入弹匣数）。 */
+    /** 鏄惁鏈夊凡涓婅啗鐨勪竴鍙戯紙闂啗鏋 TaCZ 鑷繁鐨?HUD 浼氭妸瀹冭鍏ュ脊鍖ｆ暟锛夈€?*/
     public static boolean hasBulletInBarrel(ItemStack stack) {
         Object gun = iGun(stack);
         if (gun == null || gunHasBulletInBarrel == null) {
@@ -490,16 +552,16 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 备弹数。TaCZ <b>没有</b>现成的备弹接口，其官方 HUD 也是遍历背包统计 {@code IAmmo} 与
-     * {@code IAmmoBox}，这里照搬同一套判定：
+     * 澶囧脊鏁般€俆aCZ <b>娌℃湁</b>鐜版垚鐨勫寮规帴鍙ｏ紝鍏跺畼鏂?HUD 涔熸槸閬嶅巻鑳屽寘缁熻 {@code IAmmo} 涓?
+     * {@code IAmmoBox}锛岃繖閲岀収鎼悓涓€濂楀垽瀹氾細
      * <ol>
-     *   <li>虚拟备弹模式（{@code useDummyAmmo}）→ 直接取 {@code getDummyAmmoAmount}；</li>
-     *   <li>背包直读模式（1.1.x 的 {@code useInventoryAmmo}）→ TaCZ 官方 HUD 此时不显示备弹，
-     *       返回 -1 让调用方省略；</li>
-     *   <li>否则遍历背包：散装弹按堆叠数累加，弹药箱按其内含弹量累加，创造弹药箱直接 9999。</li>
+     *   <li>铏氭嫙澶囧脊妯″紡锛坽@code useDummyAmmo}锛夆啋 鐩存帴鍙?{@code getDummyAmmoAmount}锛?/li>
+     *   <li>鑳屽寘鐩磋妯″紡锛?.1.x 鐨?{@code useInventoryAmmo}锛夆啋 TaCZ 瀹樻柟 HUD 姝ゆ椂涓嶆樉绀哄寮癸紝
+     *       杩斿洖 -1 璁╄皟鐢ㄦ柟鐪佺暐锛?/li>
+     *   <li>鍚﹀垯閬嶅巻鑳屽寘锛氭暎瑁呭脊鎸夊爢鍙犳暟绱姞锛屽脊鑽鎸夊叾鍐呭惈寮归噺绱姞锛屽垱閫犲脊鑽鐩存帴 9999銆?/li>
      * </ol>
      *
-     * @return 备弹数；-1 表示"不适用/不显示"
+     * @return 澶囧脊鏁帮紱-1 琛ㄧず"涓嶉€傜敤/涓嶆樉绀?
      */
     public static int reserveAmmo(Player player, ItemStack gunStack) {
         Object gun = iGun(gunStack);
@@ -549,7 +611,7 @@ public final class TaczGunBridge {
                     }
                 }
             } catch (Throwable ignored) {
-                // 单个槽位判定失败不影响其余统计
+                // 鍗曚釜妲戒綅鍒ゅ畾澶辫触涓嶅奖鍝嶅叾浣欑粺璁?
             }
         }
         return total;
@@ -562,7 +624,7 @@ public final class TaczGunBridge {
         return boxIsCreative != null && Boolean.TRUE.equals(boxIsCreative.invoke(item, slot));
     }
 
-    /** 玩家当前是否正在换弹。 */
+    /** 鐜╁褰撳墠鏄惁姝ｅ湪鎹㈠脊銆?*/
     public static boolean isReloading(LivingEntity entity) {
         Object stateType = reloadStateType(entity);
         if (stateType == null || stateTypeIsReloading == null) {
@@ -576,11 +638,11 @@ public final class TaczGunBridge {
     }
 
     /**
-     * 换弹剩余毫秒数；未在换弹或不可用返回 -1。
+     * 鎹㈠脊鍓╀綑姣鏁帮紱鏈湪鎹㈠脊鎴栦笉鍙敤杩斿洖 -1銆?
      *
-     * <p>TaCZ 只同步"剩余时间"，不给总时长——总时长藏在 {@code GunData.getReloadData()} 里，取它
-     * 需要再穿 {@code TimelessAPI → ClientGunIndex → GunData} 三层反射。HUD 只需要一条进度条，
-     * 由调用方记录本次换弹观测到的最大剩余值当分母即可，不值得为此多接三个反射目标。
+     * <p>TaCZ 鍙悓姝?鍓╀綑鏃堕棿"锛屼笉缁欐€绘椂闀库€斺€旀€绘椂闀胯棌鍦?{@code GunData.getReloadData()} 閲岋紝鍙栧畠
+     * 闇€瑕佸啀绌?{@code TimelessAPI 鈫?ClientGunIndex 鈫?GunData} 涓夊眰鍙嶅皠銆侶UD 鍙渶瑕佷竴鏉¤繘搴︽潯锛?
+     * 鐢辫皟鐢ㄦ柟璁板綍鏈鎹㈠脊瑙傛祴鍒扮殑鏈€澶у墿浣欏€煎綋鍒嗘瘝鍗冲彲锛屼笉鍊煎緱涓烘澶氭帴涓変釜鍙嶅皠鐩爣銆?
      */
     public static long reloadCountDownMs(LivingEntity entity) {
         Object state = reloadState(entity);

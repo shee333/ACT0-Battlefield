@@ -158,6 +158,11 @@ public final class LoadoutCommand {
             }
         }
         LoadoutPresetDef next = def.withSlot(slot, itemId);
+        if (LoadoutPresetDef.isWeaponSlot(slot)) {
+            // 同时快照枪械的静态配置（配件/射击模式等），发装时玩家拿到的枪与管理员上架的一致；
+            // 动态状态（弹匣/热量）被剥掉，玩家出生仍是满状态新枪。
+            next = next.withGunNbt(slot, TaczGunBridge.snapshotGunNbt(held));
+        }
         if (LoadoutPresetDef.isWeaponSlot(slot) && ammo > 0) {
             next = next.withAmmo(slot, ammo);
         }
