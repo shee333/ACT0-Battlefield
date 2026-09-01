@@ -121,7 +121,7 @@ public final class LoadoutCommand {
         String presetId = StringArgumentType.getString(c, "preset");
         LoadoutSlot slot = parseSlot(StringArgumentType.getString(c, "slot"));
         if (faction == null || soldierClass == null || slot == null) {
-            BattlefieldCommand.feedback(c, "§c阵营/兵种/槽位无效（槽位：主武器/副武器/道具/投掷物）。");
+            BattlefieldCommand.feedback(c, "§c阵营/兵种/槽位无效（槽位：主武器/副武器/近战/道具/投掷物）。");
             return 0;
         }
         BattlefieldData data = BattlefieldData.get(level);
@@ -278,8 +278,7 @@ public final class LoadoutCommand {
         }
     }
 
-    /** 槽位解析：支持英文 id 与中文别名（主武器/副武器/道具/投掷物）。 */
-    @Nullable
+    /** 槽位解析：支持英文 id 与中文别名（主武器/副武器/近战/道具/投掷物）。 */
     private static LoadoutSlot parseSlot(String raw) {
         LoadoutSlot byId = LoadoutSlot.byId(raw);
         if (byId != null) {
@@ -288,12 +287,14 @@ public final class LoadoutCommand {
         switch (raw.trim()) {
             case "主武器":
                 return LoadoutSlot.PRIMARY;
-            case "副武器":
+case "副武器":
                 return LoadoutSlot.SECONDARY;
-            case "道具":
-                return LoadoutSlot.GADGET_1;
-            case "投掷物":
-                return LoadoutSlot.GADGET_2;
+            case "近战":
+                return LoadoutSlot.MELEE;
+case "道具":
+return LoadoutSlot.GADGET_1;
+case "投掷物":
+return LoadoutSlot.GADGET_2;
             default:
                 return null;
         }

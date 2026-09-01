@@ -10,8 +10,8 @@ import java.util.Objects;
 /**
  * 一套<b>管理员预设</b>的配装定义（配装即目录：物品定义直接内嵌在配装里，不另设物品池）。
  *
- * <p>作用域：地图 × 阵营 × 兵种。一套配装 = 4 个装备槽位（主武器/副武器/道具/投掷物）+ 枪械的
- * 虚拟弹药 + 服装（头盔/胸甲/护腿/靴子，取自管理员上架时身穿的装备）。
+ * <p>作用域：地图 × 阵营 × 兵种。一套配装 = 5 个装备槽位（主武器/副武器/近战/道具1/道具2）
+ * + 枪械的虚拟弹药 + 服装（头盔/胸甲/护腿/靴子，取自管理员上架时身穿的装备）。
  *
  * <p>玩家<b>不能编辑</b>配装内容，只能选择（每兵种选一套）与预览。
  *
@@ -26,9 +26,9 @@ public record LoadoutPresetDef(String id, String displayName,
                                Map<LoadoutSlot, Integer> ammo,
                                ArmorSet armor) {
 
-    /** 配装包含的四个槽位（主武器/副武器/道具/投掷物；近战不在配装范畴）。 */
+    /** 配装包含的五个槽位（主武器/副武器/近战/道具1/道具2）。 */
     public static final List<LoadoutSlot> PRESET_SLOTS = List.of(
-            LoadoutSlot.PRIMARY, LoadoutSlot.SECONDARY,
+            LoadoutSlot.PRIMARY, LoadoutSlot.SECONDARY, LoadoutSlot.MELEE,
             LoadoutSlot.GADGET_1, LoadoutSlot.GADGET_2);
 
     /** 服装的四件套（对应原版盔甲栏）。 */

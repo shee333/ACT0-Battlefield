@@ -33,6 +33,7 @@ class BattlefieldDataPresetTest {
         LoadoutPresetDef def = data.createPreset(Faction.BRAVO, SoldierClass.RECON, "狙击套")
                 .withSlot(LoadoutSlot.PRIMARY, "tacz:m24")
                 .withAmmo(LoadoutSlot.PRIMARY, 40)
+                .withSlot(LoadoutSlot.MELEE, "minecraft:iron_sword")
                 .withSlot(LoadoutSlot.GADGET_1, "act0_battlefield:medic_syringe")
                 .withArmor(new LoadoutPresetDef.ArmorSet(
                         "minecraft:iron_helmet", "minecraft:iron_chestplate", null, "minecraft:iron_boots"));
@@ -43,8 +44,20 @@ class BattlefieldDataPresetTest {
         assertEquals("狙击套", after.displayName());
         assertEquals("tacz:m24", after.slot(LoadoutSlot.PRIMARY));
         assertEquals(40, after.ammoOf(LoadoutSlot.PRIMARY));
+        assertEquals("minecraft:iron_sword", after.slot(LoadoutSlot.MELEE), "近战槽应随 NBT 往返");
         assertEquals("minecraft:iron_helmet", after.armor().helmet());
         assertNull(after.armor().legs(), "未穿的护腿应为 null");
+    }
+
+    @Test
+    void presetSlotsIncludeMelee() {
+        // 近战槽在配装数据模型内：PRESET_SLOTS 驱动发装/预览/界面/命令回显，删掉它会静默丢近战。
+        assertTrue(LoadoutPresetDef.PRESET_SLOTS.contains(LoadoutSlot.MELEE), "PRESET_SLOTS 必须包含近战槽");
+        assertEquals(5, LoadoutPresetDef.PRESET_SLOTS.size());
+        // 近战是普通物品槽（非枪械槽）：withAmmo 对近战应无效果。
+        LoadoutPresetDef def = new BattlefieldData().createPreset(Faction.ALPHA, SoldierClass.ASSAULT, "测试")
+                .withSlot(LoadoutSlot.MELEE, "minecraft:iron_sword");
+        assertEquals(0, def.withAmmo(LoadoutSlot.MELEE, 99).ammoOf(LoadoutSlot.MELEE), "近战不是枪械槽，不应有虚拟弹药");
     }
 
     @Test
