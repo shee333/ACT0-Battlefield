@@ -1,9 +1,13 @@
 package org.shee33.act0.battlefield.client;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.client.extensions.common.IClientItemExtensions;
 
 /**
  * 武器/装备栏渲染 —— 《作战HUD动效规格文档》§4。
@@ -85,23 +89,53 @@ final class WeaponBarRenderer {
         int bg = (Math.round(16 + 16 * raise) << 16) | (Math.round(21 + 18 * raise) << 8) | Math.round(27 + 20 * raise);
         HudShapes.fillSkewedRect(gg, x, y, w, h, CombatHudMath.SKEW_DEG, 0xFF000000 | bg, bgAlpha);
 
-        ItemStack stack = player.getInventory().getItem(index);
-        if (!stack.isEmpty()) {
-            int ix = Math.round(x + (w - ICON) / 2f);
+ItemStack stack = player.getInventory().getItem(index);
+if (!stack.isEmpty()) {
+int ix = Math.round(x + (w - ICON) / 2f);
             int iy = Math.round(y + (h - ICON) / 2f);
+            if (hasUsableIcon(stack)) {
             gg.renderItem(stack, ix, iy);
-            // 未选中槽压暗，对应规格"剪影亮度 0.18→0.60"的三级层级；选中槽不压暗即最亮。
-            float dim = (1f - raise) * 0.55f * alpha;
-            if (dim > 0.01f) {
-                HudShapes.fillSkewedRect(gg, x, y, w, h, CombatHudMath.SKEW_DEG, 0xFF0A0E12, dim);
+            } else {
+                // 模型缺失（客户端缺对应模组/资源）：画占位剪影，避免紫黑方块。
+                drawIconPlaceholder(gg, x, y, w, h);
             }
-        }
+// 未选中槽压暗，对应规格"剪影亮度 0.18→0.60"的三级层级；选中槽不压暗即最亮。
+float dim = (1f - raise) * 0.55f * alpha;
+if (dim > 0.01f) {
+HudShapes.fillSkewedRect(gg, x, y, w, h, CombatHudMath.SKEW_DEG, 0xFF0A0E12, dim);
+}
+}
 
         String key = String.valueOf(index + 1);
         int keyColor = raise > 0.5f ? CombatHudMath.GOLD : 0xFFE8EDF2;
         float keyAlpha = raise > 0.5f ? alpha : alpha * 0.45f;
         gg.drawString(font, key, Math.round(x + w / 2f - font.width(key) / 2f),
                 Math.round(y + h + 2), withAlpha(keyColor, keyAlpha), false);
+    }
+
+    /**
+     * 物品是否具备可渲染图标：有 BEWLR 自定义渲染器（如 TaCZ 枪械 3D 模型）或模型不是
+     * missing model（紫黑方块）都算可用；两者皆无时视为占位，画几何剪影而不是紫黑。
+     */
+    private static boolean hasUsableIcon(ItemStack stack) {
+        if (IClientItemExtensions.of(stack).getCustomRenderer() != null) {
+            return true;
+        }
+        BakedModel model = Minecraft.getInstance().getItemRenderer().getItemModelShaper().getItemModel(stack);
+        return model != null && model != Minecraft.getInstance().getModelManager().getMissingModel();
+    }
+
+    /** 缺失模型物品的占位剪影：斜切边框 + 中央短横线，延续"剪影亮度"的槽位语言。 */
+    private static void drawIconPlaceholder(GuiGraphics gg, float x, float y, float w, float h) {
+        float cx = x + w / 2f;
+        float cy = y + h / 2f;
+        // 中央短横线（物品"轮廓"的抽象），战地风格：几何化、低信息噪音。
+        HudShapes.fillSkewedRect(gg, cx - 4f, cy - 1f, 8f, 2f, CombatHudMath.SKEW_DEG, 0xFFB0B0B0, 1f);
+        // 四角斜切短角线，勾勒一个"空槽轮廓"。
+        HudShapes.fillSkewedRect(gg, cx - 5f, cy - 5f, 2f, 3f, CombatHudMath.SKEW_DEG, 0xFF3A3A3A, 1f);
+        HudShapes.fillSkewedRect(gg, cx + 3f, cy - 5f, 2f, 3f, CombatHudMath.SKEW_DEG, 0xFF3A3A3A, 1f);
+        HudShapes.fillSkewedRect(gg, cx - 5f, cy + 2f, 2f, 3f, CombatHudMath.SKEW_DEG, 0xFF3A3A3A, 1f);
+        HudShapes.fillSkewedRect(gg, cx + 3f, cy + 2f, 2f, 3f, CombatHudMath.SKEW_DEG, 0xFF3A3A3A, 1f);
     }
 
     private static void drawUnderline(GuiGraphics gg, float targetLeft, float targetWidth, int baseline, long now) {
