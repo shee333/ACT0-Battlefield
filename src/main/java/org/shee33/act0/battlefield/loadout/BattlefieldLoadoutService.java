@@ -165,6 +165,9 @@ public final class BattlefieldLoadoutService {
                     continue;
                 }
                 ItemStack stack = stackFor(slot, itemId, preset.ammoOf(slot), preset.gunNbtOf(slot));
+                if (!stack.isEmpty()) {
+                    player.getInventory().setItem(slot.hotbarIndex(), stack);
+                }
             }
             applyArmor(player, preset.armor());
         }
