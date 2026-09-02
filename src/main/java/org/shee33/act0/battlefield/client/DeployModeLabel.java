@@ -19,7 +19,7 @@ public final class DeployModeLabel {
     private static final long MODE_DURATION_MS = 280L;
     private static final long MAP_DELAY_MS = 80L;
     private static final long MAP_DURATION_MS = 280L;
-    private static final int MASK_WIDTH = 220;
+    private static final int MASK_WIDTH = 140;
 
     private static final int MODE_COLOR = 0xFFFFFFFF;
     private static final int MAP_COLOR = 0x99E8EDF2;

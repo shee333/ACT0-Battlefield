@@ -29,13 +29,15 @@ import java.util.List;
  * {@code targets()}/{@code hoveredTarget()} 不再参与点击/悬停判定(见部署界面动效规格文档
  * Wave2 设计决策 3)。
  *
- * <p>Wave3 新增:底部武器更换上拉面板({@link DeployWeaponPanel})取代旧的右侧纵向配装文字列表
- * ({@code renderLoadoutPanel}，已删除，避免同一份配装信息在两处重复展示)，是本次"部署界面大改"
- * 里唯一涉及真实换装功能的一块——{@link DeployWeaponPanel#handleClick} 在 {@link #mouseClicked}
- * 里被赋予比地图选点更高的点击优先级(先命中武器栏/面板，未命中才落到 {@link DeployMapPanel})。
+ * <p>Wave3 新增:底部武器更换上拉面板取代旧的右侧纵向配装文字列表
+ * ({@code renderLoadoutPanel}，已删除，避免同一份配装信息在两处重复展示)。
  *
  * <p>Wave4 新增:底部配装下拉({@link DeployPresetDropdown})取代旧的纯展示条，提供同兵种预设间的
  * 真实切换（点击 → 上弹该阵营该兵种的全预设列表 → 点选 → 服务端回推新的 DeployLoadoutDto）。
+ * 兵种切换由其上方的 {@link DeployClassBar} 承担。
+ *
+ * <p>Wave5 顶部清爽化:去掉居中的"重新部署"大标题——顶部条左侧只剩模式/地图名
+ * ({@link DeployModeLabel})，部署倒计时改右对齐靠右，两组文字各占一端不再互撞。
  */
 public final class BattlefieldDeployScreen extends Screen {
 
@@ -65,14 +67,15 @@ public final class BattlefieldDeployScreen extends Screen {
         DeployStatusDto st = ClientDeployStatus.status();
 
         // 顶部信息条：保留最小状态信息，真实战场画面保持可见。
+        // 布局：左侧是模式/地图名（DeployModeLabel），右侧是部署倒计时——两组各占一端，
+        // 不再把"重新部署"大标题压在中间（它和左侧文字在窄屏会互撞，且玩家已在部署界面里，
+        // 标题本身是冗余信息）。
         gg.fill(0, 0, width, 28, 0x88000000);
         gg.fill(0, 28, width, 30, PixelTheme.ALPHA_COLOR);
-        String title = "§b§l重新部署";
-        gg.drawString(font, title, width / 2 - font.width(title) / 2, 8, 0xFFFFFFFF, false);
+        DeployModeLabel.render(gg, font, st, 8, 4);
         int ready = st == null ? 0 : Math.max(0, st.readyInTicks());
         String timer = ready > 0 ? "§7可部署倒计时 §f" + ((ready + 19) / 20) + " 秒" : "§a可以部署";
-        gg.drawString(font, timer, width / 2 - font.width(timer) / 2, 19, 0xFFFFFFFF, false);
-        DeployModeLabel.render(gg, font, st, 8, 4);
+        gg.drawString(font, timer, width - 8 - font.width(timer), 10, 0xFFFFFFFF, false);
 
         updateSquadSpectate(st);
 
