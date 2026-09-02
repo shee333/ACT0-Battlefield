@@ -2,9 +2,9 @@ package org.shee33.act0.battlefield.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.extensions.common.IClientItemExtensions;
@@ -114,15 +114,25 @@ HudShapes.fillSkewedRect(gg, x, y, w, h, CombatHudMath.SKEW_DEG, 0xFF0A0E12, dim
     }
 
     /**
-     * 物品是否具备可渲染图标：有 BEWLR 自定义渲染器（如 TaCZ 枪械 3D 模型）或模型不是
-     * missing model（紫黑方块）都算可用；两者皆无时视为占位，画几何剪影而不是紫黑。
+     * 物品是否具备可渲染图标：有 BEWLR 自定义渲染器（如 TaCZ 枪械 3D 模型）或模型有效且
+     * 代表贴图不是 missing sprite（紫黑方块）都算可用；否则视为占位，画几何剪影而不是紫黑。
+     *
+     * <p>贴图层检查（particle icon）：0.2.29 只拦了"整个模型缺失"，但某些模组物品的模型存在、
+     * 引用的贴图却不在图集里——模型不是 missing model，渲染出来仍是紫黑棋盘。particle icon
+     * 是模型取第一块可用贴图的代表，缺贴图时它会落到 missing sprite，用它能拦下这一类。
      */
     private static boolean hasUsableIcon(ItemStack stack) {
         if (IClientItemExtensions.of(stack).getCustomRenderer() != null) {
+            // BEWLR（TaCZ 枪等）由模组自己画，不走方块模型贴图，模型层检查对它无意义。
             return true;
         }
-        BakedModel model = Minecraft.getInstance().getItemRenderer().getItemModelShaper().getItemModel(stack);
-        return model != null && model != Minecraft.getInstance().getModelManager().getMissingModel();
+        Minecraft mc = Minecraft.getInstance();
+        BakedModel model = mc.getItemRenderer().getItemModelShaper().getItemModel(stack);
+        if (model == null || model == mc.getModelManager().getMissingModel()) {
+            return false;
+        }
+        return !MissingTextureAtlasSprite.getLocation()
+                .equals(model.getParticleIcon().atlasLocation());
     }
 
     /** 缺失模型物品的占位剪影：斜切边框 + 中央短横线，延续"剪影亮度"的槽位语言。 */
