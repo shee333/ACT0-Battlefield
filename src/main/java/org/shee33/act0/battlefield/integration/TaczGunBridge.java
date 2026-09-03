@@ -47,9 +47,10 @@ public final class TaczGunBridge {
 
     private static Method gunGetGunId;
     private static Method gunSetDummyAmmoAmount;
-    private static Method timelessGetClientGunIndex;
+private static Method timelessGetClientGunIndex;
     private static Method timelessGetCommonGunIndex;
-    private static Method clientIndexGetGunData;
+    private static Method timelessGetGunDisplay;
+private static Method clientIndexGetGunData;
     private static Method clientIndexGetName;
     private static Method gunDataGetBolt;
     private static Object openBoltConstant;
@@ -106,14 +107,15 @@ public final class TaczGunBridge {
     static final String CLASS_CLIENT_GUN_INDEX = "com.tacz.guns.client.resource.index.ClientGunIndex";
     static final String CLASS_GUN_DATA = "com.tacz.guns.resource.pojo.data.gun.GunData";
     static final String CLASS_BOLT = "com.tacz.guns.resource.pojo.data.gun.Bolt";
-    static final String M_GET_GUN_ID = "getGunId";
-    static final String M_SET_DUMMY_AMMO_AMOUNT = "setDummyAmmoAmount";
-    static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
+static final String M_GET_GUN_ID = "getGunId";
+static final String M_SET_DUMMY_AMMO_AMOUNT = "setDummyAmmoAmount";
+static final String M_GET_CLIENT_GUN_INDEX = "getClientGunIndex";
     static final String M_GET_COMMON_GUN_INDEX = "getCommonGunIndex";
-    static final String M_GET_GUN_DATA = "getGunData";
-    static final String M_GET_NAME = "getName";
-    static final String M_GET_BOLT = "getBolt";
-    static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
+    static final String M_GET_GUN_DISPLAY = "getGunDisplay";
+static final String M_GET_GUN_DATA = "getGunData";
+static final String M_GET_NAME = "getName";
+static final String M_GET_BOLT = "getBolt";
+static final String ENUM_OPEN_BOLT = "OPEN_BOLT";
 
     static final String CLASS_GUN_ITEM_BUILDER = "com.tacz.guns.api.item.builder.GunItemBuilder";
     static final String CLASS_COMMON_GUN_INDEX = "com.tacz.guns.resource.index.CommonGunIndex";
@@ -168,11 +170,14 @@ public final class TaczGunBridge {
         gunDataHasHeatData = optional(gunDataClass, M_HAS_HEAT_DATA);
 
         try {
-            gunGetGunId = iGunClass == null ? null : iGunClass.getMethod(M_GET_GUN_ID, ItemStack.class);
-            Class<?> timelessApi = Class.forName(CLASS_TIMELESS_API);
-            timelessGetCommonGunIndex = optional(timelessApi, M_GET_COMMON_GUN_INDEX, ResourceLocation.class);
+gunGetGunId = iGunClass == null ? null : iGunClass.getMethod(M_GET_GUN_ID, ItemStack.class);
+Class<?> timelessApi = Class.forName(CLASS_TIMELESS_API);
+timelessGetCommonGunIndex = optional(timelessApi, M_GET_COMMON_GUN_INDEX, ResourceLocation.class);
             timelessGetClientGunIndex = timelessApi.getMethod(M_GET_CLIENT_GUN_INDEX, ResourceLocation.class);
-            clientIndexGetGunData = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_GUN_DATA);
+            // 与枪械 GUI 渲染同源的判定：getGunDisplay(stack) 为 empty 时 TaCZ 会拿
+            // missing texture 画槽位图标（紫黑），客户端缺该枪 index/display 数据即触发。
+            timelessGetGunDisplay = optional(timelessApi, M_GET_GUN_DISPLAY, ItemStack.class);
+clientIndexGetGunData = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_GUN_DATA);
             clientIndexGetName = Class.forName(CLASS_CLIENT_GUN_INDEX).getMethod(M_GET_NAME);
             gunDataGetBolt = Class.forName(CLASS_GUN_DATA).getMethod(M_GET_BOLT);
             for (Object constant : Class.forName(CLASS_BOLT).getEnumConstants()) {
@@ -551,6 +556,29 @@ public final class TaczGunBridge {
         }
     }
 
+
+    /**
+     * 枪械能否在客户端渲染出真实图标（非紫黑）。
+     *
+     * <p>与 TaCZ GUI 渲染<b>同源</b>判定：HUD 槽位调 {@code renderItem} 时枪走 BEWLR
+     * （{@code GunItemRendererWrapper}），其内部调 {@code TimelessAPI.getGunDisplay(stack)}——
+     * 该 Optional 为空（客户端缺这把枪的 index/display 数据）时 TaCZ 会直接用 missing texture
+     * 画槽位贴图，即紫黑方块。此处判 empty 即可提前拦截，画占位剪影而不是紫黑。
+     *
+     * <p>注意不能拿 {@code getClientGunIndex} 当判据：display JSON 缺失时 client index 仍可能
+     * 存在，但 {@code getDefaultDisplay()} 已为 null，渲染照样紫黑。
+     */
+    public static boolean isClientRenderable(ItemStack stack) {
+        if (!AVAILABLE || timelessGetGunDisplay == null || stack == null || stack.isEmpty()) {
+            return false;
+        }
+        try {
+            Object optional = timelessGetGunDisplay.invoke(null, stack);
+            return optional instanceof java.util.Optional<?> opt && opt.isPresent();
+        } catch (Throwable e) {
+            return false;
+        }
+    }
     /**
      * 澶囧脊鏁般€俆aCZ <b>娌℃湁</b>鐜版垚鐨勫寮规帴鍙ｏ紝鍏跺畼鏂?HUD 涔熸槸閬嶅巻鑳屽寘缁熻 {@code IAmmo} 涓?
      * {@code IAmmoBox}锛岃繖閲岀収鎼悓涓€濂楀垽瀹氾細

@@ -8,6 +8,7 @@ import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.extensions.common.IClientItemExtensions;
+import org.shee33.act0.battlefield.integration.TaczGunBridge;
 
 /**
  * 武器/装备栏渲染 —— 《作战HUD动效规格文档》§4。
@@ -114,16 +115,22 @@ HudShapes.fillSkewedRect(gg, x, y, w, h, CombatHudMath.SKEW_DEG, 0xFF0A0E12, dim
     }
 
     /**
-     * 物品是否具备可渲染图标：有 BEWLR 自定义渲染器（如 TaCZ 枪械 3D 模型）或模型有效且
-     * 代表贴图不是 missing sprite（紫黑方块）都算可用；否则视为占位，画几何剪影而不是紫黑。
-     *
-     * <p>贴图层检查（particle icon）：0.2.29 只拦了"整个模型缺失"，但某些模组物品的模型存在、
-     * 引用的贴图却不在图集里——模型不是 missing model，渲染出来仍是紫黑棋盘。particle icon
-     * 是模型取第一块可用贴图的代表，缺贴图时它会落到 missing sprite，用它能拦下这一类。
+     * 物品是否具备可渲染图标；否则视为占位，画几何剪影而不是紫黑。判定分层：
+     * <ol>
+     *   <li><b>TaCZ 枪械</b>（BEWLR 3D/槽位贴图渲染）：走 {@link TaczGunBridge#isClientRenderable}——
+     *       与渲染同源判 empty，客户端缺该枪 index/display 数据时 TaCZ 会用 missing texture
+     *       画图标（紫黑），必须先拦。不能信 BEWLR 存在即渲染正常。</li>
+     *   <li><b>其他 BEWLR 物品</b>：由各自模组自绘，本 mod 无法判定其内部资源，只能放行。</li>
+     *   <li><b>普通方块模型物品</b>：模型缺失（missing model）或代表贴图落到 missing sprite
+     *       （缺贴图，模型存在也会紫黑）都判不可用。</li>
+     * </ol>
      */
     private static boolean hasUsableIcon(ItemStack stack) {
         if (IClientItemExtensions.of(stack).getCustomRenderer() != null) {
-            // BEWLR（TaCZ 枪等）由模组自己画，不走方块模型贴图，模型层检查对它无意义。
+            if (TaczGunBridge.isGun(stack)) {
+                return TaczGunBridge.isClientRenderable(stack);
+            }
+            // 非枪械的 BEWLR（盾牌等）：模组自绘，放行。
             return true;
         }
         Minecraft mc = Minecraft.getInstance();

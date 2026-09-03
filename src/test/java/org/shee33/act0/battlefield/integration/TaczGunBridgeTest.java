@@ -45,12 +45,15 @@ class TaczGunBridgeTest {
     /** 按 ID 造枪与写虚拟备弹这条链路：拼错同样不报错，只会让玩家出生时空手。 */
     @Test
     void loadoutMethodNamesMatchUpstream() {
-        assertEquals("getGunId", TaczGunBridge.M_GET_GUN_ID);
-        assertEquals("setDummyAmmoAmount", TaczGunBridge.M_SET_DUMMY_AMMO_AMOUNT,
+assertEquals("getGunId", TaczGunBridge.M_GET_GUN_ID);
+assertEquals("setDummyAmmoAmount", TaczGunBridge.M_SET_DUMMY_AMMO_AMOUNT,
                 "TaCZ 的写入方法是 setDummyAmmoAmount，读取才叫 getDummyAmmoAmount");
-        assertEquals("getCommonGunIndex", TaczGunBridge.M_GET_COMMON_GUN_INDEX,
+        assertEquals("getClientGunIndex", TaczGunBridge.M_GET_CLIENT_GUN_INDEX);
+assertEquals("getCommonGunIndex", TaczGunBridge.M_GET_COMMON_GUN_INDEX,
                 "服务端要用 Common 索引，Client 索引在专用服务端上永远是空的");
-    }
+        assertEquals("getGunDisplay", TaczGunBridge.M_GET_GUN_DISPLAY,
+                "HUD 槽位判枪械可渲染（非紫黑）用 TimelessAPI.getGunDisplay(ItemStack)");
+}
 
     /**
      * 造枪走 TaCZ 自己的 Builder。这些名字拼错的后果不是发不出枪，而是发出一把
