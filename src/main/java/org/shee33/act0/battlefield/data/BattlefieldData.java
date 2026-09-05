@@ -73,7 +73,16 @@ public final class BattlefieldData extends SavedData {
     private int minPlayersToStart;
 
     /** 该地图的对局人数上限；{@code 0} 表示跟随全局配置。 */
+    /** 该地图的对局人数上限；{@code 0} 表示跟随全局配置。 */
     private int maxPlayers;
+
+    /**
+     * 该地图对局中的 HUD 是否用原版快捷栏（放右下角）替代自绘武器栏。
+     *
+     * <p>管理员用 {@code /aew1 hud vanilla} 切换。原版快捷栏需要玩家手持物品（含其他模组物品）
+     * 都按原版方式渲染，某些模组物品在我们的自绘武器栏里会显示为紫黑——此开关为这类环境提供逃生门。
+     */
+    private boolean vanillaHudMode;
 
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
@@ -225,6 +234,16 @@ public final class BattlefieldData extends SavedData {
     /** 原始设置值；{@code 0} 表示未设置。生效值请用 {@link #effectiveMaxPlayers(int)}。 */
     public int maxPlayersRaw() {
         return maxPlayers;
+    }
+
+    /** 对局 HUD 是否用原版快捷栏（放右下角）替代自绘武器栏。 */
+    public boolean vanillaHudMode() {
+        return vanillaHudMode;
+    }
+
+    public void setVanillaHudMode(boolean vanilla) {
+        this.vanillaHudMode = vanilla;
+        setDirty();
     }
 
     /** 该地图实际生效的自动开始人数：设过就用地图的，否则用传入的全局默认。 */
@@ -605,6 +624,9 @@ return t;
         if (maxPlayers > 0) {
             tag.putInt("maxPlayers", maxPlayers);
         }
+        if (vanillaHudMode) {
+            tag.putBoolean("vanillaHudMode", true);
+        }
         if (tickets > 0) {
             tag.putInt("tickets", tickets);
         }
@@ -667,6 +689,7 @@ return t;
         }
         data.minPlayersToStart = Math.max(0, tag.getInt("minPlayersToStart"));
         data.maxPlayers = Math.max(0, tag.getInt("maxPlayers"));
+        data.vanillaHudMode = tag.getBoolean("vanillaHudMode");
         data.tickets = Math.max(0, tag.getInt("tickets"));
         if (tag.contains("returnPoint")) {
             data.returnPoint = ReturnPoint.load(tag.getCompound("returnPoint"));

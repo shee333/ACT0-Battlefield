@@ -1,5 +1,6 @@
 package org.shee33.act0.battlefield.command;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -37,6 +38,7 @@ import org.shee33.act0.battlefield.hologram.BattlefieldEntranceHolograms;
 import org.shee33.act0.battlefield.match.ConquestMatch;
 import org.shee33.act0.battlefield.match.ConquestManager;
 import org.shee33.act0.battlefield.match.MapTemplateManager;
+import org.shee33.act0.battlefield.network.BattlefieldNetwork;
 import org.shee33.act0.battlefield.reg.BattlefieldRegistry;
 
 import javax.annotation.Nullable;
@@ -114,7 +116,11 @@ public final class BattlefieldCommand {
                                 .then(Commands.argument("value", IntegerArgumentType.integer(0, 128))
                                         .executes(BattlefieldCommand::setMaxPlayers)))
                         .then(Commands.literal("info").executes(BattlefieldCommand::mapInfo)))
-                .then(Commands.literal("point").requires(s -> s.hasPermission(2))
+                .then(Commands.literal("hud").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("vanilla")
+                                .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                        .executes(BattlefieldCommand::setHudVanilla))))
+.then(Commands.literal("point").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("add")
                                 .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                         .executes(BattlefieldCommand::addPointAt)))
@@ -501,6 +507,27 @@ public final class BattlefieldCommand {
                 : "§7本地图自动开始人数已清除，跟随全局配置（当前 "
                         + BattlefieldConfig.MIN_PLAYERS_TO_START.get() + "）");
         Act0Battlefield.broadcastRoomList(c.getSource().getServer());
+        return 1;
+    }
+
+    /**
+     * 切换本图对局 HUD 的快捷栏模式：{@code true} = 原版快捷栏（放右下角），
+     * {@code false} = 自绘武器栏（默认）。
+     *
+     * <p>切换后立即向当前图内所有玩家广播一次，无需等下一轮 HUD 快照；
+     * 玩家中途进图时也会在对局入场处收到当前值（见两个 Match 的 onPlayerLogin）。
+     */
+    private static int setHudVanilla(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        boolean vanilla = BoolArgumentType.getBool(c, "enabled");
+        BattlefieldData data = BattlefieldData.get(level);
+        data.setVanillaHudMode(vanilla);
+        for (ServerPlayer p : level.players()) {
+            BattlefieldNetwork.sendVanillaHudMode(p, vanilla);
+        }
+        feedback(c, vanilla
+                ? "§a本图对局 HUD 已切换为原版快捷栏（右下角）模式。"
+                : "§a本图对局 HUD 已恢复自绘武器栏。");
         return 1;
     }
 

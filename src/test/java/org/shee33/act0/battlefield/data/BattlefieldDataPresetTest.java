@@ -94,5 +94,18 @@ class BattlefieldDataPresetTest {
         assertEquals("minecraft:overworld", loaded.returnPoint().dimension());
         data.setReturnPoint(null);
         assertNull(BattlefieldData.load(data.save(new CompoundTag())).returnPoint());
+        data.setReturnPoint(null);
+        assertNull(BattlefieldData.load(data.save(new CompoundTag())).returnPoint());
     }
+
+    @Test
+    void vanillaHudModeRoundTrips() {
+        BattlefieldData data = new BattlefieldData();
+        assertFalse(data.vanillaHudMode(), "默认应为自绘武器栏（非原版快捷栏）");
+        data.setVanillaHudMode(true);
+        assertTrue(BattlefieldData.load(data.save(new CompoundTag())).vanillaHudMode(),
+                "原版快捷栏开关应随 NBT 往返");
+data.setVanillaHudMode(false);
+assertFalse(BattlefieldData.load(data.save(new CompoundTag())).vanillaHudMode());
+}
 }

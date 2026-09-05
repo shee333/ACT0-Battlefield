@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "22";
+    private static final String PROTOCOL = "23";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -145,9 +145,12 @@ public final class BattlefieldNetwork {
             LoadoutSelectClassPacket::encode, LoadoutSelectClassPacket::decode,
             LoadoutSelectClassPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, LoadoutSelectPresetPacket.class,
-            LoadoutSelectPresetPacket::encode, LoadoutSelectPresetPacket::decode,
+                LoadoutSelectPresetPacket::encode, LoadoutSelectPresetPacket::decode,
             LoadoutSelectPresetPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
-    }
+        CHANNEL.registerMessage(id++, SyncVanillaHudPacket.class,
+                SyncVanillaHudPacket::encode, SyncVanillaHudPacket::decode,
+                SyncVanillaHudPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+}
 
     /**
      * 向受击者推送伤害来源方位角（弧度，正北 0 顺时针）。只发方位、不发坐标，
@@ -196,6 +199,11 @@ public final class BattlefieldNetwork {
 
     public static void sendBreakthroughHud(ServerPlayer player, BreakthroughHudDto hud) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncBreakthroughHudPacket(hud));
+    }
+
+    /** 向玩家推送本图对局的 HUD 模式（自绘武器栏 / 原版快捷栏）。 */
+    public static void sendVanillaHudMode(ServerPlayer player, boolean vanillaHud) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncVanillaHudPacket(vanillaHud));
     }
 
     public static void sendDeployLoadout(ServerPlayer player, DeployLoadoutDto loadout) {
