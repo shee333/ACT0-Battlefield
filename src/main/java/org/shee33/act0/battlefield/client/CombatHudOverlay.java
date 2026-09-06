@@ -94,13 +94,13 @@ public final class CombatHudOverlay {
         KillPromptRenderer.render(gg, font, now);
 
         int bottomY = gg.guiHeight() - MARGIN;
-        // vanilla 快捷栏模式：不画自绘武器栏（斜切槽 + 弹药信息块），改把原版快捷栏
-        // 平移去右下角重画（在 shake 作用域外，避免受击抖动带偏整条）。
-        boolean vanillaHotbar = VanillaHotbarRenderer.active();
+        // vanilla 快捷栏模式：原版 HOTBAR/ITEM_NAME 已由 VanillaHotbarOverlayHandler 平移并
+        // 自绘渲染（在 Forge 的 overlay 阶段，早于本 Post 事件），这里只跳过自绘武器栏避免重复。
+        boolean vanillaHotbar = ClientVanillaHud.isVanillaHud();
         int weaponLeft;
         if (vanillaHotbar) {
-            // 先拿占位：碰撞保护要用原版 hotbar 的左缘，但真正的渲染放在 shake 之外。
-            weaponLeft = gg.guiWidth() - 8 - VanillaHotbarRenderer.hotbarWidthHint(player);
+            // 原版快捷栏左缘（右对齐 8px、宽 182）作血量面板的碰撞右界。
+            weaponLeft = gg.guiWidth() - MARGIN - 182;
         } else {
             weaponLeft = WeaponBarRenderer.render(gg, font, player, gg.guiWidth() - MARGIN, bottomY, now);
         }
@@ -112,11 +112,6 @@ public final class CombatHudOverlay {
                 Math.max(panelLeft + CombatHudMath.SQUAD_BAR_MIN_W, panelMaxRight), now);
 
         gg.pose().popPose();
-
-        if (vanillaHotbar) {
-            // 受击抖动 translate 之外重画原版快捷栏。
-            VanillaHotbarRenderer.render(gg, event.getPartialTick(), player);
-        }
     }
     /** 两种模式取各自 HUD 的 squad 列表；都没显示时返回 null。 */
     private static List<SquadMateHudDto> activeSquad() {

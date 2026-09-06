@@ -158,11 +158,17 @@ public final class LoadoutCommand {
             }
         }
         LoadoutPresetDef next = def.withSlot(slot, itemId);
+        // 快照管理员上架时手里的物品，发装时按快照原样还原：
+        // - 枪械槽：剥离动态态（弹匣/热量）后的静态配置（配件等），发装造满状态新枪再合并
+        // - 普通槽（近战/道具/投掷物）：整份物品 NBT 快照——某些模组物品的显示与功能由 NBT
+        //   驱动（类似枪的 GunId），只存注册 ID 会让玩家拿到缺 NBT 的裸物品（紫黑 + 无法使用）
+        String snapshot;
         if (LoadoutPresetDef.isWeaponSlot(slot)) {
-            // 同时快照枪械的静态配置（配件/射击模式等），发装时玩家拿到的枪与管理员上架的一致；
-            // 动态状态（弹匣/热量）被剥掉，玩家出生仍是满状态新枪。
-            next = next.withGunNbt(slot, TaczGunBridge.snapshotGunNbt(held));
+            snapshot = TaczGunBridge.snapshotGunNbt(held);
+        } else {
+            snapshot = snapshotItemNbt(held);
         }
+        next = next.withGunNbt(slot, snapshot);
         if (LoadoutPresetDef.isWeaponSlot(slot) && ammo > 0) {
             next = next.withAmmo(slot, ammo);
         }
@@ -172,6 +178,20 @@ public final class LoadoutCommand {
         return 1;
     }
 
+    /** 整份 ItemStack（含注册 ID、Count 与全部 NBT）序列化为 SNBT；失败返回 {@code null}。 */
+    @Nullable
+    private static String snapshotItemNbt(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        try {
+            net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+            stack.save(tag);
+            return tag.toString();
+        } catch (Throwable e) {
+            return null;
+        }
+    }
     private static int armor(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = c.getSource().getPlayerOrException();
         ServerLevel level = player.serverLevel();

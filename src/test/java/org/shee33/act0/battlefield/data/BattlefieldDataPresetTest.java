@@ -105,7 +105,7 @@ class BattlefieldDataPresetTest {
         data.setVanillaHudMode(true);
         assertTrue(BattlefieldData.load(data.save(new CompoundTag())).vanillaHudMode(),
                 "原版快捷栏开关应随 NBT 往返");
-data.setVanillaHudMode(false);
-assertFalse(BattlefieldData.load(data.save(new CompoundTag())).vanillaHudMode());
-}
+        data.setVanillaHudMode(false);
+        assertFalse(BattlefieldData.load(data.save(new CompoundTag())).vanillaHudMode());
+    }
 }

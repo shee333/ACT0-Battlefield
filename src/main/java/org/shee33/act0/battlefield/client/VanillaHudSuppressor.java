@@ -12,19 +12,20 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * 对局期间隐藏被作战 HUD 取代的原版 HUD 元件，并把开火动作转发给准心扩散。
+ * 对局期间隐藏被作战 HUD 取代的原版 HUD 元件。
  *
-* <p>{@link CombatHudOverlay} 自绘了快捷栏与血量，若原版同时还在画，屏幕上会出现两套血条、
-* 以及底部中央一条与右下武器栏重复的快捷栏。<b>准星不在屏蔽之列</b>——自绘准星已按需求移除，
-* 交还原版/TaCZ 渲染。饥饿/护甲/经验条一并隐藏是因为
-* 它们原本紧贴快捷栏排布，快捷栏一旦撤走这几条会散落在屏幕底部中央，反而更碍眼。
+ * <p>{@link CombatHudOverlay} 自绘了快捷栏与血量，若原版同时还在画，屏幕上会出现两套血条、
+ * 以及底部中央一条与右下武器栏重复的快捷栏。<b>准星不在屏蔽之列</b>——自绘准星已按需求移除，
+ * 交还原版/TaCZ 渲染。饥饿/护甲/经验条一并隐藏是因为
+ * 它们原本紧贴快捷栏排布，快捷栏一旦撤走这几条会散落在屏幕底部中央，反而更碍眼。
  *
- * <p>ITEM_NAME（选中物品名）原版画在快捷栏上方居中，随快捷栏一并屏蔽。
- * vanilla 快捷栏模式（{@code /aew1 hud vanilla true}）下快捷栏与物品名由
- * {@link CombatHudOverlay} 用原版 {@code Gui#renderHotbar} 重画到右下角，此处仍屏蔽原版居中版本。
+ * <p><b>vanilla 快捷栏模式</b>（{@code /aew1 hud vanilla true}）：HOTBAR/ITEM_NAME 两个原版
+ * 覆盖层<b>不</b>在此屏蔽，改由 {@link VanillaHotbarOverlayHandler} 整体平移到右下角后再由
+ * 原版自己渲染——物品图标走原版渲染管线，规避自绘武器栏对个别模组物品的显示问题。血条等
+ * 其余元件仍屏蔽（血量面板自绘）。tac_gun_hud_overlay 弹药读数在 vanilla 模式同样放行。
  *
-* <p>只在对局 HUD 显示时生效，退出对局立刻恢复原版 HUD。
-*/
+ * <p>只在对局 HUD 显示时生效，退出对局立刻恢复原版 HUD。
+ */
 @Mod.EventBusSubscriber(modid = Act0Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class VanillaHudSuppressor {
 
@@ -64,6 +65,12 @@ public final class VanillaHudSuppressor {
         }
         for (VanillaGuiOverlay vanilla : SUPPRESSED) {
             if (vanilla.type() == overlay) {
+                // vanilla 快捷栏模式：HOTBAR/ITEM_NAME 放行给 VanillaHotbarOverlayHandler 平移后
+                // 由原版自己渲染，不在此屏蔽；其余原版元件照旧压制。
+                if (ClientVanillaHud.isVanillaHud()
+                        && (vanilla == VanillaGuiOverlay.HOTBAR || vanilla == VanillaGuiOverlay.ITEM_NAME)) {
+                    return false;
+                }
                 return true;
             }
         }
@@ -97,7 +104,7 @@ public final class VanillaHudSuppressor {
             return false;
         }
         String path = overlay.id().getPath();
-        // 原版快捷栏模式下弹药读数交还 TaCZ 自带 HUD，不再由自绘武器栏取代。
+        // vanilla 快捷栏模式下弹药读数交还 TaCZ 自带 HUD，不再由自绘武器栏取代。
         if ("tac_gun_hud_overlay".equals(path) && ClientVanillaHud.isVanillaHud()) {
             return false;
         }

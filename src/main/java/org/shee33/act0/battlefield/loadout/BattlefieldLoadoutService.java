@@ -1,6 +1,8 @@
 package org.shee33.act0.battlefield.loadout;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -210,6 +212,13 @@ public final class BattlefieldLoadoutService {
             }
             return gun;
         }
+        // 普通槽：若有上架时的整份物品快照，直接还原完整 ItemStack——某些模组物品的显示
+        // 与功能由 NBT 驱动（类似枪的 GunId），只按注册 ID 造新物品会拿到缺 NBT 的裸物品
+        // （紫黑方块 + 无法使用）。快照缺失（旧存档配装）时回退注册 ID 造新物品。
+        ItemStack fromSnapshot = restoreFromSnapshot(gunNbt);
+        if (!fromSnapshot.isEmpty()) {
+            return fromSnapshot;
+        }
         ResourceLocation id = ResourceLocation.tryParse(itemId);
         Item item = id == null ? null : ForgeRegistries.ITEMS.getValue(id);
         if (item == null) {
@@ -217,6 +226,19 @@ public final class BattlefieldLoadoutService {
             return ItemStack.EMPTY;
         }
         return new ItemStack(item);
+    }
+
+    /** 从整份物品 SNBT 快照还原 ItemStack；无快照/解析失败返回 {@link ItemStack#EMPTY}。 */
+    private static ItemStack restoreFromSnapshot(@Nullable String snbt) {
+        if (snbt == null || snbt.isBlank()) {
+            return ItemStack.EMPTY;
+        }
+        try {
+            CompoundTag tag = TagParser.parseTag(snbt);
+            return ItemStack.of(tag);
+        } catch (Throwable e) {
+            return ItemStack.EMPTY;
+        }
     }
 
     private static void reportNoPreset(ServerPlayer player, @Nullable String arenaKey,
