@@ -18,7 +18,7 @@ class DtoRoundTripTest {
 
     @Test
     void deploySlotDtoRoundTrips() {
-        DeploySlotDto dto = new DeploySlotDto(0, "tacz:ak47", 120);
+        DeploySlotDto dto = new DeploySlotDto(0, "tacz:ak47", 120, "");
         FriendlyByteBuf buf = buffer();
         dto.encode(buf);
         assertEquals(dto, DeploySlotDto.decode(buf));
@@ -27,7 +27,7 @@ class DtoRoundTripTest {
     @Test
     void deployLoadoutDtoRoundTrips() {
         DeployLoadoutDto dto = new DeployLoadoutDto("assault", "lp_abc123", "正面突破",
-                List.of(new DeploySlotDto(0, "tacz:ak47", 120), new DeploySlotDto(3, "minecraft:stick", 0)));
+                List.of(new DeploySlotDto(0, "tacz:ak47", 120, ""), new DeploySlotDto(3, "minecraft:stick", 0, "")));
         FriendlyByteBuf buf = buffer();
         dto.encode(buf);
         assertEquals(dto, DeployLoadoutDto.decode(buf));
@@ -36,7 +36,7 @@ class DtoRoundTripTest {
     @Test
     void loadoutConfigDtoRoundTrips() {
         LoadoutPresetPreviewDto preset = new LoadoutPresetPreviewDto("lp_abc", "狙击套",
-                List.of(new DeploySlotDto(0, "tacz:m24", 40)), List.of("minecraft:iron_helmet", "", "", ""));
+                List.of(new DeploySlotDto(0, "tacz:m24", 40, "")), List.of("minecraft:iron_helmet", "", "", ""));
         ClassPresetsDto cls = new ClassPresetsDto("recon", "lp_abc", List.of(preset));
         FactionPresetsDto faction = new FactionPresetsDto("ALPHA", List.of(cls));
         LoadoutConfigDto dto = new LoadoutConfigDto(List.of("解放峰"), "解放峰", "recon", "ALPHA",

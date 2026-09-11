@@ -236,7 +236,7 @@ public final class BattlefieldLoadoutScreen extends Screen {
     private static String presetItemName(LoadoutPresetPreviewDto preset, LoadoutSlot slot) {
         for (DeploySlotDto dto : preset.slots()) {
             if (dto.slotIndex() == slot.hotbarIndex() && !dto.itemId().isEmpty()) {
-                return slot.displayName() + " " + ClientNames.itemName(dto.itemId());
+                return slot.displayName() + " " + ClientNames.itemName(dto.itemId(), dto.displayKey());
             }
         }
         return slot.displayName() + " 空";

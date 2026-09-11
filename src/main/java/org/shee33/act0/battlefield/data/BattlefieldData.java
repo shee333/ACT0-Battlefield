@@ -448,7 +448,7 @@ public final class BattlefieldData extends SavedData {
     /** 创建一套配装预设（空内容），生成稳定 id 并返回。显示名默认取创建时传入的名字。 */
     public LoadoutPresetDef createPreset(Faction faction, SoldierClass soldierClass, String displayName) {
         String id = "lp_" + UUID.randomUUID().toString().substring(0, 8);
-        LoadoutPresetDef def = new LoadoutPresetDef(id, displayName, Map.of(), Map.of(), Map.of(),
+        LoadoutPresetDef def = new LoadoutPresetDef(id, displayName, Map.of(), Map.of(), Map.of(), Map.of(),
 LoadoutPresetDef.ArmorSet.EMPTY);
         String key = presetKey(faction, soldierClass);
         loadoutPresets.computeIfAbsent(key, k -> new ArrayList<>()).add(def);
@@ -496,6 +496,7 @@ LoadoutPresetDef.ArmorSet.EMPTY);
 private static final String KEY_PRESET_SLOTS = "slots";
     private static final String KEY_PRESET_AMMO = "ammo";
     private static final String KEY_PRESET_GUN_NBT = "gunNbt";
+    private static final String KEY_PRESET_SLOT_NAMES = "slotNames";
 private static final String KEY_PRESET_ARMOR = "armor";
 
 private static CompoundTag savePresetDef(LoadoutPresetDef def) {
@@ -517,6 +518,11 @@ for (Map.Entry<LoadoutSlot, String> e : def.gunNbt().entrySet()) {
 gunNbt.putString(e.getKey().id(), e.getValue());
 }
         t.put(KEY_PRESET_GUN_NBT, gunNbt);
+        CompoundTag slotNames = new CompoundTag();
+        for (Map.Entry<LoadoutSlot, String> e : def.slotNames().entrySet()) {
+            slotNames.putString(e.getKey().id(), e.getValue());
+        }
+        t.put(KEY_PRESET_SLOT_NAMES, slotNames);
         CompoundTag armor = new CompoundTag();
 LoadoutPresetDef.ArmorSet a = def.armor();
 if (a.helmet() != null) {
@@ -560,13 +566,21 @@ return t;
                 gunNbt.put(slot, gunNbtTag.getString(key));
             }
         }
+        CompoundTag slotNamesTag = t.getCompound(KEY_PRESET_SLOT_NAMES);
+        Map<LoadoutSlot, String> slotNames = new EnumMap<>(LoadoutSlot.class);
+        for (String key : slotNamesTag.getAllKeys()) {
+            LoadoutSlot slot = LoadoutSlot.byId(key);
+            if (slot != null && !slotNamesTag.getString(key).isBlank()) {
+                slotNames.put(slot, slotNamesTag.getString(key));
+            }
+        }
         CompoundTag armorTag = t.getCompound(KEY_PRESET_ARMOR);
         LoadoutPresetDef.ArmorSet armor = LoadoutPresetDef.ArmorSet.of(
                 armorTag.getString("helmet"), armorTag.getString("chest"),
                 armorTag.getString("legs"), armorTag.getString("boots"));
         return new LoadoutPresetDef(
                 t.getString(KEY_PRESET_ID), t.getString(KEY_PRESET_NAME),
-                slots, ammo, gunNbt, armor);
+                slots, ammo, gunNbt, slotNames, armor);
     }
     @Override
     public CompoundTag save(CompoundTag tag) {

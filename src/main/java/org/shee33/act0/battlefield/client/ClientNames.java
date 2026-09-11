@@ -3,20 +3,19 @@ package org.shee33.act0.battlefield.client;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import org.shee33.act0.battlefield.integration.TaczGunBridge;
+
 import javax.annotation.Nullable;
-import net.minecraft.resources.ResourceLocation;
 
 /**
  * 客户端物品显示名的二次解析。
  *
- * <p>地图军械库里的显示名是在<b>服务器端</b>用 {@code ItemStack.getHoverName().getString()} 抓取的。
- * 服务器没有语言包，对 TaCZ 这类用 {@link Component#translatable(String)} 显示名的物品，取到的是
- * 未翻译的原始 key（形如 {@code item.tacz.ak47}），直接画到部署/配装界面上就是一团
- * {@code item.tacz.xxxx}。
- *
- * <p>客户端持有完整的语言包（TaCZ 的 lang 已加载），用 {@code Component.translatable(name)} 再解析一次：
- * 若 name 是翻译 key 就得到本地化名称；若本来就是个字面量（找不到对应 key），translatable 会原样
- * 返回 key 本身——两条路径都不会出错，可无脑套用。
+ * <p>地图军械库/配装里的显示名是在<b>服务器端</b>抓取的，服务器没有资源包语言文件，对用
+ * {@link Component#translatable(String)} 显示名的物品只能拿到原始 key；而<b>某些模组物品的名字
+ * 由 NBT 决定</b>（如 lrtactical 的近战：所有近战共用一个 {@code lrtactical:melee} 物品，具体是
+ * 匕首/棒球棍/卡兰比特由 NBT 的 {@code MeleeWeaponId} 决定，裸物品只会回退到无翻译的通用 key
+ * {@code item.lrtactical.melee}）。因此服务端上架时会把物品的<b>描述键</b>（
+ * {@code ItemStack} 经 NBT 解析后的 {@code item.lrtactical.dagger} 之类）一并快照下来，客户端
+ * 用它本地化，就能正确显示具体武器名。
  */
 public final class ClientNames {
 
@@ -31,16 +30,27 @@ public final class ClientNames {
         return Component.translatable(name).getString();
     }
 
-    /** 物品注册 ID → 客户端本地化显示名（客户端持有语言包，取 ItemStack 的 hover 名）。 */
+    /** 物品注册 ID → 客户端本地化显示名（无服务端描述键时的回退路径）。 */
     public static String itemName(@Nullable String itemId) {
+        return itemName(itemId, null);
+    }
+
+    /**
+     * 物品注册 ID + 服务端描述键 → 客户端本地化显示名。
+     *
+     * <p>优先级：TaCZ 枪械索引（所有枪共用一个物品，裸 hover 名无意义）→ 服务端描述键
+     * （含 NBT 驱动的具体键）→ 裸物品的 hover 名回退。
+     */
+    public static String itemName(@Nullable String itemId, @Nullable String displayKey) {
         if (itemId == null || itemId.isEmpty()) {
             return "空槽位";
         }
-        // TaCZ 枪械 ID（tacz:xxx）优先走客户端枪械索引：所有枪共用同一个物品，
-        // 靠物品 hover 名只能得到 item.tacz.modern_kinetic_gun，不是枪的真实型号。
         String gunName = TaczGunBridge.clientGunDisplayName(itemId);
         if (gunName != null) {
             return gunName;
+        }
+        if (displayKey != null && !displayKey.isBlank()) {
+            return Component.translatable(displayKey).getString();
         }
         ResourceLocation id = ResourceLocation.tryParse(itemId);
         net.minecraft.world.item.Item item = id == null ? null

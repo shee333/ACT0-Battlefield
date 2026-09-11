@@ -25,6 +25,7 @@ public record LoadoutPresetDef(String id, String displayName,
 Map<LoadoutSlot, String> slots,
                                Map<LoadoutSlot, Integer> ammo,
                               Map<LoadoutSlot, String> gunNbt,
+                               Map<LoadoutSlot, String> slotNames,
 ArmorSet armor) {
 
     /** 配装包含的五个槽位（主武器/副武器/近战/道具1/道具2）。 */
@@ -63,10 +64,12 @@ displayName = displayName == null ? "" : displayName.trim();
 Objects.requireNonNull(slots, "slots must not be null");
         Objects.requireNonNull(ammo, "ammo must not be null");
         Objects.requireNonNull(gunNbt, "gunNbt must not be null");
+        Objects.requireNonNull(slotNames, "slotNames must not be null");
 armor = armor == null ? ArmorSet.EMPTY : armor;
 slots = copyEnum(slots);
         ammo = copyEnum(ammo);
         gunNbt = copyEnum(gunNbt);
+        slotNames = copyEnum(slotNames);
 }
 
     /** {@code new EnumMap<>(空map)} 会抛 IAE，空 map 直接原样返回。 */
@@ -99,14 +102,17 @@ slots = copyEnum(slots);
         nextAmmo.putAll(ammo);
         Map<LoadoutSlot, String> nextGunNbt = new EnumMap<>(LoadoutSlot.class);
         nextGunNbt.putAll(gunNbt);
+        Map<LoadoutSlot, String> nextSlotNames = new EnumMap<>(LoadoutSlot.class);
+        nextSlotNames.putAll(slotNames);
         if (itemId == null || itemId.isBlank()) {
             nextSlots.remove(slot);
             nextAmmo.remove(slot);
             nextGunNbt.remove(slot);
+            nextSlotNames.remove(slot);
         } else {
             nextSlots.put(slot, itemId.trim());
         }
-        return new LoadoutPresetDef(id, displayName, nextSlots, nextAmmo, nextGunNbt, armor);
+        return new LoadoutPresetDef(id, displayName, nextSlots, nextAmmo, nextGunNbt, nextSlotNames, armor);
     }
 
     /** 某个槽位的枪械静态配置快照（SNBT 字符串）；非枪械槽或未配置返回 {@code null}。 */
@@ -124,7 +130,25 @@ slots = copyEnum(slots);
         } else {
             nextGunNbt.put(slot, snbt.trim());
         }
-        return new LoadoutPresetDef(id, displayName, slots, ammo, nextGunNbt, armor);
+        return new LoadoutPresetDef(id, displayName, slots, ammo, nextGunNbt, slotNames, armor);
+    }
+
+    /** 某个槽位的物品描述键（服务端上架时抓取，客户端用它本地化显示）；未配置返回 {@code null}。 */
+    @Nullable
+    public String slotNameOf(LoadoutSlot slot) {
+        return slotNames.get(slot);
+    }
+
+    /** 返回设置某槽位物品描述键的新实例；{@code null} 清除。 */
+    public LoadoutPresetDef withSlotName(LoadoutSlot slot, @Nullable String descriptionId) {
+        Map<LoadoutSlot, String> nextSlotNames = new EnumMap<>(LoadoutSlot.class);
+        nextSlotNames.putAll(slotNames);
+        if (descriptionId == null || descriptionId.isBlank()) {
+            nextSlotNames.remove(slot);
+        } else {
+            nextSlotNames.put(slot, descriptionId.trim());
+        }
+        return new LoadoutPresetDef(id, displayName, slots, ammo, gunNbt, nextSlotNames, armor);
     }
 
     /** 返回设置某枪械槽虚拟弹药的新实例；非枪械槽忽略。 */
@@ -139,24 +163,24 @@ slots = copyEnum(slots);
         } else {
             nextAmmo.put(slot, count);
         }
-        return new LoadoutPresetDef(id, displayName, slots, nextAmmo, gunNbt, armor);
+        return new LoadoutPresetDef(id, displayName, slots, nextAmmo, gunNbt, slotNames, armor);
     }
 
     /** 返回替换服装的新实例。 */
     public LoadoutPresetDef withArmor(ArmorSet newArmor) {
-        return new LoadoutPresetDef(id, displayName, slots, ammo, gunNbt,
+        return new LoadoutPresetDef(id, displayName, slots, ammo, gunNbt, slotNames,
                 newArmor == null ? ArmorSet.EMPTY : newArmor);
     }
 
 /** 返回改了显示名的新实例。 */
     public LoadoutPresetDef withDisplayName(String newName) {
         String n = newName == null ? "" : newName.trim();
-        return n.equals(displayName) ? this : new LoadoutPresetDef(id, n, slots, ammo, gunNbt, armor);
+        return n.equals(displayName) ? this : new LoadoutPresetDef(id, n, slots, ammo, gunNbt, slotNames, armor);
     }
 
 
     /** 是否完全没有配置任何内容（槽位全空、无枪械快照且无服装）。 */
     public boolean isEmpty() {
-        return slots.isEmpty() && gunNbt.isEmpty() && armor.isEmpty();
+        return slots.isEmpty() && gunNbt.isEmpty() && slotNames.isEmpty() && armor.isEmpty();
     }
 }

@@ -98,7 +98,7 @@ public final class BattlefieldLoadoutService {
         for (LoadoutSlot slot : LoadoutPresetDef.PRESET_SLOTS) {
             String itemId = preset.slot(slot);
             if (itemId != null && !itemId.isBlank()) {
-                slots.add(new DeploySlotDto(slot.hotbarIndex(), itemId, preset.ammoOf(slot)));
+                slots.add(new DeploySlotDto(slot.hotbarIndex(), itemId, preset.ammoOf(slot), preset.slotNameOf(slot)));
             }
         }
         return new DeployLoadoutDto(soldierClass.id(), preset.id(), preset.displayName(), slots);

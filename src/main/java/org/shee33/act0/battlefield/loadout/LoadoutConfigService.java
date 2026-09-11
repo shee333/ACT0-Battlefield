@@ -84,7 +84,7 @@ public final class LoadoutConfigService {
         for (LoadoutSlot slot : LoadoutPresetDef.PRESET_SLOTS) {
             String itemId = def.slot(slot);
             if (itemId != null && !itemId.isBlank()) {
-                slots.add(new DeploySlotDto(slot.hotbarIndex(), itemId, def.ammoOf(slot)));
+                slots.add(new DeploySlotDto(slot.hotbarIndex(), itemId, def.ammoOf(slot), def.slotNameOf(slot)));
             }
         }
         LoadoutPresetDef.ArmorSet armor = def.armor();

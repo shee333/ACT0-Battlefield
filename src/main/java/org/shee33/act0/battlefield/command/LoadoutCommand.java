@@ -169,6 +169,9 @@ public final class LoadoutCommand {
             snapshot = snapshotItemNbt(held);
         }
         next = next.withGunNbt(slot, snapshot);
+        // 同时存下物品的描述键（服务端纯 Java 读 NBT 得到具体键，如 item.lrtactical.dagger）：
+        // 客户端用它本地化显示。某些模组物品（近战/道具）名字由 NBT 决定，裸注册 ID 只能解析出通用 key。
+        next = next.withSlotName(slot, held.getItem().getDescriptionId(held));
         if (LoadoutPresetDef.isWeaponSlot(slot) && ammo > 0) {
             next = next.withAmmo(slot, ammo);
         }
