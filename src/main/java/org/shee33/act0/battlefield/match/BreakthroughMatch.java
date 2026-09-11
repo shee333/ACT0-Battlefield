@@ -148,6 +148,11 @@ public final class BreakthroughMatch {
     private final Map<UUID, Integer> escapeTicks = new LinkedHashMap<>();
     private final Map<Integer, CapturePoint.CaptureStatus> lastCaptureStatus = new LinkedHashMap<>();
     private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
+    /**
+     * 友军高亮的生效半径（格）。只对观察者周围这个范围内的同阵营玩家显示蓝色穿墙轮廓，
+     * 超出范围的友军不高亮——全图轮廓会变成视觉噪音，也让"远处友军"失去距离感。
+     */
+    private static final double FRIENDLY_GLOW_RANGE = 32.0D;
     private final Map<Integer, Long> defendNotificationCooldown = new LinkedHashMap<>();
     private final Map<UUID, Long> callHelpCooldownUntil = new LinkedHashMap<>();
     private static final int CALL_HELP_COOLDOWN_TICKS = 60;
@@ -693,7 +698,7 @@ public final class BreakthroughMatch {
     /**
      * IFF (敌我识别) 同步：管理每名玩家视角下的发光可见性与名字牌队伍。
      *
-     * <p>只保留<b>友军高亮</b>（同阵营成员无距离限制发光）；被动敌方高亮（视野内自动发光）
+     * <p>只保留<b>友军高亮</b>（同阵营成员在观察者周围 {@code FRIENDLY_GLOW_RANGE} 格内发光）；被动敌方高亮（视野内自动发光）
      * 已按需求移除——敌人只能靠眼睛、名字牌与主动标记识别。与 ConquestMatch 判定保持一致。
      */
     private void syncEnemyIdentification() {
@@ -765,7 +770,14 @@ public final class BreakthroughMatch {
         UUID targetId = target.getUUID();
         Faction viewerFaction = factionOf.get(viewerId);
         Faction targetFaction = factionOf.get(targetId);
-        return viewerFaction != null && viewerFaction == targetFaction && !redeployService.isRedeploying(targetId);
+        if (viewerFaction == null || viewerFaction != targetFaction) {
+            return false;
+        }
+        if (redeployService.isRedeploying(targetId)) {
+            return false;
+        }
+        // 只高亮观察者周围 32 格内的友军；超出范围不高亮（全图轮廓是视觉噪音）。
+        return viewer.distanceToSqr(target) <= FRIENDLY_GLOW_RANGE * FRIENDLY_GLOW_RANGE;
     }
 
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target, double minDot) {

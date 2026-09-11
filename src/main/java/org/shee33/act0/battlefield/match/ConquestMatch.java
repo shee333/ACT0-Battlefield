@@ -109,6 +109,11 @@ public final class ConquestMatch {
     private final Map<UUID, Long> lastHurtTick = new LinkedHashMap<>();
     private final List<PlayerTeam> nameTagTeams = new ArrayList<>();
     private final Map<UUID, Set<UUID>> visibleEnemyGlows = new LinkedHashMap<>();
+    /**
+     * 友军高亮的生效半径（格）。只对观察者周围这个范围内的同阵营玩家显示蓝色穿墙轮廓，
+     * 超出范围的友军不高亮——全图轮廓会变成视觉噪音，也让"远处友军"失去距离感。
+     */
+    private static final double FRIENDLY_GLOW_RANGE = 32.0D;
     private final BattlefieldData data;
     private final Map<UUID, Integer> escapeTicks = new LinkedHashMap<>();
     private final Map<UUID, Long> downedUntil = new LinkedHashMap<>();
@@ -1160,8 +1165,9 @@ public final class ConquestMatch {
     /**
      * IFF (Identify Friend/Foe) sync: manages per-player glow visibility and name-tag teams.
      *
-     * <p>只保留<b>友军高亮</b>（同阵营成员无距离限制发光）；被动敌方高亮（视野内自动发光）
-     * 已按需求移除——敌人只能靠眼睛、名字牌与主动标记（见 {@code spotEnemy}）识别。
+     * <p>只保留<b>友军高亮</b>（同阵营成员在观察者周围 {@code FRIENDLY_GLOW_RANGE} 格内发光）；
+     * 被动敌方高亮（视野内自动发光）已按需求移除——敌人只能靠眼睛、名字牌与主动标记
+     * （见 {@code spotEnemy}）识别。
      */
     private void syncEnemyIdentification() {
         if (factionOf.isEmpty()) {
@@ -1232,7 +1238,14 @@ public final class ConquestMatch {
         UUID targetId = target.getUUID();
         Faction viewerFaction = factionOf.get(viewerId);
         Faction targetFaction = factionOf.get(targetId);
-        return viewerFaction != null && viewerFaction == targetFaction && !redeployService.isRedeploying(targetId);
+        if (viewerFaction == null || viewerFaction != targetFaction) {
+            return false;
+        }
+        if (redeployService.isRedeploying(targetId)) {
+            return false;
+        }
+        // 只高亮观察者周围 32 格内的友军；超出范围不高亮（全图轮廓是视觉噪音）。
+        return viewer.distanceToSqr(target) <= FRIENDLY_GLOW_RANGE * FRIENDLY_GLOW_RANGE;
     }
 
     private boolean isInFrontOf(ServerPlayer viewer, ServerPlayer target, double minDot) {
