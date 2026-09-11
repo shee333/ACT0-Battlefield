@@ -125,6 +125,13 @@ public final class BattlefieldCommand {
                                 .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                         .executes(BattlefieldCommand::addPointAt)))
                         .then(Commands.literal("list").executes(BattlefieldCommand::listPoints))
+                        .then(Commands.literal("boundary")
+                                .then(Commands.literal("edit")
+                                        .then(Commands.argument("id", IntegerArgumentType.integer(0))
+                                                .executes(BattlefieldCommand::editBoundary)))
+                                .then(Commands.literal("clear")
+                                        .then(Commands.argument("id", IntegerArgumentType.integer(0))
+                                                .executes(BattlefieldCommand::clearBoundary))))
                         .then(Commands.literal("radius")
                                 .then(Commands.argument("id", IntegerArgumentType.integer(0))
                                         .then(Commands.argument("value", IntegerArgumentType.integer(1, 64))
@@ -687,6 +694,29 @@ public final class BattlefieldCommand {
             feedback(c, "§c找不到编号为 " + id + " 的据点。");
         }
         return def;
+    }
+
+    /** 开始据点多边形边界圈画：发放工具，左键加顶点、右键完成。 */
+    private static int editBoundary(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ControlPointDef def = requirePoint(c);
+        if (def == null) {
+            return 0;
+        }
+        PointBoundaryWandHandler.beginEditing(c.getSource().getPlayerOrException(), def);
+        return 1;
+    }
+
+    /** 清除据点多边形边界，恢复方形半径判定。 */
+    private static int clearBoundary(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ControlPointDef def = requirePoint(c);
+        if (def == null) {
+            return 0;
+        }
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        def.clearBoundary();
+        BattlefieldData.get(level).setDirty();
+        feedback(c, "§a据点 §e" + def.name() + "§a 的多边形边界已清除，恢复方形半径判定。");
+        return 1;
     }
 
     // ---- 开局/停止 ----

@@ -154,7 +154,7 @@ public final class KillTracker {
             // 守点击杀
             for (int i = 0; i < points.size(); i++) {
                 if (points.get(i).owner() == killerFaction
-                        && defs.get(i).zone().contains(killer.getX(), killer.getY(), killer.getZ())) {
+                        && defs.get(i).contains(killer.getX(), killer.getY(), killer.getZ())) {
                     killer.displayClientMessage(
                             Component.literal("§b守点击杀 §e" + defs.get(i).name()), true);
                     break;

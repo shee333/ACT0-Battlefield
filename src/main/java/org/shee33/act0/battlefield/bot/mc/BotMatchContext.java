@@ -75,7 +75,7 @@ final class BotMatchContext {
         }
         List<PointState> states = new ArrayList<>();
         for (ConquestMatch.PointView view : match.pointViews()) {
-            states.add(new PointState(view, match.occupancyOf(view.zone())));
+            states.add(new PointState(view, match.occupancyOf(view.def())));
         }
         List<PointState> immutable = List.copyOf(states);
         POINT_CACHE.put(key, new CachedPoints(tick, immutable));

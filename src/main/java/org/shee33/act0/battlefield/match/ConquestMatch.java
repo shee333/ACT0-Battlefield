@@ -406,12 +406,12 @@ public final class ConquestMatch {
      * <p>观察者、阵亡者、倒地者与不在本对局维度的人一律不计——倒地的人不能占点，
      * 这与 {@code core/PlayerMatchState#canCapture} 表达的是同一条规则。
      */
-    public ZoneOccupancy occupancyOf(AABB zone) {
+    public ZoneOccupancy occupancyOf(ControlPointDef def) {
         int alpha = 0;
         int bravo = 0;
         for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
             ServerPlayer p = holdingPlayer(e.getKey());
-            if (p == null || !zone.contains(p.getX(), p.getY(), p.getZ())) {
+            if (p == null || !def.contains(p.getX(), p.getY(), p.getZ())) {
                 continue;
             }
             if (e.getValue() == Faction.ALPHA) {
@@ -445,7 +445,7 @@ public final class ConquestMatch {
      * <p>刻意与 {@link #occupancyOf} 分开：占领人数是每 tick 被多处读取的查询，而守点时长是
      * 只该在结算时发生一次的写入。合在一处会让任何新的读取方顺带刷高统计。
      */
-    private void creditHoldTime(AABB zone, @Nullable Faction owner) {
+    private void creditHoldTime(ControlPointDef def, @Nullable Faction owner) {
         if (owner == null) {
             return;
         }
@@ -454,7 +454,7 @@ public final class ConquestMatch {
                 continue;
             }
             ServerPlayer p = holdingPlayer(e.getKey());
-            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+            if (p != null && def.contains(p.getX(), p.getY(), p.getZ())) {
                 captureTime.merge(e.getKey(), captureInterval, Integer::sum);
             }
         }
@@ -463,11 +463,11 @@ public final class ConquestMatch {
     private void resolveCaptureAndBleed() {
         for (int i = 0; i < points.size(); i++) {
             CapturePoint point = points.get(i);
-            AABB zone = defs.get(i).zone();
-            ZoneOccupancy occupancy = occupancyOf(zone);
+            ControlPointDef def = defs.get(i);
+            ZoneOccupancy occupancy = occupancyOf(def);
             int alpha = occupancy.alpha();
             int bravo = occupancy.bravo();
-            creditHoldTime(zone, point.owner());
+            creditHoldTime(def, point.owner());
             // Comeback boost: when a faction has <70% of its starting tickets, its in-zone count
             // counts as 1.5x for CapturePoint.tick, letting the trailing side flip points faster.
             double maxTickets = Math.max(1.0, rules.startingTickets());
@@ -493,13 +493,13 @@ public final class ConquestMatch {
                 if (owner != null) {
                     broadcast(coloredFaction(owner) + " §7占领了据点 §e" + point.displayName());
                     playToAll(SoundEvents.NOTE_BLOCK_BELL.value(), 1.0f);
-                    actionBarNear(point.displayName(), zone, coloredFaction(owner) + " §a已控制 " + point.displayName());
+                    actionBarNear(point.displayName(), def, coloredFaction(owner) + " §a已控制 " + point.displayName());
                     rewardAttackOrder(defs.get(i).pointId(), owner);
                     CapturePointEventPacket.Kind kind = ownerBeforeTick == null
                             ? CapturePointEventPacket.Kind.CAPTURED_NEW
                             : CapturePointEventPacket.Kind.CAPTURED_RECOVERED;
                     sendCapturePointEvent(pointId, kind, factionCode(owner));
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.captureBurst(level, fxPos.x, fxPos.y, fxPos.z, owner);
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
@@ -507,22 +507,22 @@ public final class ConquestMatch {
                 playToAll(SoundEvents.NOTE_BLOCK_BASS.value(), 0.7f);
                 clearDefendOrder(defs.get(i).pointId());
                 sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.LOST, factionCode(ownerBeforeTick));
-                Vec3 fxPos = zone.getCenter();
+                Vec3 fxPos = def.zone().getCenter();
                 BattlefieldFx.lost(level, fxPos.x, fxPos.y, fxPos.z);
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
-                playNear(point.displayName(), zone, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
+                playNear(point.displayName(), def, SoundEvents.NOTE_BLOCK_HAT.value(), 0.4f);
                 notifyDefendOrder(point, defs.get(i).pointId());
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
-                actionBarNear(point.displayName(), zone, coloredFaction(pushing) + " §7正在占领 " + point.displayName());
+                actionBarNear(point.displayName(), def, coloredFaction(pushing) + " §7正在占领 " + point.displayName());
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             }
@@ -1488,11 +1488,11 @@ public final class ConquestMatch {
         }
         for (int i = 0; i < defs.size(); i++) {
             ControlPointDef def = defs.get(i);
-            if (!def.zone().contains(viewer.getX(), viewer.getY(), viewer.getZ())) {
+            if (!def.contains(viewer.getX(), viewer.getY(), viewer.getZ())) {
                 continue;
             }
             CapturePoint point = points.get(i);
-            ZoneOccupancy occupancy = occupancyOf(def.zone());
+            ZoneOccupancy occupancy = occupancyOf(def);
             int alpha = occupancy.alpha();
             int bravo = occupancy.bravo();
             boolean contested = alpha > 0 && bravo > 0;
@@ -1582,19 +1582,19 @@ public final class ConquestMatch {
         }
     }
 
-    private void actionBarNear(String pointName, AABB zone, String msg) {
+    private void actionBarNear(String pointName, ControlPointDef def, String msg) {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
-            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+            if (p != null && def.contains(p.getX(), p.getY(), p.getZ())) {
                 p.displayClientMessage(Component.literal(msg), true);
             }
         }
     }
 
-    private void playNear(String pointName, AABB zone, net.minecraft.sounds.SoundEvent sound, float pitch) {
+    private void playNear(String pointName, ControlPointDef def, net.minecraft.sounds.SoundEvent sound, float pitch) {
         for (UUID id : factionOf.keySet()) {
             ServerPlayer p = player(id);
-            if (p != null && zone.contains(p.getX(), p.getY(), p.getZ())) {
+            if (p != null && def.contains(p.getX(), p.getY(), p.getZ())) {
                 p.playNotifySound(sound, SoundSource.MASTER, 0.4f, pitch);
             }
         }
@@ -2492,16 +2492,21 @@ public final class ConquestMatch {
      * 单个据点的实时快照：归属、争夺进度与几何。<b>不含点内人数</b>。
      *
      * <p>人数刻意不放进来：它需要遍历全体玩家，而本视图会被每个 bot 每 tick 读取。人数请单独调
-     * {@link #occupancyOf(AABB)}，由调用方每 tick 统一算一次再分发给所有 bot。
+     * {@link #occupancyOf(ControlPointDef)}，由调用方每 tick 统一算一次再分发给所有 bot。
      *
      * @param owner {@code null} 表示中立
      * @param level 有符号争夺度，{@code +1} 为 ALPHA 满控、{@code -1} 为 BRAVO 满控
      */
     public record PointView(int pointId, String displayName, @Nullable Faction owner,
-                            double level, AABB zone) {
+                            double level, AABB zone, ControlPointDef def) {
 
         public Vec3 center() {
             return zone.getCenter();
+        }
+
+        /** 位置是否在该据点的实际占领区域内（配置了多边形则按多边形，否则方形）。 */
+        public boolean contains(double x, double y, double z) {
+            return def.contains(x, y, z);
         }
     }
 
@@ -2512,7 +2517,7 @@ public final class ConquestMatch {
             CapturePoint point = points.get(i);
             ControlPointDef def = defs.get(i);
             views.add(new PointView(def.pointId(), point.displayName(), point.owner(),
-                    point.level(), def.zone()));
+                    point.level(), def.zone(), def));
         }
         return views;
     }

@@ -1,7 +1,9 @@
 package org.shee33.act0.battlefield.client;
 
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -19,6 +21,7 @@ import org.joml.Matrix4fc;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.shee33.act0.battlefield.Act0Battlefield;
+import org.shee33.act0.battlefield.core.Polygon2D;
 import org.shee33.act0.battlefield.network.DeployActionPacket;
 import org.shee33.act0.battlefield.network.DeployPointDto;
 import org.shee33.act0.battlefield.network.DeploySquadMateDto;
@@ -38,6 +41,12 @@ public final class BattlefieldDeployWorldOverlay {
     private static final int LIGHT = 0xF000F0;
     private static final int AREA_FLOOR_RGB = 0xFFE8C36A;
     private static final int AREA_WALL_RGB = 0xCCB6E3FF;
+
+    /** 据点不规则区域：地面半透明填充 alpha 与边框 alpha（0-255）。 */
+    private static final int ZONE_FILL_ALPHA = 46;
+    private static final int ZONE_RIM_ALPHA = 210;
+    /** 区域贴地抬升，避免与地面 z-fighting。 */
+    private static final double ZONE_GROUND_LIFT = 0.03D;
 
     private static final ResourceLocation POINT_FRIENDLY = texture("capturepoint/allies.png");
     private static final ResourceLocation POINT_ENEMY = texture("capturepoint/axis.png");
@@ -105,6 +114,8 @@ public final class BattlefieldDeployWorldOverlay {
                     mate.x(), mate.y(), mate.z(), "◆", mate.name(), mate.deployable(), mate.deployable() ? BLUE : RED,
                     DeployActionPacket.DeployKind.SQUAD, mate.id(), null);
         }
+        // 据点不规则区域先画（在地面、标记之下）：边框 + 半透明填充。
+        drawPointZones(pose, buffer, camera, status);
         for (DeployPointDto point : status.points()) {
             String label = point.name() == null || point.name().isBlank() ? "?" : point.name().substring(0, 1);
             int color = point.owner() == 0 ? GREY : (point.deployable() ? BLUE : RED);
@@ -362,5 +373,92 @@ public final class BattlefieldDeployWorldOverlay {
         font.drawInBatch(label, -font.width(label) / 2.0f, 0f, color, false,
                 matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0x88000000, LIGHT);
         pose.popPose();
+    }
+
+    /**
+     * 画据点的多边形区域：地面半透明填充 + 逐边边框。
+     *
+     * <p>只画管理员圈画过多边形（≥3 顶点）的据点；未圈画的据点仍用方形半径判定，但本层
+     * 不额外画区域（方形范围由标记本身表达，避免与既有视觉重复）。
+     */
+    private static void drawPointZones(PoseStack pose, MultiBufferSource.BufferSource buffer,
+                                       Camera camera, DeployStatusDto status) {
+        Vec3 cam = camera.getPosition();
+        VertexConsumer fill = buffer.getBuffer(PointZoneFill.TYPE);
+        VertexConsumer line = buffer.getBuffer(RenderType.LINES);
+        for (DeployPointDto point : status.points()) {
+            List<double[]> boundary = point.boundary();
+            if (boundary.size() < 3) {
+                continue;
+            }
+            Polygon2D poly = Polygon2D.of(boundary);
+            if (poly == null) {
+                continue;
+            }
+            int rgb = point.owner() == 0 ? (GREY & 0xFFFFFF)
+                    : (point.deployable() ? (BLUE & 0xFFFFFF) : (RED & 0xFFFFFF));
+            int cr = (rgb >> 16) & 0xFF;
+            int cg = (rgb >> 8) & 0xFF;
+            int cb = rgb & 0xFF;
+
+            // 相机相对平移，避免远离原点时 float 精度抖动。
+            pose.pushPose();
+            pose.translate(point.x() - cam.x, point.y() + ZONE_GROUND_LIFT - cam.y, point.z() - cam.z);
+            Matrix4f matrix = pose.last().pose();
+
+            // 填充：耳切三角化后发 TRIANGLES。
+            int[] tris = poly.triangulate();
+            for (int i = 0; i < tris.length; i++) {
+                double[] v = boundary.get(tris[i]);
+                fill.vertex(matrix, (float) (v[0] - point.x()), 0f, (float) (v[1] - point.z()))
+                        .color(cr, cg, cb, ZONE_FILL_ALPHA).endVertex();
+            }
+            // 边框：逐边发 LINES（必须补 normal，严格顶点校验器会崩）。
+            int n = boundary.size();
+            for (int i = 0; i < n; i++) {
+                double[] a = boundary.get(i);
+                double[] b = boundary.get((i + 1) % n);
+                line.vertex(matrix, (float) (a[0] - point.x()), 0f, (float) (a[1] - point.z()))
+                        .color(cr, cg, cb, ZONE_RIM_ALPHA).normal(0f, 1f, 0f).endVertex();
+                line.vertex(matrix, (float) (b[0] - point.x()), 0f, (float) (b[1] - point.z()))
+                        .color(cr, cg, cb, ZONE_RIM_ALPHA).normal(0f, 1f, 0f).endVertex();
+            }
+            pose.popPose();
+        }
+    }
+
+    /**
+     * 据点多边形区域的地面半透明填充 {@link RenderType}。
+     *
+     * <p>状态选择与 {@code DeployableGroundOverlay.GroundDisc} 同源：深度测试开（被地形正确遮挡）
+     * + 深度写关（填充与边框不抢深度）+ 关背面剔除。嵌套类的惰性初始化把 {@code RenderType.create}
+     * 推迟到首次渲染，避开 mod CONSTRUCT 阶段的静态初始化。
+     */
+    private static final class PointZoneFill extends RenderType {
+
+        private static final RenderType TYPE = RenderType.create(
+                Act0Battlefield.MODID + ":point_zone_fill",
+                DefaultVertexFormat.POSITION_COLOR,
+                VertexFormat.Mode.TRIANGLES,
+                1536,
+                false,
+                false,
+                RenderType.CompositeState.builder()
+                        .setShaderState(POSITION_COLOR_SHADER)
+                        .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                        .setDepthTestState(LEQUAL_DEPTH_TEST)
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setCullState(NO_CULL)
+                        .createCompositeState(false));
+
+        private PointZoneFill() {
+            super("", DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES, 0, false, false,
+                    () -> {
+                    },
+                    () -> {
+                    });
+            // 本类只为借到 RenderStateShard 的 protected 常量而继承 RenderType，从不实例化。
+            throw new AssertionError();
+        }
     }
 }

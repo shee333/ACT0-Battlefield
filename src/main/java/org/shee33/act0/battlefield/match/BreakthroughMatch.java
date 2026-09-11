@@ -438,7 +438,7 @@ public final class BreakthroughMatch {
             if (!isPointActive(pointId)) {
                 continue;
             }
-            AABB zone = def.zone();
+            // 占领判定统一走 def.contains（多边形或方形，见 ControlPointDef）
             int alpha = 0;
             int bravo = 0;
             for (Map.Entry<UUID, Faction> e : factionOf.entrySet()) {
@@ -447,7 +447,7 @@ public final class BreakthroughMatch {
                         || downedUntil.containsKey(e.getKey())) {
                     continue;
                 }
-                if (zone.contains(p.getX(), p.getY(), p.getZ())) {
+                if (def.contains(p.getX(), p.getY(), p.getZ())) {
                     if (e.getValue() == Faction.ALPHA) {
                         alpha++;
                     } else {
@@ -469,25 +469,25 @@ public final class BreakthroughMatch {
                 if (owner != null) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.CAPTURED_NEW, factionCode(owner));
                     rewardAttackOrder(pointId, owner);
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.captureBurst(level, fxPos.x, fxPos.y, fxPos.z, owner);
                 }
             } else if (st == CapturePoint.CaptureStatus.NEUTRALIZED) {
                 clearDefendOrder(pointId);
-                Vec3 fxPos = zone.getCenter();
+                Vec3 fxPos = def.zone().getCenter();
                 BattlefieldFx.lost(level, fxPos.x, fxPos.y, fxPos.z);
             } else if (st == CapturePoint.CaptureStatus.CONTESTED) {
                 notifyDefendOrder(points.get(i), pointId);
                 if (!wasActiveContest) {
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, 0);
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             } else if (st == CapturePoint.CaptureStatus.CAPTURING) {
                 if (!wasActiveContest) {
                     Faction pushing = alpha > 0 ? Faction.ALPHA : Faction.BRAVO;
                     sendCapturePointEvent(pointId, CapturePointEventPacket.Kind.STARTED, factionCode(pushing));
-                    Vec3 fxPos = zone.getCenter();
+                    Vec3 fxPos = def.zone().getCenter();
                     BattlefieldFx.contestStart(level, fxPos.x, fxPos.y, fxPos.z);
                 }
             }
@@ -1790,7 +1790,7 @@ public final class BreakthroughMatch {
         for (int i = 0; i < defs.size(); i++) {
             ControlPointDef def = defs.get(i);
             if (!activeSector.containsPoint(def.pointId())
-                    || !def.zone().contains(viewer.getX(), viewer.getY(), viewer.getZ())) {
+                    || !def.contains(viewer.getX(), viewer.getY(), viewer.getZ())) {
                 continue;
             }
             CapturePoint point = points.get(i);
@@ -1802,7 +1802,7 @@ public final class BreakthroughMatch {
                         || downedUntil.containsKey(e.getKey())) {
                     continue;
                 }
-                if (def.zone().contains(p.getX(), p.getY(), p.getZ())) {
+                if (def.contains(p.getX(), p.getY(), p.getZ())) {
                     if (e.getValue() == Faction.ALPHA) {
                         alpha++;
                     } else {

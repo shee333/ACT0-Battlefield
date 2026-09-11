@@ -486,8 +486,12 @@ return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey, faction);
             ControlPointDef def = defs.get(i);
             CapturePoint point = points.get(i);
             boolean deployable = pointDeployable(i, faction);
+            java.util.List<double[]> boundary = new ArrayList<>(def.boundary().size());
+            for (net.minecraft.core.BlockPos v : def.boundary()) {
+                boundary.add(new double[]{v.getX() + 0.5, v.getZ() + 0.5});
+            }
             list.add(new DeployPointDto(Integer.toString(def.pointId()), def.name(), factionCode(point.owner()),
-                    deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5));
+                    deployable, def.pos().getX() + 0.5, def.pos().getY() + 1.5, def.pos().getZ() + 0.5, boundary));
         }
         return list;
     }

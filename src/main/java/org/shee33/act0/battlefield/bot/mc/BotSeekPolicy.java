@@ -45,7 +45,7 @@ final class BotSeekPolicy {
             return nearestEnemy != null ? nearestEnemy.position() : null;
         }
         Vec3 center = objective.view().center();
-        if (!objective.view().zone().contains(bot.getX(), bot.getY(), bot.getZ())) {
+        if (!objective.view().contains(bot.getX(), bot.getY(), bot.getZ())) {
             return center;
         }
         // 已在点内：只有敌人还在据点附近才值得追出去，否则守住——见 worthChasingOffPoint 的说明。
