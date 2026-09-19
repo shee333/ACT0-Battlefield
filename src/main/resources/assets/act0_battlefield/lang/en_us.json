@@ -8,5 +8,6 @@
   "key.categories.act0_battlefield": "ACT0 Battlefield",
   "key.act0_battlefield.open_menu": "Open Battlefield",
   "key.act0_battlefield.spectate_next": "Spectate Next Squadmate",
-  "key.act0_battlefield.revive": "Revive Teammate"
+  "key.act0_battlefield.revive": "Revive Teammate",
+  "death.attack.desertion": "%1$s deserted the battlefield"
 }

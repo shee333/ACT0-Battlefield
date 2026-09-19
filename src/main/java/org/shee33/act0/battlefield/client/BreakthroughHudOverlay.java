@@ -83,6 +83,7 @@ public final class BreakthroughHudOverlay {
         BattlefieldHudOverlay.renderMatchStartFx(gg);
         BattlefieldHudOverlay.renderDownedSelfFeedback(gg, font);
         BattlefieldHudOverlay.renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
+        BattlefieldHudOverlay.renderOutOfBoundsBanner(gg, font);
     }
 
     // ---- 顶部票数条 + 阶段文案(既有逻辑,未参与本次动效重构) ----

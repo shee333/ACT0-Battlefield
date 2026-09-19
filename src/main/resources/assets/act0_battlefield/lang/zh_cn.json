@@ -8,5 +8,6 @@
   "key.categories.act0_battlefield": "ACT0 大战场",
   "key.act0_battlefield.open_menu": "打开大战场",
   "key.act0_battlefield.spectate_next": "切换观战队友",
-  "key.act0_battlefield.revive": "救援队友"
+  "key.act0_battlefield.revive": "救援队友",
+  "death.attack.desertion": "%1$s 逃离了战场"
 }

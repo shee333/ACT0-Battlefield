@@ -72,6 +72,7 @@ public final class BattlefieldHudOverlay {
         renderMatchStartFx(gg);
         renderDownedSelfFeedback(gg, font);
         renderBeingRevivedProgress(gg, font, hud.beingRevivedByName(), hud.beingRevivedProgress());
+        renderOutOfBoundsBanner(gg, font);
     }
 
     /**
@@ -199,6 +200,30 @@ public final class BattlefieldHudOverlay {
         gg.fill(x, y, x + barW, y + barH, 0xCC000000);
         gg.fill(x + 1, y + 1, x + 1 + Math.round((barW - 2) * (progress / 100f)), y + barH - 1, 0xCC66CC66);
         gg.drawCenteredString(font, text, centerX, y + 4, 0xFFFFFFFF);
+    }
+
+    /**
+     * "离开作战区域"倒计时横幅（底部居中）。模式无关：包内可见，供 {@code BreakthroughHudOverlay}
+     * 复用，参照 {@link #renderCapturePointBannerCore} 的共享方法模式。
+     *
+     * <p>这是危险警示而非菜单：不引入任何"引导点击"的视觉语言，也不用整块红（那是"已受伤"的语义）。
+     * 底部居中避开准星与中央战斗视野，靠一条橙黄细顶边 + 暗色面板传达"立即返回"。
+     */
+    static void renderOutOfBoundsBanner(GuiGraphics gg, Font font) {
+        float vis = ClientOutOfBounds.visibility();
+        if (vis <= 0.01f) {
+            return;
+        }
+        String text = "⚠ 离开作战区域 · " + ClientOutOfBounds.remainingSeconds() + " 秒后阵亡";
+        int textW = font.width(text);
+        int panelW = textW + 32;
+        int panelH = 20;
+        int centerX = gg.guiWidth() / 2;
+        int x = centerX - panelW / 2;
+        int y = gg.guiHeight() - 108;
+        gg.fill(x, y, x + panelW, y + panelH, withAlpha(0xFF101418, vis * 0.82f));
+        gg.fill(x, y, x + panelW, y + 2, withAlpha(DANGER, vis));
+        gg.drawString(font, text, centerX - textW / 2, y + 6, withAlpha(WHITE, vis), false);
     }
 
     private static int withAlpha(int color, float alpha) {
@@ -545,6 +570,7 @@ public final class BattlefieldHudOverlay {
         gg.fill(x + 1, y + 1, x + 1 + Math.round((barW - 2) * (hud.revivingProgress() / 100f)), y + barH - 1, 0xCC4A90D9);
         gg.drawCenteredString(font, text, centerX, y + 4, 0xFFFFFFFF);
     }
+
 
     /** 倒地队友列表：显示距离和剩余时间。 */
     private static void renderDownedMates(GuiGraphics gg, Font font, BattleHudDto hud) {

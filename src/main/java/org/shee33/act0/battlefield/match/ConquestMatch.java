@@ -1551,8 +1551,7 @@ public final class ConquestMatch {
         if (server.getTickCount() % 20L != 0L) {
             return;
         }
-        org.shee33.act0.battlefield.core.BattleArea area = data.effectiveArea();
-        if (!area.isSet()) {
+        if (!data.effectiveArea().isSet()) {
             return;
         }
         for (Map.Entry<UUID, Faction> e : new ArrayList<>(factionOf.entrySet())) {
@@ -1565,19 +1564,28 @@ public final class ConquestMatch {
                 escapeTicks.remove(id);
                 continue;
             }
-            if (area.contains(p.getX(), p.getY(), p.getZ())) {
-                escapeTicks.remove(id);
+            // 判定必须走 containsInArea(含管理员圈画的不规则多边形):不能直接用 effectiveArea().contains,
+            // 多边形之外的矩形包围盒角落会把界外误判成界内。
+            if (data.containsInArea(p.getX(), p.getY(), p.getZ())) {
+                if (escapeTicks.remove(id) != null) {
+                    // 刚回到界内:立刻通知客户端淡出倒计时横幅与画面灰度。
+                    BattlefieldNetwork.sendOutOfBounds(p, false, 0, 0);
+                }
                 continue;
             }
             int ticks = escapeTicks.merge(id, 20, Integer::sum);
             int remain = Math.max(0, escapeBoundaryTicks - ticks);
+            int remainSeconds = (remain + 19) / 20;
             if (remain <= 0) {
-                Faction faction = factionOf.get(id);
-                beginRedeploy(p, faction);
                 escapeTicks.remove(id);
-            } else if (ticks % 60 == 0) {
-                p.displayClientMessage(Component.literal("§c⚠ 返回作战区域！" + (remain / 20) + " 秒后将被击杀"), true);
-                p.playNotifySound(SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 0.6f, 1.0f);
+                BattlefieldNetwork.sendOutOfBounds(p, false, 0, 0);
+                EscapeBoundaryPenalty.killDesertion(p);
+            } else {
+                BattlefieldNetwork.sendOutOfBounds(p, true, remainSeconds, Math.max(1, escapeBoundaryTicks / 20));
+                if (ticks % 60 == 0) {
+                    p.displayClientMessage(Component.literal("§c⚠ 返回作战区域！" + remainSeconds + " 秒后将被击杀"), true);
+                    p.playNotifySound(SoundEvents.NOTE_BLOCK_BASS.value(), SoundSource.MASTER, 0.6f, 1.0f);
+                }
             }
         }
     }

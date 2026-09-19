@@ -43,5 +43,6 @@ public final class ClientLifecycleHandler {
         ClientSquadSpectate.clear();
         BattlefieldClientInput.reset();
         ClientVanillaHud.setVanillaHud(false);
+        ClientOutOfBounds.clear();
     }
 }

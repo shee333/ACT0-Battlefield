@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "26";
+    private static final String PROTOCOL = "27";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -150,6 +150,9 @@ public final class BattlefieldNetwork {
         CHANNEL.registerMessage(id++, SyncVanillaHudPacket.class,
                 SyncVanillaHudPacket::encode, SyncVanillaHudPacket::decode,
                 SyncVanillaHudPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        CHANNEL.registerMessage(id++, SyncOutOfBoundsPacket.class,
+                SyncOutOfBoundsPacket::encode, SyncOutOfBoundsPacket::decode,
+                SyncOutOfBoundsPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
 }
 
     /**
@@ -173,6 +176,12 @@ public final class BattlefieldNetwork {
     /** 把战术标记同步给某玩家。 */
     public static void sendPing(ServerPlayer player, double x, double z) {
         CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncPingPacket(x, z));
+    }
+
+    /** 向玩家推送"离开作战区域"状态（驱动底部倒计时横幅与画面灰度）。 */
+    public static void sendOutOfBounds(ServerPlayer player, boolean active, int remainingSeconds, int totalSeconds) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new SyncOutOfBoundsPacket(active, remainingSeconds, totalSeconds));
     }
 
     /** 向玩家推送 HUD 内容。 */
