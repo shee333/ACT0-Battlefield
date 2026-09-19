@@ -38,8 +38,13 @@ public final class BattlefieldHudOverlay {
 
     /** 据点行小图标直径(px)——见 {@link #renderPointRow} 方法文档的取值依据。 */
     private static final float SMALL_DIAMETER = 18f;
-    /** FLIP 特写六边形直径上限(px)——见 {@link #renderCaptureFocus} 方法文档的取值依据。 */
-    private static final float FOCUS_DIAMETER_MAX = 50f;
+    /**
+     * FLIP 特写六边形直径上限(px)——见 {@link #renderCaptureFocus} 方法文档的取值依据。
+     *
+     * <p>取 30 而非规格 demo 的 46:特写越大越挤占中央战斗视野。30px 直径在常用 GUI 缩放下约占
+     * 屏高 8~11%,保留"下拉放大"辨识度的同时把对战斗视野的干扰压到最低。
+     */
+    private static final float FOCUS_DIAMETER_MAX = 30f;
 
     private BattlefieldHudOverlay() {
     }
@@ -377,8 +382,8 @@ public final class BattlefieldHudOverlay {
      *
      * <p>落点固定在票数条/据点行下方、屏幕上半部(y ≈ 30% 屏高),刻意不采用文档 demo 的屏幕正中(52%)——
      * 那是没有准星的网页演示专用坐标,真实对局里绝对不能让特写盖住准星与中央战斗视野。特写直径按
-     * {@link #FOCUS_DIAMETER_MAX} 与屏高的 23% 取更小值,确保在任何 GUI 缩放下都不超过屏幕高度的
-     * 22~26%(任务给定的上限),小图标/特写的直径比即是 FLIP 缩放起点 S0。
+     * {@link #FOCUS_DIAMETER_MAX} 与屏高的 23% 取更小值(常规分辨率下恒为上限 30px,仅逻辑屏高
+     * 低于 ~130px 时才按 23% 收缩),小图标/特写的直径比即是 FLIP 缩放起点 S0。
      */
     private static void renderCaptureFocus(GuiGraphics gg, Font font, BattleHudDto hud) {
         float targetX = gg.guiWidth() / 2f;

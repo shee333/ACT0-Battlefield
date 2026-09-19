@@ -45,7 +45,7 @@ public final class BreakthroughHudOverlay {
      * 视觉比例基准,便于 FLIP 缩放起点 S0 的换算一致。 */
     private static final float SMALL_DIAMETER = 18f;
     /** FLIP 特写六边形直径上限(px)——同 Conquest {@code FOCUS_DIAMETER_MAX}。 */
-    private static final float FOCUS_DIAMETER_MAX = 50f;
+    private static final float FOCUS_DIAMETER_MAX = 30f;
 
     private static final int TOP_BAR_Y = 7;
     private static final int TOP_BAR_H = 22;
