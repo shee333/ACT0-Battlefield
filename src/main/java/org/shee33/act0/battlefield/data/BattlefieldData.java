@@ -90,6 +90,8 @@ public final class BattlefieldData extends SavedData {
      * 都按原版方式渲染，某些模组物品在我们的自绘武器栏里会显示为紫黑——此开关为这类环境提供逃生门。
      */
     private boolean vanillaHudMode;
+    /** 第一人称据点地面边界高亮；默认开，关掉用于 A/B 对比观感。 */
+    private boolean pointZoneHud = true;
 
     public static BattlefieldData get(ServerLevel level) {
         return level.getDataStorage().computeIfAbsent(
@@ -250,6 +252,16 @@ public final class BattlefieldData extends SavedData {
 
     public void setVanillaHudMode(boolean vanilla) {
         this.vanillaHudMode = vanilla;
+        setDirty();
+    }
+
+    /** 第一人称据点地面边界高亮是否开启。 */
+    public boolean pointZoneHud() {
+        return pointZoneHud;
+    }
+
+    public void setPointZoneHud(boolean enabled) {
+        this.pointZoneHud = enabled;
         setDirty();
     }
 
@@ -704,6 +716,9 @@ return t;
         if (vanillaHudMode) {
             tag.putBoolean("vanillaHudMode", true);
         }
+        if (!pointZoneHud) {
+            tag.putBoolean("pointZoneHud", false);
+        }
         if (tickets > 0) {
             tag.putInt("tickets", tickets);
         }
@@ -775,6 +790,7 @@ return t;
         data.minPlayersToStart = Math.max(0, tag.getInt("minPlayersToStart"));
         data.maxPlayers = Math.max(0, tag.getInt("maxPlayers"));
         data.vanillaHudMode = tag.getBoolean("vanillaHudMode");
+        data.pointZoneHud = !tag.contains("pointZoneHud") || tag.getBoolean("pointZoneHud");
         data.tickets = Math.max(0, tag.getInt("tickets"));
         if (tag.contains("returnPoint")) {
             data.returnPoint = ReturnPoint.load(tag.getCompound("returnPoint"));

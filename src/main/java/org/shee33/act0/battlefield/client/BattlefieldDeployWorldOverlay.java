@@ -479,9 +479,9 @@ public final class BattlefieldDeployWorldOverlay {
      * + 深度写关（填充与边框不抢深度）+ 关背面剔除。嵌套类的惰性初始化把 {@code RenderType.create}
      * 推迟到首次渲染，避开 mod CONSTRUCT 阶段的静态初始化。
      */
-    private static final class PointZoneFill extends RenderType {
+    static final class PointZoneFill extends RenderType {
 
-        private static final RenderType TYPE = RenderType.create(
+        static final RenderType TYPE = RenderType.create(
                 Act0Battlefield.MODID + ":point_zone_fill",
                 DefaultVertexFormat.POSITION_COLOR,
                 VertexFormat.Mode.TRIANGLES,

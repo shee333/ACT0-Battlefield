@@ -43,6 +43,8 @@ public final class ClientLifecycleHandler {
         ClientSquadSpectate.clear();
         BattlefieldClientInput.reset();
         ClientVanillaHud.setVanillaHud(false);
+        ClientPointZoneHud.clear();
+        PointZoneGroundOverlay.reset();
         ClientOutOfBounds.clear();
     }
 }

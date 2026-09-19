@@ -28,7 +28,7 @@ public final class BattlefieldNetwork {
      *
      * <p>{@code NetworkProtocolFingerprintTest} 会锁住包表指纹，漏 bump 时直接测试失败。
      */
-    private static final String PROTOCOL = "27";
+    private static final String PROTOCOL = "28";
 
     @SuppressWarnings("removal")
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -211,8 +211,8 @@ public final class BattlefieldNetwork {
     }
 
     /** 向玩家推送本图对局的 HUD 模式（自绘武器栏 / 原版快捷栏）。 */
-    public static void sendVanillaHudMode(ServerPlayer player, boolean vanillaHud) {
-        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncVanillaHudPacket(vanillaHud));
+    public static void sendVanillaHudMode(ServerPlayer player, boolean vanillaHud, boolean pointZone) {
+        CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SyncVanillaHudPacket(vanillaHud, pointZone));
     }
 
     public static void sendDeployLoadout(ServerPlayer player, DeployLoadoutDto loadout) {

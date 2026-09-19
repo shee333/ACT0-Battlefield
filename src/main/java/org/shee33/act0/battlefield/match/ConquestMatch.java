@@ -805,7 +805,7 @@ public final class ConquestMatch {
             return;
         }
         // 进对局即同步本图 HUD 模式（原版快捷栏开关），确保不掉线重进的人不沿用旧状态。
-        BattlefieldNetwork.sendVanillaHudMode(player, data.vanillaHudMode());
+        BattlefieldNetwork.sendVanillaHudMode(player, data.vanillaHudMode(), data.pointZoneHud());
         redeployService.onPlayerLogin(player, faction);
         if (!redeployService.isRedeploying(id)) {
             player.setInvulnerable(false);
@@ -1411,11 +1411,16 @@ public final class ConquestMatch {
             int owner = factionCode(point.owner());
             int pressure = point.level() > 0.02 ? 1 : (point.level() < -0.02 ? 2 : 0);
             int progress = Math.min(100, Math.max(0, (int) Math.round(Math.abs(point.level()) * 100.0)));
+            List<double[]> boundary = new ArrayList<>(def.boundary().size());
+            for (net.minecraft.core.BlockPos vertex : def.boundary()) {
+                // 顶点取方块中心 XZ + 方块顶面 Y：边界贴在地表而不是方块底面，且逐顶点高度可贴合起伏。
+                boundary.add(new double[]{vertex.getX() + 0.5, vertex.getY() + 1.0, vertex.getZ() + 0.5});
+            }
             pointDtos.add(new ControlPointHudDto(point.displayName(), owner, pressure, progress,
                     def.pos().getX() + 0.5 + def.markerOffsetX(),
                     def.pos().getY() + def.markerOffsetY(),
                     def.pos().getZ() + 0.5 + def.markerOffsetZ(),
-                    def.markerScale(), def.markerDistance(), def.pointId()));
+                    def.markerScale(), def.markerDistance(), def.pointId(), boundary));
         }
 
         Faction viewerFaction = factionOf.get(viewer.getUUID());

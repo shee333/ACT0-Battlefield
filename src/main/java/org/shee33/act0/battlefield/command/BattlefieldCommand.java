@@ -119,7 +119,10 @@ public final class BattlefieldCommand {
                 .then(Commands.literal("hud").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("vanilla")
                                 .then(Commands.argument("enabled", BoolArgumentType.bool())
-                                        .executes(BattlefieldCommand::setHudVanilla))))
+                                        .executes(BattlefieldCommand::setHudVanilla)))
+                                .then(Commands.literal("pointzone")
+                                        .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                                .executes(BattlefieldCommand::setHudPointZone))))
 .then(Commands.literal("point").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("add")
                                 .then(Commands.argument("pos", BlockPosArgument.blockPos())
@@ -533,11 +536,32 @@ public final class BattlefieldCommand {
         BattlefieldData data = BattlefieldData.get(level);
         data.setVanillaHudMode(vanilla);
         for (ServerPlayer p : level.players()) {
-            BattlefieldNetwork.sendVanillaHudMode(p, vanilla);
+            BattlefieldNetwork.sendVanillaHudMode(p, vanilla, data.pointZoneHud());
         }
         feedback(c, vanilla
                 ? "§a本图对局 HUD 已切换为原版快捷栏（右下角）模式。"
                 : "§a本图对局 HUD 已恢复自绘武器栏。");
+        return 1;
+    }
+
+    /**
+     * 切换第一人称下的据点地面边界高亮：{@code true} = 显示（默认），{@code false} = 关闭。
+     *
+     * <p>切换后立即向当前图内所有玩家广播一次；中途进图的玩家也会在对局入场处收到当前值。
+     * 做成开关是为了能对照观感做取舍——地面边界属于“加了是否更好”的类型，不该只凭实现者
+     * 一句话就永久钉死。
+     */
+    private static int setHudPointZone(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        boolean enabled = BoolArgumentType.getBool(c, "enabled");
+        BattlefieldData data = BattlefieldData.get(level);
+        data.setPointZoneHud(enabled);
+        for (ServerPlayer p : level.players()) {
+            BattlefieldNetwork.sendVanillaHudMode(p, data.vanillaHudMode(), enabled);
+        }
+        feedback(c, enabled
+                ? "§a据点地面边界高亮已开启。"
+                : "§7据点地面边界高亮已关闭。");
         return 1;
     }
 

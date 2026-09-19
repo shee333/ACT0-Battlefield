@@ -1733,7 +1733,7 @@ public final class BreakthroughMatch {
             return;
         }
         // 进对局即同步本图 HUD 模式（原版快捷栏开关），确保不掉线重进的人不沿用旧状态。
-        BattlefieldNetwork.sendVanillaHudMode(player, data.vanillaHudMode());
+        BattlefieldNetwork.sendVanillaHudMode(player, data.vanillaHudMode(), data.pointZoneHud());
         redeployService.onPlayerLogin(player, faction);
         BattlefieldNetwork.sendBreakthroughHud(player, buildHudFor(player));
     }
