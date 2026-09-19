@@ -1,5 +1,7 @@
 package org.shee33.act0.battlefield.core;
 
+import javax.annotation.Nullable;
+
 import java.util.List;
 
 /**
@@ -79,6 +81,24 @@ public record BattleArea(double minX, double minY, double minZ,
     }
 
     public boolean contains(double x, double y, double z) {
+        return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
+    }
+
+    /**
+     * 带不规则边界的判定：有边界时 XZ 完全按多边形、垂直范围取矩形；无边界时即普通矩形判定。
+     *
+     * <p>战斗区域默认是矩形；管理员用多边形圈画后，区域内判定必须走这个重载，不能拿
+     * 三参版本代替——多边形之外的包围盒角落会误判（与据点 {@code ControlPointDef#contains}
+     * 同源纪律：包围盒只用于裁剪/视图，判定必须用精确形状）。
+     *
+     * @param boundary 不规则边界；{@code null} 表示未圈画、按矩形判定
+     */
+    public boolean contains(double x, double y, double z, @Nullable Polygon2D boundary) {
+        if (boundary != null) {
+            // 有精确边界：XZ 完全按多边形判定，矩形只提供垂直范围（其 XZ 退化为包围盒，
+            // 仅供视图/裁剪使用）。多边形完全可能超出矩形 XZ，此时不能用矩形 XZ 提前排除。
+            return y >= minY && y <= maxY && boundary.contains(x, z);
+        }
         return x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
     }
 

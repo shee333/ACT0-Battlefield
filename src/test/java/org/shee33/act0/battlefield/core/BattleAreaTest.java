@@ -70,4 +70,46 @@ class BattleAreaTest {
             // expected
         }
     }
+
+    @Test
+    void nullBoundaryFallsBackToRectangle() {
+        BattleArea a = new BattleArea(0, 0, 0, 100, 64, 100);
+        assertTrue(a.contains(50, 30, 50, null));
+        assertFalse(a.contains(-1, 30, 50, null));
+    }
+
+    @Test
+    void polygonBoundaryNarrowsXzJudgement() {
+        BattleArea a = new BattleArea(0, 0, 0, 100, 64, 100);
+        Polygon2D tri = Polygon2D.of(List.of(
+                new double[]{0, 0},
+                new double[]{100, 0},
+                new double[]{0, 100}));
+        assertTrue(a.contains(10, 30, 10, tri), "三角形内侧应判在内");
+        assertTrue(a.contains(90, 30, 90), "矩形判定本身认为右上角在内");
+        assertFalse(a.contains(90, 30, 90, tri), "有边界时必须按多边形判为在外");
+    }
+
+    @Test
+    void verticalRangeStillAppliesWithBoundary() {
+        BattleArea a = new BattleArea(0, 0, 0, 100, 64, 100);
+        Polygon2D tri = Polygon2D.of(List.of(
+                new double[]{0, 0},
+                new double[]{100, 0},
+                new double[]{0, 100}));
+        assertFalse(a.contains(10, 100, 10, tri), "超出垂直范围应判在外");
+        assertFalse(a.contains(10, -1, 10, tri));
+    }
+
+    @Test
+    void boundaryOutsideRectangleStillCounts() {
+        // 多边形完全落在矩形 XZ 之外：有边界时 XZ 只认多边形，矩形仅提供垂直范围。
+        BattleArea a = new BattleArea(0, 0, 0, 10, 64, 10);
+        Polygon2D poly = Polygon2D.of(List.of(
+                new double[]{200, 200},
+                new double[]{300, 200},
+                new double[]{250, 300}));
+        assertTrue(a.contains(250, 30, 200 + 100.0 / 3.0, poly), "多边形内、矩形 XZ 外也应算在内");
+        assertFalse(a.contains(250, 30, 305, poly), "多边形之外（z 超过顶点）应判在外");
+    }
 }

@@ -24,6 +24,7 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
                               double areaMinX, double areaMinY, double areaMinZ,
                               double areaMaxX, double areaMaxY, double areaMaxZ,
                               boolean areaExplicit,
+                              List<double[]> areaBoundary,
                               int spectateEntityId,
                               String modeName,
                               String mapName) {
@@ -64,6 +65,11 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         buf.writeDouble(areaMaxY);
         buf.writeDouble(areaMaxZ);
         buf.writeBoolean(areaExplicit);
+        buf.writeVarInt(areaBoundary.size());
+        for (double[] v : areaBoundary) {
+            buf.writeDouble(v[0]);
+            buf.writeDouble(v[1]);
+        }
         buf.writeVarInt(spectateEntityId);
         buf.writeUtf(modeName);
         buf.writeUtf(mapName);
@@ -106,18 +112,23 @@ public record DeployStatusDto(boolean active, boolean canSquad, boolean canPoint
         double amaxY = buf.readDouble();
         double amaxZ = buf.readDouble();
         boolean areaExplicit = buf.readBoolean();
+        int bn = Math.max(0, Math.min(buf.readVarInt(), MAX_LIST_ENTRIES));
+        List<double[]> areaBoundary = new ArrayList<>(bn);
+        for (int i = 0; i < bn; i++) {
+            areaBoundary.add(new double[]{buf.readDouble(), buf.readDouble()});
+        }
         int spectateEntityId = buf.readVarInt();
         String modeName = buf.readUtf();
         String mapName = buf.readUtf();
         return new DeployStatusDto(active, canSquad, canPoint, canBase, selectedKind, selectedTarget, ready,
                 baseX, baseY, baseZ, squadX, squadY, squadZ, points, squadMates, allies,
-                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit, spectateEntityId,
+                hasArea, aminX, aminY, aminZ, amaxX, amaxY, amaxZ, areaExplicit, areaBoundary, spectateEntityId,
                 modeName, mapName);
     }
 
     public static DeployStatusDto inactive() {
         return new DeployStatusDto(false, false, false, false, "", "", 0,
             0, 0, 0, 0, 0, 0, List.of(), List.of(), List.of(),
-            false, 0, 0, 0, 0, 0, 0, false, -1, "", "");
+            false, 0, 0, 0, 0, 0, 0, false, List.of(), -1, "", "");
     }
 }

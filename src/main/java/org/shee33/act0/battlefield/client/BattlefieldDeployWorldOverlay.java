@@ -124,10 +124,16 @@ public final class BattlefieldDeployWorldOverlay {
                     DeployActionPacket.DeployKind.POINT, point.id(), pointTexture(point));
         }
         if (status.hasArea()) {
-            drawAreaBox(pose, buffer, camera,
-                    status.areaMinX(), status.areaMinY(), status.areaMinZ(),
-                    status.areaMaxX(), status.areaMaxY(), status.areaMaxZ(),
-                    AREA_FLOOR_RGB, AREA_WALL_RGB);
+            if (status.areaBoundary().size() >= 3) {
+                // 管理员圈画了不规则边界：按多边形画地面填充 + 边框（与据点区域同源画法）。
+                // 此时不再画矩形框——多边形可能超出矩形 XZ，两者同画会互相误导。
+                drawAreaPolygon(pose, buffer, camera, status.areaBoundary(), status.areaMinY());
+            } else {
+                drawAreaBox(pose, buffer, camera,
+                        status.areaMinX(), status.areaMinY(), status.areaMinZ(),
+                        status.areaMaxX(), status.areaMaxY(), status.areaMaxZ(),
+                        AREA_FLOOR_RGB, AREA_WALL_RGB);
+            }
             renderAreaLabel(pose, font, buffer, camera,
                     status.areaMinX(), status.areaMaxY(), status.areaMinZ(),
                     status.areaExplicit());
@@ -333,6 +339,45 @@ public final class BattlefieldDeployWorldOverlay {
         drawLine(consumer, matrix, maxX, minY, minZ, maxX, maxY, minZ, wallColor);
         drawLine(consumer, matrix, maxX, minY, maxZ, maxX, maxY, maxZ, wallColor);
         drawLine(consumer, matrix, minX, minY, maxZ, minX, maxY, maxZ, wallColor);
+    }
+
+    /**
+     * 绘制战斗区域的不规则多边形：地面半透明填充 + 逐边边框。
+     *
+     * <p>与 {@link #drawPointZones} 同源画法（耳切三角化发 TRIANGLES + LINES 描边），差别仅在原点：
+     * 这里直接用世界坐标减相机位置，地面高度取矩形包围盒的 minY（多边形本身是 2D，无自身高度）。
+     */
+    private static void drawAreaPolygon(PoseStack pose, MultiBufferSource.BufferSource buffer, Camera camera,
+                                        List<double[]> boundary, double groundY) {
+        Polygon2D poly = Polygon2D.of(boundary);
+        if (poly == null) {
+            return;
+        }
+        Vec3 cam = camera.getPosition();
+        pose.pushPose();
+        pose.translate(-cam.x, -cam.y, -cam.z);
+        Matrix4f matrix = pose.last().pose();
+        pose.popPose();
+
+        int rgb = AREA_FLOOR_RGB & 0xFFFFFF;
+        int cr = (rgb >> 16) & 0xFF;
+        int cg = (rgb >> 8) & 0xFF;
+        int cb = rgb & 0xFF;
+
+        VertexConsumer fill = buffer.getBuffer(PointZoneFill.TYPE);
+        int[] tris = poly.triangulate();
+        for (int idx : tris) {
+            fill.vertex(matrix, (float) poly.x(idx), (float) groundY, (float) poly.z(idx))
+                    .color(cr, cg, cb, ZONE_FILL_ALPHA).endVertex();
+        }
+
+        VertexConsumer line = buffer.getBuffer(RenderType.LINES);
+        int rimArgb = (AREA_WALL_RGB & 0xFFFFFF) | (ZONE_RIM_ALPHA << 24);
+        int n = poly.size();
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            drawLine(line, matrix, poly.x(i), groundY, poly.z(i), poly.x(j), groundY, poly.z(j), rimArgb);
+        }
     }
 
     private static void drawLine(VertexConsumer consumer, Matrix4f matrix,

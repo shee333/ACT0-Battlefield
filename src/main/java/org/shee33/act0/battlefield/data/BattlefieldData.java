@@ -14,6 +14,7 @@ import org.shee33.act0.battlefield.core.BattleArea;
 import org.shee33.act0.battlefield.core.Faction;
 import org.shee33.act0.battlefield.core.FactionNames;
 import org.shee33.act0.battlefield.core.MatchCapacity;
+import org.shee33.act0.battlefield.core.Polygon2D;
 import org.shee33.act0.battlefield.core.Sector;
 import org.shee33.act0.battlefield.core.SoldierClass;
 import org.shee33.act0.battlefield.core.arena.LoadoutPresetDef;
@@ -50,6 +51,12 @@ public final class BattlefieldData extends SavedData {
 
     /** 显式录入的战斗区域边界；为空时按基地+据点推导。 */
     private BattleArea area = BattleArea.EMPTY;
+
+    /** 战斗区域的不规则多边形边界（世界 XZ，按环绕顺序）；空表示沿用矩形。 */
+    private List<BlockPos> areaBoundary = List.of();
+    /** 多边形判定缓存，随 areaBoundary 变更失效。 */
+    @Nullable
+    private Polygon2D areaPolygonCache;
 
     /** 命名预设：当前布场（据点+基地+区域）的快照，存于主 NBT 的 {@code presets} 子节点下。 */
     private final Map<String, CompoundTag> presets = new LinkedHashMap<>();
@@ -374,6 +381,53 @@ public final class BattlefieldData extends SavedData {
         return derivedPointArea();
     }
 
+    /** 战斗区域的不规则多边形顶点（世界 XZ，按环绕顺序）；空表示未圈画、沿用矩形。 */
+    public List<BlockPos> areaBoundary() {
+        return List.copyOf(areaBoundary);
+    }
+
+    /** 是否已圈画不规则边界（≥3 顶点）。 */
+    public boolean hasAreaBoundary() {
+        return areaBoundary.size() >= 3;
+    }
+
+    /** 设置战斗区域多边形边界（≥3 顶点生效；否则清空回退矩形）。 */
+    public void setAreaBoundary(@Nullable List<BlockPos> vertices) {
+        this.areaBoundary = vertices == null ? List.of() : List.copyOf(vertices);
+        this.areaPolygonCache = null;
+        setDirty();
+    }
+
+    public void clearAreaBoundary() {
+        setAreaBoundary(null);
+    }
+
+    /** 多边形判定的缓存视图；未圈画边界返回 {@code null}。 */
+    @Nullable
+    public Polygon2D areaPolygon() {
+        if (!hasAreaBoundary()) {
+            return null;
+        }
+        if (areaPolygonCache == null) {
+            List<double[]> verts = new ArrayList<>(areaBoundary.size());
+            for (BlockPos p : areaBoundary) {
+                verts.add(new double[]{p.getX() + 0.5, p.getZ() + 0.5});
+            }
+            areaPolygonCache = Polygon2D.of(verts);
+        }
+        return areaPolygonCache;
+    }
+
+    /**
+     * 玩家位置是否在战斗区域内：先过矩形包围盒与垂直范围，若圈画了多边形则 XZ 按多边形判定。
+     *
+     * <p>越界判定（逃兵倒计时 / 惩戒）必须用本方法，不能直接用 {@code effectiveArea().contains(...)}
+     * ——多边形之外的包围盒角落会误判。
+     */
+    public boolean containsInArea(double x, double y, double z) {
+        return effectiveArea().contains(x, y, z, areaPolygon());
+    }
+
     // ---- 预设 ----
 
     /**
@@ -413,6 +467,8 @@ public final class BattlefieldData extends SavedData {
         alphaBase = null;
         bravoBase = null;
         area = BattleArea.EMPTY;
+        areaBoundary = List.of();
+        areaPolygonCache = null;
         setDirty();
     }
 
@@ -614,6 +670,13 @@ return t;
             a.putDouble("maxZ", area.maxZ());
             tag.put("area", a);
         }
+        if (!areaBoundary.isEmpty()) {
+            long[] arr = new long[areaBoundary.size()];
+            for (int i = 0; i < arr.length; i++) {
+                arr[i] = areaBoundary.get(i).asLong();
+            }
+            tag.putLongArray("areaBoundary", arr);
+        }
         if (!presets.isEmpty()) {
             CompoundTag pt = new CompoundTag();
             for (Map.Entry<String, CompoundTag> e : presets.entrySet()) {
@@ -683,6 +746,14 @@ return t;
             data.area = new BattleArea(
                     a.getDouble("minX"), a.getDouble("minY"), a.getDouble("minZ"),
                     a.getDouble("maxX"), a.getDouble("maxY"), a.getDouble("maxZ"));
+        }
+        if (tag.contains("areaBoundary")) {
+            long[] arr = tag.getLongArray("areaBoundary");
+            List<BlockPos> verts = new ArrayList<>(arr.length);
+            for (long l : arr) {
+                verts.add(BlockPos.of(l));
+            }
+            data.areaBoundary = List.copyOf(verts);
         }
         if (tag.contains("presets")) {
             CompoundTag pt = tag.getCompound("presets");

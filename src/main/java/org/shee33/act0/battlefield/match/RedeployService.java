@@ -476,8 +476,18 @@ return BattlefieldLoadoutService.readDeployLoadout(player, arenaKey, faction);
                 area.minX(), area.minY(), area.minZ(),
                 area.maxX(), area.maxY(), area.maxZ(),
                 areaExplicit,
+                areaBoundaryDtos(data),
                 spectateTarget.getOrDefault(id, -1),
                 matchModeName, mapName);
+    }
+
+    /** 战斗区域的不规则多边形顶点（世界 XZ，含 +0.5 方块中心偏移）；空表示未圈画。 */
+    private static List<double[]> areaBoundaryDtos(BattlefieldData data) {
+        List<double[]> out = new ArrayList<>();
+        for (net.minecraft.core.BlockPos p : data.areaBoundary()) {
+            out.add(new double[]{p.getX() + 0.5, p.getZ() + 0.5});
+        }
+        return out;
     }
 
     private List<DeployPointDto> deployPointDtos(Faction faction) {

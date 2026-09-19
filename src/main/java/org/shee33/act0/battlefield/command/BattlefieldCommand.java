@@ -229,7 +229,7 @@ public final class BattlefieldCommand {
                                 .executes(c -> setOrder(c, false))));
     }
 
-    /** /aew1 area {info|set|clear|here}：管理战斗区域边界。 */
+    /** /aew1 area {info|set|clear|here|polygon}：管理战斗区域边界（polygon 为不规则多边形圈画）。 */
     private static LiteralArgumentBuilder<CommandSourceStack> buildAreaBranch() {
         return Commands.literal("area")
             .then(Commands.literal("info")
@@ -246,7 +246,10 @@ public final class BattlefieldCommand {
                 .executes(BattlefieldCommand::areaClear))
             .then(Commands.literal("here").requires(s -> s.hasPermission(2))
                 .then(Commands.argument("radius", IntegerArgumentType.integer(8, 4096))
-                    .executes(BattlefieldCommand::areaHere)));
+                    .executes(BattlefieldCommand::areaHere)))
+            .then(Commands.literal("polygon").requires(s -> s.hasPermission(2))
+                .then(Commands.literal("edit").executes(BattlefieldCommand::areaPolygonEdit))
+                .then(Commands.literal("clear").executes(BattlefieldCommand::areaPolygonClear)));
     }
 
     private static int createHologram(CommandContext<CommandSourceStack> ctx,
@@ -767,6 +770,9 @@ public final class BattlefieldCommand {
                 + " §8/ §f" + fmt(effective.minZ()) + " ~ " + fmt(effective.maxZ()));
         feedback(c, "§7  尺寸 §f" + fmt(effective.sizeX()) + " × " + fmt(effective.sizeY())
                 + " × " + fmt(effective.sizeZ()));
+        if (data.hasAreaBoundary()) {
+            feedback(c, "§7  不规则边界 §f" + data.areaBoundary().size() + " §7个顶点（判定按多边形）");
+        }
         return 1;
     }
 
@@ -794,7 +800,9 @@ public final class BattlefieldCommand {
 
     private static int areaClear(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
         ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
-        BattlefieldData.get(level).setArea(BattleArea.EMPTY);
+        BattlefieldData data = BattlefieldData.get(level);
+        data.setArea(BattleArea.EMPTY);
+        data.clearAreaBoundary();
         feedback(c, "§7已清除显式战斗区域，恢复为据点/基地推导。");
         return 1;
     }
@@ -807,6 +815,18 @@ public final class BattlefieldCommand {
                 p.getX() + r, p.getY() + 96, p.getZ() + r);
         BattlefieldData.get(p.serverLevel()).setArea(area);
         feedback(c, "§a战斗区域已设为以你为中心、半径 §e" + r + " §a格（高度自动 32~96）。");
+        return 1;
+    }
+
+    private static int areaPolygonEdit(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        AreaBoundaryWandHandler.beginEditing(c.getSource().getPlayerOrException());
+        return 1;
+    }
+
+    private static int areaPolygonClear(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+        ServerLevel level = c.getSource().getPlayerOrException().serverLevel();
+        BattlefieldData.get(level).clearAreaBoundary();
+        feedback(c, "§7已清除战斗区域的不规则多边形边界，恢复为矩形判定。");
         return 1;
     }
 
