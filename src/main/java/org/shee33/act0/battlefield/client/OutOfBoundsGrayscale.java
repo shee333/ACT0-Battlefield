@@ -15,6 +15,8 @@ import net.minecraftforge.fml.common.Mod;
 import org.shee33.act0.battlefield.Act0Battlefield;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.List;
 
 /**
@@ -44,6 +46,8 @@ public final class OutOfBoundsGrayscale {
     private static boolean unavailable;
     /** 缓存的私有字段句柄；惰性初始化，避免每帧重复查找。 */
     private static Field passesField;
+    /** 是否已尝试定位过字段（失败也记为已解析，避免每帧重复扫描）。 */
+    private static boolean passesFieldResolved;
 
     private OutOfBoundsGrayscale() {
     }
@@ -117,12 +121,38 @@ public final class OutOfBoundsGrayscale {
 
     @SuppressWarnings("unchecked")
     private static List<PostPass> passes() throws ReflectiveOperationException {
+        if (!passesFieldResolved) {
+            passesFieldResolved = true;
+            passesField = findPassesField();
+        }
         if (passesField == null) {
-            Field field = PostChain.class.getDeclaredField("passes");
-            field.setAccessible(true);
-            passesField = field;
+            return null;
         }
         return (List<PostPass>) passesField.get(chain);
+    }
+
+    /**
+     * 按"元素类型是 {@link PostPass} 的 {@code List}"定位那个私有字段，<b>而不是按名字</b>。
+     *
+     * <p>生产环境里 MC 的字段名是 SRG（{@code f_xxxxx_}），按名字取会在正式包里失效（只在开发环境
+     * 的官方映射下侥幸成功）；泛型签名在混淆/SRG 下依然保留，所以按类型定位是映射无关的。
+     */
+    private static Field findPassesField() {
+        for (Field field : PostChain.class.getDeclaredFields()) {
+            if (!List.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            Type generic = field.getGenericType();
+            if (!(generic instanceof ParameterizedType parameterized)) {
+                continue;
+            }
+            Type[] args = parameterized.getActualTypeArguments();
+            if (args.length == 1 && args[0] == PostPass.class) {
+                field.setAccessible(true);
+                return field;
+            }
+        }
+        return null;
     }
 
     private static void rebuild(Minecraft mc, RenderTarget target) throws Exception {
